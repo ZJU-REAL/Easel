@@ -1,0 +1,40 @@
+{
+  "id": "ghost-mannequin",
+  "name": "隐形模特",
+  "keywords": ["隐形模特", "ghost mannequin", "invisible model", "3D服装", "服装展示", "无人模特", "中空模特", "flat mannequin"],
+  "trigger_phrases": ["隐形模特", "ghost mannequin", "3D服装展示", "无人穿着展示", "服装立体展示", "invisible mannequin"],
+  "prompt_template": {
+    "type": "ghost mannequin product photography",
+    "subject": "{product_description}",
+    "form": "invisible mannequin creating natural 3D body shape",
+    "details": "natural shoulder slope, bust/chest contour, waist curve visible",
+    "background": "clean white or soft gray gradient",
+    "lighting": "three-point studio setup, gentle dimension",
+    "quality": "8K, fashion e-commerce standard photography"
+  },
+  "defaults": {
+    "form": "natural body contours - shoulders, bust, waist",
+    "background": "soft warm gray gradient",
+    "lighting": "three-point studio setup creating gentle dimension"
+  },
+  "variants": {
+    "white-clean": { "description": "纯白干净", "overrides": { "background": "pure white seamless", "lighting": "bright even commercial lighting" } },
+    "editorial": { "description": "杂志风格", "overrides": { "background": "moody dark gradient from charcoal to deep gray", "lighting": "spotlight from above creating dramatic highlight on shoulders" } },
+    "editorial-detail": { "description": "展示内衬细节", "overrides": { "details": "garment partially open revealing inner lining tag, rolled sleeves showing lining contrast" } },
+    "lifestyle": { "description": "带环境道具", "overrides": { "background": "minimal studio with subtle editorial prop - single branch or flower in corner" } }
+  },
+  "category_tips": {
+    "shirts": "collar standing naturally, top buttons detail, cuff visibility",
+    "dresses": "natural waist cinch, skirt drape showing fabric weight, back zipper detail",
+    "coats": "architectural shoulder structure, fabric texture visible, button and pocket details",
+    "knitwear": "visible knit pattern and texture, natural stretch around body contours",
+    "tshirts": "casual relaxed drape, crew or v-neck sitting naturally, sleeve length proportion",
+    "activewear": "compression fit showing body contour, moisture-wicking fabric texture, logo placement"
+  },
+  "examples": [
+    "Ghost mannequin photography. {product} on invisible mannequin, natural body contours visible. Fabric drapes naturally showing material weight. Pure white background. Soft studio lighting, 8K, fashion e-commerce standard",
+    "Premium ghost mannequin photography. {product} on invisible mannequin, garment partially open revealing inner lining. Background: soft warm gray gradient. Three-point studio lighting, Phase One quality, 8K"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

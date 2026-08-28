@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "title": "Style Transfer Paper Explainer",
+  "style": "雨夜都市超级英雄漫画",
+  "base_style": "noir",
+  "treatment": "comic",
+  "theme": {
+    "bg": "#10131a",
+    "ink": "#f4f1e8",
+    "muted": "#a8afbd",
+    "accent": "#f2c94c",
+    "accent2": "#3973d6",
+    "line": "#05070a",
+    "surface": "#181d28",
+    "panel": "#202736",
+    "font": "sans",
+    "radius": 4,
+    "heading_weight": 900,
+    "texture": "halftone"
+  },
+  "size": "1920x1080",
+  "source": "Paper explainer · style transfer example",
+  "slides": [
+    {
+      "type": "cover",
+      "kicker": "CASE FILE · 01",
+      "title": "AI 为什么总是读不懂棒图？",
+      "claim": "真正的难题不是看到像素，而是从结构与关系中找到证据。",
+      "points": ["定位坐标轴、图例与数据系列", "用可核对的视觉线索支撑结论"]
+    },
+    {
+      "type": "process",
+      "kicker": "INVESTIGATION · 02",
+      "title": "读图就像还原一条证据链",
+      "steps": [
+        {"title": "定位", "body": "识别坐标轴、图例和标题的作用。"},
+        {"title": "对齐", "body": "把颜色和形状对应到正确数据系列。"},
+        {"title": "比较", "body": "先看趋势和差异，再核对具体数值。"},
+        {"title": "结案", "body": "用图中证据支撑回答，不凭印象猜测。"}
+      ]
+    },
+    {
+      "type": "metrics",
+      "kicker": "EVIDENCE · 03",
+      "title": "要评测的是完整推理链",
+      "claim": "答对还不够；模型必须指出它从哪个视觉证据得出结论。",
+      "metrics": [
+        {"value": "1", "label": "中心问题", "note": "每页只推进一个判断"},
+        {"value": "3", "label": "证据层级", "note": "元素、关系与整体结论"},
+        {"value": "0", "label": "允许猜测", "note": "结论都要回到图中"}
+      ]
+    }
+  ]
+}

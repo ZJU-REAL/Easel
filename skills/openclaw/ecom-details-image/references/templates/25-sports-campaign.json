@@ -1,0 +1,40 @@
+{
+  "id": "sports-campaign",
+  "name": "运动/健身广告",
+  "keywords": ["运动", "健身", "广告", "sports", "fitness", "campaign", "运动鞋", "运动服", "篮球", "跑步", "健身器材"],
+  "trigger_phrases": ["运动广告", "健身广告", "sports campaign", "运动品牌", "运动大片", "健身推广", "运动产品广告", "运动海报"],
+  "prompt_template": {
+    "type": "sports/fitness advertising campaign photography",
+    "subject": "{product_description}",
+    "athlete": "athletic model in dynamic pose with product",
+    "props": "sports equipment as visual anchor, exaggerated scale",
+    "background": "minimal dark studio with reflective floor",
+    "typography": "bold condensed headline + subtitle",
+    "quality": "8K, Nike/Under Armour campaign quality"
+  },
+  "defaults": {
+    "background": "dark studio, reflective black floor",
+    "typography": "bold condensed font, brand color accent",
+    "lighting": "spotlight from above, dramatic body highlights"
+  },
+  "variants": {
+    "product-hero": { "description": "产品主视觉", "overrides": { "athlete": "no model, product floating at dynamic angle", "props": "motion lines and speed effects around product" } },
+    "athlete-action": { "description": "运动员动态", "overrides": { "athlete": "athlete mid-action wearing product, stadium lights, lens flare" } },
+    "triptych": { "description": "三联画", "overrides": { "layout": "three vertical panels: close-up detail + action shot + product hero, unified bottom strip with branding" } },
+    "gym-power": { "description": "健身力量感", "overrides": { "athlete": "muscular athlete seated on oversized dumbbell or equipment", "props": "exaggerated fitness equipment placed diagonally" } }
+  },
+  "category_tips": {
+    "running_shoes": "dynamic forward motion, speed lines, track or road surface context",
+    "basketball": "mid-dunk or crossover pose, stadium lighting, court texture",
+    "fitness_equipment": "athlete using product, sweat detail, gym environment",
+    "sportswear": "compression fit visible, fabric technology highlighted, movement pose",
+    "protein_supplements": "product with athlete post-workout, muscular definition, energy mood",
+    "sports_drink": "splash effects, condensation, vibrant energy colors, hydration theme"
+  },
+  "examples": [
+    "Sports advertising photo. {product} placed diagonally on reflective dark surface. Dramatic side lighting, speed lines around product. Bold headline text. Dynamic and energetic, 8K, 1080x1350px",
+    "Fitness brand campaign. Athletic model wearing {product}, seated on large dumbbell. Dark studio with reflective floor. Spotlight from above. 'STRENGTH' bold headline. Nike campaign quality, 8K"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

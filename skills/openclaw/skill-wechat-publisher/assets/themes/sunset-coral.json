@@ -1,0 +1,58 @@
+{
+  "theme_name": "sunset-coral",
+  "description": "夕阳珊瑚 - 暖橙 + 奶白,热烈克制的活力色,适合热点 / 榜单 / 潮流 / 轻快话题",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #2b1a10; line-height: 1.8; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #fffaf5;",
+    "h1": "font-size: 23px; font-weight: 800; color: #2b1a10; text-align: left; margin: 34px 0 22px; padding: 0 0 14px 0; border-bottom: 3px solid #ff6b4a; letter-spacing: 0.3px; line-height: 1.4;",
+    "h2": "font-size: 18px; font-weight: 800; color: #2b1a10; margin: 38px 0 18px; padding: 10px 14px; background: linear-gradient(90deg, #ffe8dd 0%, #ffe8dd 3px, #fff3eb 3px, transparent 100%); border-radius: 4px; line-height: 1.5; letter-spacing: 0.2px;",
+    "h3": "font-size: 16px; font-weight: 700; color: #c43a1a; margin: 28px 0 12px; padding: 0 0 0 12px; border-left: 3px solid #ff6b4a; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #2b1a10; line-height: 1.85;",
+    "blockquote": "margin: 24px 0; padding: 18px 22px; background: #fff0e6; border-left: 4px solid #ff6b4a; color: #5a3722; font-size: 14.5px; border-radius: 0 8px 8px 0; line-height: 1.85; letter-spacing: 0.3px;",
+    "img": "max-width: 100%; height: auto; border-radius: 10px; margin: 24px auto; display: block; box-shadow: 0 8px 24px rgba(255,107,74,0.12); border: 1px solid #ffe0d0;",
+    "strong": "color: #c43a1a; font-weight: 800; background: linear-gradient(180deg, transparent 60%, #ffdbaa 60%, #ffdbaa 95%, transparent 95%); padding: 1px 6px;",
+    "em": "font-style: italic; color: #8a5738;",
+    "code_inline": "background: #fff0e6; color: #c43a1a; padding: 2px 8px; border-radius: 4px; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', 'SF Mono', monospace; border: 1px solid #ffd4be;",
+    "code_block": "background: #2b1a10; color: #ffe8dd; padding: 16px 18px; border-radius: 10px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.85; color: #2b1a10; font-weight: 400;",
+    "li_bullet": "color: #ff6b4a; font-weight: 900; font-size: 13px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "●",
+    "li_number": "color: #ff6b4a; font-weight: 800; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #ff6b4a, transparent); margin: 38px 0; opacity: 0.5;",
+    "a": "color: #c43a1a; text-decoration: none; border-bottom: 1px solid rgba(196,58,26,0.4); padding-bottom: 1px;",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border-radius: 8px; overflow: hidden; border: 1px solid #ffd4be; table-layout: fixed; word-break: break-word;",
+    "th": "background: #ff6b4a; color: #ffffff; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #ffe8dd; color: #2b1a10; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #a07862; text-align: center; margin-top: 10px; letter-spacing: 0.5px; font-style: italic;",
+    "section_divider": "text-align: center; color: #ff6b4a; letter-spacing: 14px; font-size: 13px; margin: 36px 0; user-select: none; opacity: 0.7;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 55%, #ffe8a8 55%); color: #2b1a10; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #dbe4ff; color: #1e2a8a; padding: 2px 7px; border-radius: 3px; font-weight: 500;",
+    "hl_pink": "background: #ffd4e0; color: #a81f5a; padding: 2px 7px; border-radius: 3px; font-weight: 500;",
+    "hl_green": "background: #d7f5e2; color: #167a44; padding: 2px 7px; border-radius: 3px; font-weight: 500;",
+    "em_red": "color: #c43a1a; font-weight: 700;",
+    "em_blue": "color: #2e5bff; font-weight: 700;",
+    "em_orange": "color: #ff6b4a; font-weight: 800;"
+  },
+  "section_divider_text": "✦ ✦ ✦",
+  "code_colors": {
+    "kw": "color: #ff9870; font-weight: 600;",
+    "str": "color: #ffc870;",
+    "num": "color: #ffd8a8;",
+    "fn": "color: #ff87a0;",
+    "cls": "color: #d8a0e0;",
+    "comm": "color: #a88670; font-style: italic;",
+    "punct": "color: #e8c5a8;"
+  },
+  "list_style": {
+    "label": "A · 珊瑚圆章",
+    "num_container": "display: inline-block; background: linear-gradient(135deg,#ff6b4a,#ffa570); color: #ffffff; font-weight: 800; font-size: 11px; min-width: 24px; height: 22px; line-height: 22px; text-align: center; border-radius: 11px; margin-right: 12px; vertical-align: 2px; box-shadow: 0 2px 6px rgba(255,107,74,0.3);",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "padded",
+    "bullet_container": "display: inline-block; width: 7px; height: 7px; background: linear-gradient(135deg,#ff6b4a,#ffa570); border-radius: 50%; margin-right: 12px; vertical-align: 3px;",
+    "bullet_char": ""
+  }
+}

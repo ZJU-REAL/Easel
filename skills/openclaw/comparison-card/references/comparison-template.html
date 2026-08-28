@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A vs B 对比卡片</title>
+<style>
+  /* ========== 基础重置 ========== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ========== 卡片容器 ========== */
+  /* 默认小红书尺寸 1080x1440，可通过 JS 切换 */
+  .card-container {
+    width: 1080px;
+    height: 1440px;
+    background: linear-gradient(135deg, #f8f9fc 0%, #e8ecf4 100%);
+    font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    padding: 60px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* 尺寸预设 */
+  .card-container.size-weibo    { width: 1080px; height: 1080px; padding: 48px; }
+  .card-container.size-wechat   { width: 1080px; height: 1920px; padding: 64px; }
+
+  /* ========== 标题区 ========== */
+  .card-header {
+    text-align: center;
+    margin-bottom: 40px;
+    flex-shrink: 0;
+  }
+  .card-header .badge {
+    display: inline-block;
+    background: #6366f1;
+    color: #fff;
+    font-size: 22px;
+    font-weight: 600;
+    padding: 8px 28px;
+    border-radius: 24px;
+    margin-bottom: 20px;
+    letter-spacing: 2px;
+  }
+  .card-header h1 {
+    font-size: 52px;
+    font-weight: 800;
+    color: #1e293b;
+    letter-spacing: 2px;
+  }
+  .card-header h1 .vs {
+    display: inline-block;
+    color: #6366f1;
+    margin: 0 12px;
+    font-style: italic;
+  }
+  .card-header .subtitle {
+    font-size: 24px;
+    color: #64748b;
+    margin-top: 12px;
+  }
+
+  /* ========== 对比表格 ========== */
+  .comparison-table {
+    flex: 1;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #fff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+  }
+
+  .comparison-table thead th {
+    padding: 28px 24px;
+    font-size: 26px;
+    font-weight: 700;
+    text-align: center;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .comparison-table thead th:first-child {
+    text-align: left;
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 22px;
+    width: 25%;
+  }
+  .comparison-table thead th.item-a {
+    background: #eff6ff;
+    color: #2563eb;
+  }
+  .comparison-table thead th.item-b {
+    background: #fef3f2;
+    color: #dc2626;
+  }
+
+  .comparison-table tbody tr {
+    transition: background 0.2s;
+  }
+  .comparison-table tbody tr:nth-child(even) {
+    background: #f8fafc;
+  }
+  .comparison-table tbody td {
+    padding: 22px 24px;
+    font-size: 24px;
+    text-align: center;
+    color: #334155;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+  }
+  .comparison-table tbody td:first-child {
+    text-align: left;
+    font-weight: 600;
+    color: #475569;
+    font-size: 22px;
+  }
+
+  /* 胜出高亮 */
+  .comparison-table tbody td.winner {
+    color: #16a34a;
+    font-weight: 700;
+    position: relative;
+  }
+  .comparison-table tbody td.winner::after {
+    content: " ✓";
+    font-size: 18px;
+  }
+
+  /* ========== VS 布局（两栏对称） ========== */
+  .versus-layout {
+    flex: 1;
+    display: flex;
+    gap: 24px;
+    align-items: stretch;
+  }
+  .versus-layout .side {
+    flex: 1;
+    background: #fff;
+    border-radius: 20px;
+    padding: 40px 32px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+  }
+  .versus-layout .side-a { border-top: 6px solid #2563eb; }
+  .versus-layout .side-b { border-top: 6px solid #dc2626; }
+  .versus-layout .side h2 {
+    font-size: 36px;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .versus-layout .side-a h2 { color: #2563eb; }
+  .versus-layout .side-b h2 { color: #dc2626; }
+  .versus-layout .side .spec-list {
+    list-style: none;
+    flex: 1;
+  }
+  .versus-layout .side .spec-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 24px;
+    color: #334155;
+  }
+  .versus-layout .side .spec-list li .label {
+    color: #94a3b8;
+    font-size: 20px;
+  }
+  .versus-layout .side .spec-list li .value {
+    font-weight: 600;
+  }
+  .versus-divider {
+    width: 4px;
+    background: linear-gradient(180deg, #2563eb, #6366f1, #dc2626);
+    border-radius: 4px;
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+
+  /* ========== 优劣势布局 ========== */
+  .pros-cons-layout {
+    flex: 1;
+    display: flex;
+    gap: 24px;
+  }
+  .pros-cons-layout .column {
+    flex: 1;
+    background: #fff;
+    border-radius: 20px;
+    padding: 36px 28px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+  }
+  .pros-cons-layout .column h3 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  .pros-cons-layout .pros h3 { color: #16a34a; }
+  .pros-cons-layout .cons h3 { color: #dc2626; }
+  .pros-cons-layout .column ul {
+    list-style: none;
+  }
+  .pros-cons-layout .column ul li {
+    padding: 14px 0;
+    font-size: 24px;
+    color: #334155;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .pros-cons-layout .pros li::before {
+    content: "✅";
+    flex-shrink: 0;
+  }
+  .pros-cons-layout .cons li::before {
+    content: "❌";
+    flex-shrink: 0;
+  }
+
+  /* ========== 底部信息 ========== */
+  .card-footer {
+    flex-shrink: 0;
+    margin-top: 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 18px;
+    color: #94a3b8;
+  }
+  .card-footer .source { font-style: italic; }
+  .card-footer .watermark { font-weight: 600; color: #cbd5e1; }
+
+  /* ========== 风格变体 ========== */
+  /* tech 风格 */
+  .card-container.style-tech {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  }
+  .card-container.style-tech .card-header h1 { color: #f1f5f9; }
+  .card-container.style-tech .card-header .subtitle { color: #64748b; }
+  .card-container.style-tech .comparison-table {
+    background: #1e293b;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  .card-container.style-tech .comparison-table thead th { border-bottom-color: #334155; }
+  .card-container.style-tech .comparison-table tbody td { color: #e2e8f0; border-bottom-color: #334155; }
+  .card-container.style-tech .comparison-table tbody td:first-child { color: #94a3b8; }
+  .card-container.style-tech .comparison-table tbody tr:nth-child(even) { background: #0f172a; }
+  .card-container.style-tech .card-footer { color: #475569; }
+
+  /* dark 风格 */
+  .card-container.style-dark {
+    background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+  }
+  .card-container.style-dark .card-header h1 { color: #fafafa; }
+  .card-container.style-dark .card-header .badge { background: #a78bfa; }
+  .card-container.style-dark .comparison-table { background: #27272a; }
+  .card-container.style-dark .comparison-table tbody td { color: #d4d4d8; border-bottom-color: #3f3f46; }
+  .card-container.style-dark .comparison-table thead th { border-bottom-color: #3f3f46; }
+
+  /* warm 风格 */
+  .card-container.style-warm {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  }
+  .card-container.style-warm .card-header .badge { background: #f59e0b; }
+  .card-container.style-warm .card-header h1 .vs { color: #f59e0b; }
+</style>
+</head>
+<body>
+
+<!-- ============================== -->
+<!-- 布局 1: 经典对比表格 (table)     -->
+<!-- ============================== -->
+<div class="card-container" id="table-layout">
+  <div class="card-header">
+    <span class="badge">参数对比</span>
+    <h1>产品 A <span class="vs">vs</span> 产品 B</h1>
+    <p class="subtitle">核心参数一图看清</p>
+  </div>
+
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>对比维度</th>
+        <th class="item-a">产品 A</th>
+        <th class="item-b">产品 B</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>价格</td>
+        <td class="winner">¥2,999</td>
+        <td>¥3,499</td>
+      </tr>
+      <tr>
+        <td>处理器</td>
+        <td>骁龙 8 Gen3</td>
+        <td class="winner">A17 Pro</td>
+      </tr>
+      <tr>
+        <td>内存</td>
+        <td class="winner">16GB</td>
+        <td>8GB</td>
+      </tr>
+      <tr>
+        <td>屏幕</td>
+        <td>6.7" AMOLED 120Hz</td>
+        <td class="winner">6.7" OLED 120Hz ProMotion</td>
+      </tr>
+      <tr>
+        <td>电池</td>
+        <td class="winner">5500mAh</td>
+        <td>4422mAh</td>
+      </tr>
+      <tr>
+        <td>快充</td>
+        <td class="winner">120W</td>
+        <td>27W</td>
+      </tr>
+      <tr>
+        <td>重量</td>
+        <td class="winner">189g</td>
+        <td>221g</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="card-footer">
+    <span class="source">数据来源：官方参数 | 2026-07</span>
+    <span class="watermark">Easel</span>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "easel"
+version = "0.0.1"
+description = "社媒内容工作流整合层 — Easel CLI"
+requires-python = ">=3.10"
+# 核心依赖：CLI + Web 后端 + 对话流。`pip install -e .`（setup.sh 会跑）即可跑通聊天/Web/文本类 SKILL。
+dependencies = [
+    "fastapi",        # Web 后端
+    "uvicorn",        # ASGI server（easel web）
+    "sse-starlette",  # 对话流式 SSE
+    "pydantic",       # 请求模型
+    "segno",          # B站扫码登录二维码渲染（纯 Python）
+]
+
+# 媒体 / 发布类 SKILL 才需要，默认不装以保持核心安装轻量：
+#   pip install -e ".[media]"
+# 另需系统 ffmpeg，以及浏览器发布用 `playwright install chromium`（见 README）。
+[project.optional-dependencies]
+media = [
+    "Pillow", "opencv-python", "numpy", "pandas", "matplotlib", "librosa",
+    "faster-whisper", "edge-tts",
+    "playwright", "rembg", "biliup",
+    "jieba", "snownlp", "markdown",
+]
+
+[project.scripts]
+easel = "easel.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["easel*"]

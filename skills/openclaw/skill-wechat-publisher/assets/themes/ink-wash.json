@@ -1,0 +1,58 @@
+{
+  "theme_name": "ink-wash",
+  "description": "古风水墨 - 米黄纸 + 朱砂宋体,中式留白美学,适合传统文化 / 人文 / 诗意随笔",
+  "styles": {
+    "body": "font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'PingFang SC', serif; font-size: 16px; color: #2b2420; line-height: 2.0; letter-spacing: 0.8px; word-spacing: 2px; padding: 20px 22px; background: #f8f3e8;",
+    "h1": "font-size: 24px; font-weight: 700; color: #2b2420; text-align: center; margin: 40px 0 28px; padding: 0 0 18px 0; letter-spacing: 6px; line-height: 1.5; border-bottom: 1px solid #bfa273;",
+    "h2": "font-size: 19px; font-weight: 700; color: #8b2a1f; margin: 40px 0 20px; padding: 0; line-height: 1.6; letter-spacing: 2px;",
+    "h3": "font-size: 16.5px; font-weight: 700; color: #2b2420; margin: 30px 0 14px; padding: 0 0 0 14px; border-left: 3px solid #8b2a1f; letter-spacing: 1px;",
+    "p": "margin: 18px 0; text-indent: 0; text-align: justify; color: #2b2420; line-height: 2.05;",
+    "blockquote": "margin: 28px 0; padding: 20px 24px; background: #efe7d4; border-left: 3px solid #8b2a1f; color: #4a3d33; font-size: 15px; border-radius: 0; line-height: 2.0; letter-spacing: 0.6px;",
+    "img": "max-width: 100%; height: auto; border-radius: 2px; margin: 28px auto; display: block; box-shadow: 0 4px 18px rgba(43,36,32,0.1); border: 1px solid #d8ccae;",
+    "strong": "color: #8b2a1f; font-weight: 700; border-bottom: 1px solid #c9a27d; padding: 0 2px;",
+    "em": "font-style: italic; color: #6a4e3c;",
+    "code_inline": "background: #efe7d4; color: #8b2a1f; padding: 2px 7px; border-radius: 2px; font-size: 13.5px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; border: 1px solid #d8ccae;",
+    "code_block": "background: #2b2420; color: #f0e6d0; padding: 16px 18px; border-radius: 2px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 26px 0; border: none; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 20px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 20px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 12px 0; line-height: 2.0; color: #2b2420; font-weight: 400;",
+    "li_bullet": "color: #8b2a1f; font-weight: 700; font-size: 15px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "·",
+    "li_number": "color: #8b2a1f; font-weight: 700; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: #8b2a1f; margin: 42px 0; opacity: 0.3;",
+    "a": "color: #8b2a1f; text-decoration: none; border-bottom: 1px solid rgba(139,42,31,0.5);",
+    "table": "width: 100%; border-collapse: collapse; margin: 26px 0; font-size: 14.5px; border-top: 2px solid #2b2420; border-bottom: 2px solid #2b2420; table-layout: fixed; word-break: break-word;",
+    "th": "background: transparent; color: #2b2420; padding: 10px 8px; text-align: left; font-weight: 700; font-size: 12.5px; border-bottom: 1px solid #2b2420; letter-spacing: 1px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #d8ccae; color: #2b2420; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 13px; color: #8a7968; text-align: center; margin-top: 12px; letter-spacing: 1px; font-style: italic;",
+    "section_divider": "text-align: center; color: #8b2a1f; letter-spacing: 18px; font-size: 14px; margin: 42px 0; user-select: none; opacity: 0.5;"
+  },
+  "highlights": {
+    "hl_yellow": "background: #f4e7b8; color: #2b2420; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_blue": "background: #dde2e8; color: #2a3854; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_pink": "background: #f2d8d0; color: #8b2a1f; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_green": "background: #d8dfc8; color: #3e4d22; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "em_red": "color: #8b2a1f; font-weight: 700;",
+    "em_blue": "color: #2a4a6a; font-weight: 700;",
+    "em_orange": "color: #b5601c; font-weight: 700;"
+  },
+  "section_divider_text": "山  水  间",
+  "code_colors": {
+    "kw": "color: #e8a87c; font-weight: 600;",
+    "str": "color: #c9d8a0;",
+    "num": "color: #f0b35b;",
+    "fn": "color: #d4a5a5;",
+    "cls": "color: #c9b27a;",
+    "comm": "color: #867a6e; font-style: italic;",
+    "punct": "color: #c8b9a0;"
+  },
+  "list_style": {
+    "label": "A · 朱砂汉字",
+    "num_container": "display: inline-block; background: #8b2a1f; color: #f8f3e8; font-weight: 700; font-size: 13px; min-width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 2px; margin-right: 12px; vertical-align: 1px; font-family: 'KaiTi','STKaiti','楷体',serif;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "chinese",
+    "bullet_container": "display: inline-block; color: #8b2a1f; font-size: 14px; margin-right: 12px; font-family: 'KaiTi','STKaiti',serif; font-weight: 700;",
+    "bullet_char": "※"
+  }
+}

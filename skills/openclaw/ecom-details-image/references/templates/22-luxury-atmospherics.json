@@ -1,0 +1,40 @@
+{
+  "id": "luxury-atmospherics",
+  "name": "奢华氛围渲染",
+  "keywords": ["奢华", "氛围", "烟雾", "高级感", "luxury", "atmospheric", "梦幻", "高端", "premium", "烟雾效果", "金色"],
+  "trigger_phrases": ["奢华氛围", "高端渲染", "梦幻效果", "luxury campaign", "氛围渲染", "高端广告", "品牌大片", "premium visual"],
+  "prompt_template": {
+    "type": "luxury product photography with atmospheric effects",
+    "subject": "{product_description}",
+    "surface": "polished dark reflective surface",
+    "atmosphere": "wisps of smoke, floating petals, light particles",
+    "lighting": "dramatic rim light + cool ambient fill",
+    "background": "infinite dark void with subtle gradient",
+    "quality": "8K, award-winning luxury advertising photography"
+  },
+  "defaults": {
+    "surface": "polished obsidian or black marble platform",
+    "atmosphere": "purple-blue smoke wisps + floating elements",
+    "lighting": "golden rim light from upper-left, cool blue backlight"
+  },
+  "variants": {
+    "floral-dream": { "description": "花卉梦幻", "overrides": { "atmosphere": "fresh flower petals floating at various heights catching light, scattered gold leaf particles" } },
+    "smoke-mystique": { "description": "烟雾神秘", "overrides": { "atmosphere": "multi-layered violet and midnight blue smoke swirling around product" } },
+    "golden-luxe": { "description": "金色奢华", "overrides": { "atmosphere": "golden bokeh particles, warm amber glow, scattered gold flakes" } },
+    "ice-crystal": { "description": "冰晶冷冽", "overrides": { "atmosphere": "floating ice crystals, frost patterns, diamond-like light refractions", "lighting": "cool platinum spotlight, ice-blue ambient" } }
+  },
+  "category_tips": {
+    "fragrance": "multi-layer smoke + matching botanical elements, amber liquid visible inside",
+    "skincare": "ethereal glow around product, subtle condensation, dreamy quality",
+    "jewelry": "diamond-like light bokeh, dark background, sparkle and reflection focus",
+    "wine": "rich amber or ruby liquid, smoke wisps matching color, candlelight warmth",
+    "chocolate": "warm golden particles, cocoa powder dust, rich dark tones",
+    "watch": "sharp metallic reflections, precise time visible, ice-blue or golden accent"
+  },
+  "examples": [
+    "Luxury product photography with atmospheric effects. {product} on polished dark surface, surrounded by wisps of purple-blue smoke. Dramatic rim light. Deep black background. 8K, cinematic quality",
+    "Premium atmospheric product rendering. {product} on black marble veined with gold. Floating flower petals and gold leaf particles. Multi-point lighting: golden rim light + cool backlight. Dark void background, 8K"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

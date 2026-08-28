@@ -1,0 +1,40 @@
+{
+  "id": "exploded-view",
+  "name": "技术拆解/爆炸图",
+  "keywords": ["拆解图", "爆炸图", "exploded view", "技术图", "结构图", "内部结构", "拆机", "teardown", "cross-section"],
+  "trigger_phrases": ["产品拆解", "爆炸图", "内部结构", "技术拆解", "exploded view", "产品组件", "零件展示"],
+  "prompt_template": {
+    "type": "technical product exploded view",
+    "subject": "{product_description}",
+    "components": "{component_list}",
+    "arrangement": "vertical stack with increasing spacing",
+    "background": "clean light gray or white",
+    "labels": "thin leader lines to callout labels with name and key spec",
+    "quality": "8K, technical illustration, precise component rendering"
+  },
+  "defaults": {
+    "arrangement": "vertical exploded stack",
+    "background": "clean light gray",
+    "labels": "component name + material + core spec"
+  },
+  "variants": {
+    "blueprint": { "description": "蓝图风格", "overrides": { "background": "dark charcoal with cyan grid lines", "labels": "white and gold typography, blueprint aesthetic" } },
+    "minimal": { "description": "极简白底", "overrides": { "background": "pure white, no grid", "labels": "minimal black text, thin gray leader lines" } },
+    "apple-style": { "description": "Apple产品拆解风格", "overrides": { "arrangement": "isometric floating with precise spacing", "background": "deep gradient from charcoal to black", "labels": "elegant sans-serif, golden accent lines" } },
+    "editorial": { "description": "杂志编辑风格", "overrides": { "background": "warm off-white with subtle texture", "labels": "serif font callouts, hand-drawn arrow style" } }
+  },
+  "category_tips": {
+    "electronics": "highlight circuit boards, chips, battery modules with spec labels",
+    "audio": "show speaker drivers, diaphragms, ANC modules, battery size",
+    "wearables": "include sensors, display panel, waterproof seals, strap mechanism",
+    "home_appliance": "show motor, filter system, internal wiring, control board",
+    "phone_accessories": "highlight charging coils, magnet arrays, protective layers",
+    "camera": "show lens elements, sensor, image processor, stabilization unit"
+  },
+  "examples": [
+    "Product exploded view. {product} disassembled into 5 components floating in mid-air with spacing, arranged vertically. Clean light gray background. Soft shadows beneath each part. Technical illustration style, 8K, no text",
+    "{product} technical exploded view infographic. Components floating in isometric arrangement with thin connecting lines. Each component labeled with name and key spec. Clean white background, blueprint-inspired accent lines, 8K"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

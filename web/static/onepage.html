@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easel</title>
+<link rel="icon" type="image/png" href="easel-icon-transparent.png">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;--mono:"SF Mono","JetBrains Mono",monospace}
+html{scroll-behavior:smooth}
+body{background:#030305;color:#e8e8ec;font-family:var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::selection{background:rgba(120,80,255,.3)}
+
+/* Grain overlay */
+body::after{content:'';position:fixed;inset:0;pointer-events:none;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");z-index:9999}
+
+.w{max-width:1400px;margin:0 auto;padding:0 4rem}
+
+/* ========== HERO ========== */
+.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;position:relative;overflow:hidden;padding:4rem 0}
+
+/* Animated mesh background */
+.hero-bg{position:absolute;inset:0;overflow:hidden}
+.hero-bg .orb{position:absolute;border-radius:50%;filter:blur(100px);animation:float 20s ease-in-out infinite;will-change:transform}
+.orb-1{width:900px;height:900px;background:radial-gradient(circle,rgba(99,60,255,.25),transparent 70%);top:-20%;left:-15%;animation-delay:0s}
+.orb-2{width:700px;height:700px;background:radial-gradient(circle,rgba(0,200,255,.15),transparent 70%);bottom:-20%;right:-10%;animation-delay:-7s}
+.orb-3{width:500px;height:500px;background:radial-gradient(circle,rgba(255,50,150,.12),transparent 70%);top:20%;right:15%;animation-delay:-13s}
+@keyframes float{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(30px,-40px) scale(1.05)}66%{transform:translate(-20px,30px) scale(.95)}}
+
+/* Grid lines */
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:80px 80px;mask-image:radial-gradient(ellipse 60% 50% at 50% 50%,black,transparent)}
+
+.hero-content{position:relative;z-index:2;max-width:1000px}
+
+.hero-pill{display:inline-flex;align-items:center;gap:.6rem;padding:.5rem 1.4rem .5rem 1rem;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:100px;font-size:.85rem;letter-spacing:.04em;color:rgba(255,255,255,.5);margin-bottom:3rem;backdrop-filter:blur(12px)}
+.hero-pill-glow{width:6px;height:6px;border-radius:50%;background:#7c5aff;box-shadow:0 0 8px #7c5aff,0 0 20px rgba(124,90,255,.3);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.8)}}
+
+.hero h1{font-size:11vw;font-weight:800;letter-spacing:-.06em;line-height:.85;margin-bottom:2rem;position:relative;text-align:center}
+.hero h1 .line2{display:block;margin-top:.05em;font-size:.4em;letter-spacing:-.02em;text-align:center}
+
+/* 主标题动态渐变 */
+.g1{background:linear-gradient(135deg,#7c5aff 0%,#00c8ff 30%,#ff5caa 60%,#7c5aff 100%);background-size:300% 300%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:gradShift 6s ease-in-out infinite}
+@keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+
+/* 标题辉光 */
+.hero h1::after{content:'Easel';position:absolute;top:0;left:0;right:0;font-size:inherit;font-weight:inherit;letter-spacing:inherit;line-height:inherit;text-align:center;background:linear-gradient(135deg,#7c5aff,#00c8ff,#ff5caa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:blur(40px);opacity:.4;pointer-events:none;z-index:-1}
+
+.g2{color:rgba(255,255,255,.2);letter-spacing:-.02em}
+
+.hero-p{font-size:1.5rem;color:rgba(255,255,255,.45);max-width:650px;margin:0 auto;line-height:1.8;font-weight:350}
+.hero-p strong{color:rgba(255,255,255,.8);font-weight:500}
+
+/* ========== SECTION ========== */
+.sec{padding:4rem 0;position:relative}
+.sec-line{height:1px;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.08) 20%,rgba(124,90,255,.15) 50%,rgba(255,255,255,.08) 80%,transparent 100%);margin:1rem auto;max-width:90%}
+
+.tag{font-size:.75rem;text-transform:uppercase;letter-spacing:.15em;color:rgba(124,90,255,.7);font-weight:700;margin-bottom:1.25rem}
+h2{font-size:3.5rem;font-weight:750;letter-spacing:-.04em;line-height:1.1;margin-bottom:1.5rem}
+.sub{color:rgba(255,255,255,.4);font-size:1.2rem;line-height:1.9;max-width:800px;font-weight:350}
+.sub strong{color:rgba(255,255,255,.75);font-weight:500}
+
+/* ========== GLASS CARDS ========== */
+.glass{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:20px;backdrop-filter:blur(16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.glass:hover{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);transform:translateY(-4px);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+
+/* ========== BENTO ========== */
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin:2.5rem 0}
+.bento .b1{grid-column:span 7}
+.bento .b2{grid-column:span 5}
+.bento .b3{grid-column:span 5}
+.bento .b4{grid-column:span 7}
+.bento-card{padding:2.5rem;position:relative;overflow:hidden}
+.bento-card::before{content:'';position:absolute;top:0;right:0;width:250px;height:250px;background:radial-gradient(circle,rgba(124,90,255,.06),transparent 70%);pointer-events:none}
+.bento-emoji{font-size:2.5rem;margin-bottom:1.25rem;display:block}
+.bento-h{font-size:1.4rem;font-weight:650;margin-bottom:.6rem;letter-spacing:-.01em}
+.bento-p{color:rgba(255,255,255,.4);font-size:1.05rem;line-height:1.75;font-weight:350}
+
+/* ========== ARCH ========== */
+.arch-outer{position:relative;margin:2.5rem 0;border-radius:20px;padding:1px;background:linear-gradient(135deg,rgba(124,90,255,.3),rgba(0,200,255,.1),rgba(255,92,170,.1),rgba(124,90,255,.05))}
+
+/* V2 架构图 */
+.arch-inner-v2{background:#060608;border-radius:19px;overflow:hidden}
+.arch-inner-v2 .a{color:#7c5aff;font-weight:600;font-size:1.1rem}
+.arch-inner-v2 .b{color:#00c8ff;font-weight:600;font-size:1rem}
+.arch-inner-v2 .c{color:rgba(255,255,255,.25);font-size:.8rem}
+.arch-header{padding:1.75rem 2.25rem;border-bottom:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:.4rem}
+.arch-footer{padding:1rem 2.25rem;border-top:1px solid rgba(255,255,255,.06);text-align:center}
+.arch-body{padding:1rem}
+.arch-layers{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:rgba(255,255,255,.04);border-radius:12px;overflow:hidden}
+.arch-layer{background:#060608;padding:1.25rem;display:flex;flex-direction:column;gap:.6rem;transition:all .3s ease}
+.arch-layer:hover{background:rgba(255,255,255,.03)}
+.arch-layer.layer-discover{background:rgba(0,200,255,.03)}
+.arch-layer.layer-discover:hover{background:rgba(0,200,255,.06)}
+.arch-layer.layer-plan{background:rgba(0,255,163,.03)}
+.arch-layer.layer-plan:hover{background:rgba(0,255,163,.06)}
+.arch-layer.layer-produce{background:rgba(124,90,255,.04)}
+.arch-layer.layer-produce:hover{background:rgba(124,90,255,.07)}
+.arch-layer.layer-publish{background:rgba(255,170,0,.03)}
+.arch-layer.layer-publish:hover{background:rgba(255,170,0,.06)}
+.arch-layer.layer-attribute{background:rgba(255,92,170,.03)}
+.arch-layer.layer-attribute:hover{background:rgba(255,92,170,.06)}
+.arch-layer-name{font-size:.85rem}
+.arch-layer-desc{color:rgba(255,255,255,.3);font-size:.78rem;line-height:1.5}
+.arch-layer-features{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.25rem}
+.arch-feat{padding:.2rem .55rem;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;font-size:.68rem;color:rgba(255,255,255,.4);white-space:nowrap;transition:all .2s}
+.arch-feat:hover{border-color:rgba(124,90,255,.3);color:rgba(255,255,255,.6)}
+.arch-feat.hot{background:rgba(124,90,255,.08);border-color:rgba(124,90,255,.2);color:rgba(124,90,255,.8)}
+
+/* 保留旧的以防其他地方用 */
+.arch-inner{background:#060608;border-radius:19px;padding:2.75rem;font-family:var(--mono);font-size:.9rem;line-height:2.2;color:rgba(255,255,255,.35);white-space:pre;overflow-x:auto}
+.arch-inner .a{color:#7c5aff;font-weight:600}
+.arch-inner .b{color:#00c8ff}
+.arch-inner .c{color:rgba(255,255,255,.15)}
+
+/* ========== COMPARE ========== */
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:2.5rem 0}
+.cmp-card{padding:2.25rem;position:relative}
+.cmp-card::after{content:'';position:absolute;bottom:0;left:2.25rem;right:2.25rem;height:1px;background:linear-gradient(90deg,transparent,rgba(124,90,255,.2),transparent)}
+.cmp-vs{font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.2);margin-bottom:1rem;font-weight:700}
+.cmp-h{font-size:1.2rem;font-weight:650;margin-bottom:.6rem;background:linear-gradient(135deg,#e8e8ec,rgba(255,255,255,.6));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.cmp-p{color:rgba(255,255,255,.35);font-size:1rem;line-height:1.75;font-weight:350}
+
+/* ========== VISION ========== */
+.vision{position:relative;margin:2.5rem 0;padding:3.5rem;border-radius:20px;overflow:hidden}
+.vision::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(124,90,255,.06),rgba(0,200,255,.03));border:1px solid rgba(255,255,255,.05);border-radius:20px}
+.vision::after{content:'';position:absolute;top:-100px;right:-100px;width:500px;height:500px;background:radial-gradient(circle,rgba(124,90,255,.1),transparent 60%);filter:blur(40px);pointer-events:none}
+.vision-text{position:relative;z-index:1;color:rgba(255,255,255,.45);font-size:1.25rem;line-height:2;font-weight:350;max-width:850px}
+.vision-text strong{color:rgba(255,255,255,.8);font-weight:500}
+
+/* ========== FOOTER ========== */
+.foot{padding:5rem 0 3rem;text-align:center}
+.foot-logo{font-size:2rem;font-weight:800;letter-spacing:-.03em;background:linear-gradient(135deg,#7c5aff,#00c8ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem}
+.foot-info{color:rgba(255,255,255,.3);font-size:.95rem;line-height:1.8}
+.foot-line{color:rgba(255,255,255,.12);font-size:.7rem;margin-top:2.5rem;letter-spacing:.08em;text-transform:uppercase}
+
+/* ========== RESPONSIVE ========== */
+@media(max-width:768px){
+  .hero h1{font-size:14vw}
+  .hero-p{font-size:1.1rem}
+  .bento{grid-template-columns:1fr}
+  .bento .b1,.bento .b2,.bento .b3,.bento .b4{grid-column:span 1}
+  .cmp{grid-template-columns:1fr}
+  h2{font-size:2.2rem}
+  .w{padding:0 1.5rem}
+}
+/* Particle canvas */
+#particles{position:fixed;inset:0;z-index:0;pointer-events:none}
+.hero,.sec,.foot{position:relative;z-index:1}
+
+/* 背景色彩光斑 — 固定在页面各处 */
+.bg-blobs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.bg-blobs .blob{position:absolute;border-radius:50%;filter:blur(120px);opacity:.035;animation:blobDrift 30s ease-in-out infinite alternate}
+.blob-a{width:50vw;height:50vw;background:#7c5aff;top:10%;left:-10%;animation-delay:0s}
+.blob-b{width:40vw;height:40vw;background:#00c8ff;top:35%;right:-8%;animation-delay:-8s}
+.blob-c{width:45vw;height:45vw;background:#ff5caa;top:60%;left:5%;animation-delay:-16s}
+.blob-d{width:35vw;height:35vw;background:#00ffa3;top:80%;right:10%;animation-delay:-22s}
+.blob-e{width:30vw;height:30vw;background:#ffaa00;top:25%;left:40%;animation-delay:-12s}
+@keyframes blobDrift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-30px) scale(1.1)}100%{transform:translate(-30px,50px) scale(.9)}}
+</style>
+</head>
+<body>
+<div class="bg-blobs">
+  <div class="blob blob-a"></div>
+  <div class="blob blob-b"></div>
+  <div class="blob blob-c"></div>
+  <div class="blob blob-d"></div>
+  <div class="blob blob-e"></div>
+</div>
+<canvas id="particles"></canvas>
+
+<script>
+(function(){
+  const canvas = document.getElementById('particles');
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [], mouse = {x:null, y:null};
+  const COUNT = 180;
+  const CONNECT_DIST = 120;
+  const MOUSE_DIST = 200;
+  const COLORS = ['rgba(124,90,255,','rgba(0,200,255,','rgba(255,92,170,'];
+
+  function resize(){
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = document.documentElement.scrollHeight;
+  }
+
+  function createParticle(){
+    const color = COLORS[Math.floor(Math.random()*COLORS.length)];
+    return {
+      x: Math.random()*W,
+      y: Math.random()*H,
+      vx: (Math.random()-.5)*.3,
+      vy: (Math.random()-.5)*.3,
+      r: Math.random()*2+.5,
+      color: color,
+      alpha: Math.random()*.5+.1,
+    };
+  }
+
+  function init(){
+    resize();
+    particles = [];
+    for(let i=0;i<COUNT;i++) particles.push(createParticle());
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    const scrollY = window.scrollY;
+
+    for(let i=0;i<particles.length;i++){
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // Wrap around
+      if(p.x<0) p.x=W;
+      if(p.x>W) p.x=0;
+      if(p.y<0) p.y=H;
+      if(p.y>H) p.y=0;
+
+      // Mouse repel
+      if(mouse.x !== null){
+        const mx = mouse.x;
+        const my = mouse.y + scrollY;
+        const dx = p.x - mx;
+        const dy = p.y - my;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if(dist < MOUSE_DIST){
+          const force = (MOUSE_DIST - dist) / MOUSE_DIST * .02;
+          p.vx += dx * force;
+          p.vy += dy * force;
+        }
+      }
+
+      // Damping
+      p.vx *= .99;
+      p.vy *= .99;
+
+      // Draw particle
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fillStyle = p.color + p.alpha + ')';
+      ctx.fill();
+
+      // Connect nearby particles
+      for(let j=i+1;j<particles.length;j++){
+        const q = particles[j];
+        const dx = p.x-q.x;
+        const dy = p.y-q.y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if(dist < CONNECT_DIST){
+          const opacity = (1 - dist/CONNECT_DIST) * .08;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          ctx.strokeStyle = p.color + opacity + ')';
+          ctx.lineWidth = .5;
+          ctx.stroke();
+        }
+      }
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+  window.addEventListener('mouseout', () => { mouse.x=null; mouse.y=null; });
+  window.addEventListener('resize', () => { resize(); });
+  window.addEventListener('scroll', () => {
+    // Resize canvas to match scroll height
+    const newH = document.documentElement.scrollHeight;
+    if(Math.abs(H-newH)>100){ H=canvas.height=newH; }
+  });
+
+  init();
+  draw();
+})();
+</script>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-pill"><span class="hero-pill-glow"></span>AI-Powered Content Workflow</div>
+    <h1>
+      <span class="g1">Easel</span>
+      <span class="line2 g2">for Creators</span>
+    </h1>
+    <p class="hero-p">给社媒创作者一个<strong>「越用越懂我」</strong>的 AI 内容工厂<br>从热点发现到成片发布，全链路个性化生产</p>
+  </div>
+</header>
+
+<!-- WHY -->
+<div class="sec-line"></div>
+<section class="sec">
+  <div class="w">
+    <div class="tag">Problem</div>
+    <h2>通用 AI 对创作者<br>是<span class="g1">半成品</span></h2>
+    <p class="sub">
+      今天一个博主想用 AI 做内容，要在蝉妈妈找热点、ChatGPT 写脚本、剪映剪视频、Canva 做封面，然后手动适配小红书竖屏、B站横屏、抖音 15 秒节奏——每个环节断开，每次从零开始。GPT Work 和 Claude Cowork 确实强大，但它们是通用 Agent，<strong>不知道你的账号是什么风格、受众喜欢什么、哪些词在小红书会被限流</strong>。Easel 把这些通用能力特化到社媒场景，用用户画像把所有环节串起来。
+    </p>
+  </div>
+</section>
+
+<!-- WHAT -->
+<div class="sec-line"></div>
+<section class="sec">
+  <div class="w">
+    <div class="tag">Solution</div>
+    <h2>用户画像 ×  五层能力<br>× <span class="g1">成品交付</span></h2>
+    <p class="sub">
+      核心是一个<strong>用户画像系统</strong>——一个人设一个完整档案，横切所有能力层。不是通用热点，是「这个账号能做的热点」；不是模板脚本，是「这个风格的脚本」；不是文字建议，是<strong>直接交付可发布的素材包</strong>。
+    </p>
+
+    <div class="arch-outer">
+      <div class="arch-inner-v2">
+        <div class="arch-header">
+          <span class="a">「越用越懂我」用户画像</span>
+          <span class="c">定位 · 风格 · 受众 · 平台 · 偏好 · 经验沉淀 → 注入所有能力</span>
+        </div>
+        <div class="arch-body">
+          <div class="arch-layers">
+            <div class="arch-layer layer-discover">
+              <div class="arch-layer-name"><span class="b">发现</span></div>
+              <div class="arch-layer-desc">这个账号<br>能做的热点</div>
+              <div class="arch-layer-features">
+                <span class="arch-feat">热点监控</span>
+                <span class="arch-feat">爆款发掘</span>
+                <span class="arch-feat">二创机会</span>
+              </div>
+            </div>
+            <div class="arch-layer layer-plan">
+              <div class="arch-layer-name"><span class="b">策划</span></div>
+              <div class="arch-layer-desc">符合风格<br>的脚本</div>
+              <div class="arch-layer-features">
+                <span class="arch-feat">选题建议</span>
+                <span class="arch-feat">脚本生成</span>
+                <span class="arch-feat">分镜设计</span>
+              </div>
+            </div>
+            <div class="arch-layer layer-produce">
+              <div class="arch-layer-name"><span class="b">制作</span></div>
+              <div class="arch-layer-desc">这个账号<br>风格的成片</div>
+              <div class="arch-layer-features">
+                <span class="arch-feat hot">AI 短剧</span>
+                <span class="arch-feat hot">AI 小说</span>
+                <span class="arch-feat">图文创作</span>
+                <span class="arch-feat">片段剪辑</span>
+                <span class="arch-feat">封面推荐</span>
+              </div>
+            </div>
+            <div class="arch-layer layer-publish">
+              <div class="arch-layer-name"><span class="b">发布</span></div>
+              <div class="arch-layer-desc">各平台规则<br>自动适配</div>
+              <div class="arch-layer-features">
+                <span class="arch-feat">合规检测</span>
+                <span class="arch-feat">跨平台适配</span>
+                <span class="arch-feat">节奏规划</span>
+              </div>
+            </div>
+            <div class="arch-layer layer-attribute">
+              <div class="arch-layer-name"><span class="b">归因</span></div>
+              <div class="arch-layer-desc">什么火了<br>回流画像</div>
+              <div class="arch-layer-features">
+                <span class="arch-feat">数据聚合</span>
+                <span class="arch-feat">回流 Profile</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-footer">
+          <span class="c">OpenClaw 驱动 · 框架开源</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCENES -->
+<div class="sec-line"></div>
+<section class="sec">
+  <div class="w">
+    <div class="tag">Scenes</div>
+    <h2>创作者的<span class="g1">一天</span></h2>
+    <div class="bento">
+      <div class="bento-card glass b1">
+        <span class="bento-emoji">🔥</span>
+        <div class="bento-h">「今天做什么内容？」</div>
+        <div class="bento-p">根据画像从平台热榜里筛出你能做的选题，给三个方向，每个都贴合账号定位和受众偏好。不是 100 个热点丢给你选——是 3 个你真正能做的。</div>
+      </div>
+      <div class="bento-card glass b2">
+        <span class="bento-emoji">📝</span>
+        <div class="bento-h">「写个脚本」</div>
+        <div class="bento-p">30 秒短剧，自动带上你的标志性开场和受众喜欢的反转。出来的东西像你写的。</div>
+      </div>
+      <div class="bento-card glass b3">
+        <span class="bento-emoji">🎬</span>
+        <div class="bento-h">「出成片」</div>
+        <div class="bento-p">脚本→视频生成→配音→字幕→拼接→成片。直接交付可发布的素材包。</div>
+      </div>
+      <div class="bento-card glass b4">
+        <span class="bento-emoji">✅</span>
+        <div class="bento-h">「发之前帮我查一下」</div>
+        <div class="bento-p">自动检测绝对化用语、医疗承诺、导流外站、软广未标注——按小红书/抖音/B站各自的规则检测，告诉你哪里有风险、怎么改。不是通用法律检查，是平台特化的内容合规。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VS -->
+<div class="sec-line"></div>
+<section class="sec">
+  <div class="w">
+    <div class="tag">Differentiation</div>
+    <h2>为什么不是现有工具<span class="g1">能做的</span></h2>
+    <div class="cmp">
+      <div class="cmp-card glass">
+        <div class="cmp-vs">vs 剪映 AI</div>
+        <div class="cmp-h">可编程 vs 黑盒</div>
+        <div class="cmp-p">剪映不可编程，不知道你是谁。Easel 是可编程管线 + 账号记忆——同样做一条视频，Easel 做出来的像你的风格。</div>
+      </div>
+      <div class="cmp-card glass">
+        <div class="cmp-vs">vs GPT Work / Cowork</div>
+        <div class="cmp-h">社媒专精 vs 通用</div>
+        <div class="cmp-p">通用 Agent 不知道小红书禁什么词。Easel 把社媒 know-how 编码进 SKILL，这是通用 Agent 做不了的事。</div>
+      </div>
+      <div class="cmp-card glass">
+        <div class="cmp-vs">vs 蝉妈妈</div>
+        <div class="cmp-h">洞察→行动 距离为零</div>
+        <div class="cmp-p">蝉妈妈帮你看数据，Easel 帮你用数据。「对比表格收藏率高」不是一个数字，是下次脚本里自动多加一张表格。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MOAT -->
+<div class="sec-line"></div>
+<section class="sec">
+  <div class="w">
+    <div class="tag">Moat</div>
+    <h2>不造轮子<br>壁垒在<span class="g1">别的地方</span></h2>
+    <p class="sub">
+      LLM 用 Claude / GPT，视频生成用 Runway / Pika / 可灵，编排用 OpenClaw——基建全用现成的。壁垒来自三个别人复刻不了的东西：<strong>领域 know-how 编码进 SKILL</strong>（短剧 SKILL 内化了钩子结构和悬念节奏；合规 SKILL 内化了三大平台审核逻辑）；<strong>账号特化数据资产</strong>（画像是创作者持续沉淀的资产，用得越久越精准）；<strong>跨层整合深度</strong>（五层闭环的组合价值远超单点堆叠）。整体框架开源。
+    </p>
+  </div>
+</section>
+
+<!-- VISION -->
+<div class="sec-line"></div>
+<section class="sec">
+  <div class="w">
+    <div class="tag">Vision</div>
+    <h2>每个创作者身边的<span class="g1">内容搭档</span></h2>
+    <div class="vision">
+      <p class="vision-text">
+        Easel 的终局不是一个工具，是<strong>每个创作者身边的内容搭档</strong>。它了解你的风格、知道你的受众、记得你的成功和失败、跟踪平台的变化。创作者不需要学 AI、不需要写 prompt，只需要说「帮我做下一条」。真正为自媒体博主设计的产品——不是通用 AI 加个皮肤，是从第一天就只为创作者服务的。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="foot">
+  <div class="w">
+    <div class="foot-logo">✦ Easel</div>
+    <div class="foot-info">
+      李鼎铭 · lidingming@xiaohongshu.com
+    </div>
+    <div class="foot-line">AI-Powered Social Media Content Workflow · Open Source</div>
+  </div>
+</footer>
+
+</body>
+</html>

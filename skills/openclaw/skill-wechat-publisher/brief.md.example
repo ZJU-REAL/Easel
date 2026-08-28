@@ -1,0 +1,50 @@
+---
+# 必填:贴图的核心主题,帮助 Claude 理解语境
+topic: "Claude Code /rewind 命令"
+
+# 可选:配图风格。**正常情况下留空**,会走:
+#   账号 newspic_image_style → 全局兜底 infographic-warm(高密度手绘水彩信息图)
+# 换配色:infographic-warm(默认暖黄) | infographic-blue(冷蓝) | infographic-dark(深夜) | infographic-mint(薄荷)
+# 特殊场景:如果你只想要一句金句大字卡而不是信息图,可以写 quote-card-minimal / tech-card-blue
+# 完整列表见 assets/image-styles/README.md 或 `python3 scripts/wechat_api.py list-image-styles`
+# image_style: infographic-warm
+
+# 可选:卡片数量。不写按要点数,且必须 ≤ 要点数,≤ 20
+card_count: 4
+
+# 可选:贴图标题
+title: "Claude Code 里,最有用的命令之一"
+
+# 可选:发到哪个账号。不写用 --account 或 wechat-publisher.yaml 的 default
+account: main
+---
+
+# 要点
+
+(每行一条,1./2./3. 或 -/*/+ 都行。Claude 会把每条拆成一张卡。
+ 太长的条目会自动按分隔符切成卡面主文字 + 副文字,一般 15 字内主文字效果最好。)
+
+1. /rewind 厉害的地方不是"撤销一下",而是给你一个更对的工作流
+2. 你可以输入 /rewind,也可以连续按两次 Esc,快速回滚代码
+3. AI 解决不好问题,常常不是因为它不够会写,而是你不敢让它放手试
+4. /rewind 的价值,就是把"试错"这件事真正变得可控
+
+# 短文本
+
+(100-300 字。这段会作为贴图的"短描述"显示在微信图片消息里。
+ 这段会过 AI 味 gate —— 别用套话,写具体的人味感受。
+ 不写也行,publish.py 前 Claude 会根据"要点"生成一段填回来。)
+
+/rewind 的价值,不是能把代码撤回来。
+是它让你**敢让 AI 放手去试**。
+按两次 Esc 就能回到刚才的状态。这件事本身,
+比"解决某个具体 bug"要值钱得多。
+
+## 用法
+
+1. 人类写 brief.md(就是本文件)
+2. `python3 scripts/newspic_build.py brief.md`
+   → 输出 card_plan.json,每张卡配好 Gemini prompt
+3. Claude 按 card_plan.json 里每张卡的 prompt 逐张生图,保存到 ./images/01.png、02.png、...
+4. (可选)`python3 scripts/ai_score.py brief.md --mode newspic --threshold 45` 手动预检
+5. `python3 scripts/publish.py --account main --type newspic --brief brief.md`

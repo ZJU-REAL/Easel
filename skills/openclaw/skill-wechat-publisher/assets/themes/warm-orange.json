@@ -1,0 +1,58 @@
+{
+  "theme_name": "warm-orange",
+  "description": "温暖橙调 - 暖橙 · 生活 · 美食号,亲切日常感,适合生活方式 / 美食 / 旅行 / 记录类",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #3a2a1e; line-height: 1.85; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #fdf8f2;",
+    "h1": "font-size: 22px; font-weight: 800; color: #3a2a1e; text-align: left; margin: 34px 0 20px; padding: 0 0 12px 0; border-bottom: 2px solid #e58b3a; line-height: 1.4; letter-spacing: 0.3px;",
+    "h2": "font-size: 17.5px; font-weight: 800; color: #3a2a1e; margin: 38px 0 18px; padding: 4px 0 4px 14px; border-left: 4px solid #e58b3a; line-height: 1.5; letter-spacing: 0.3px;",
+    "h3": "font-size: 15.5px; font-weight: 700; color: #b5601c; margin: 28px 0 12px; padding: 0; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #3a2a1e; line-height: 1.9;",
+    "blockquote": "margin: 26px 0; padding: 18px 22px; background: #fbe8d0; border-left: none; color: #6a3f1f; font-size: 14.5px; border-radius: 12px; line-height: 1.85; letter-spacing: 0.3px;",
+    "img": "max-width: 100%; height: auto; border-radius: 12px; margin: 24px auto; display: block; box-shadow: 0 6px 20px rgba(229,139,58,0.15); border: 1px solid #f4d8b0;",
+    "strong": "color: #b5601c; font-weight: 800;",
+    "em": "font-style: italic; color: #7a5a3a;",
+    "code_inline": "background: #fbe8d0; color: #b5601c; padding: 2px 8px; border-radius: 6px; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; border: 1px solid #f4d8b0;",
+    "code_block": "background: #2d1f10; color: #fbe8d0; padding: 16px 18px; border-radius: 12px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.85; color: #3a2a1e; font-weight: 400;",
+    "li_bullet": "color: #e58b3a; font-weight: 900; font-size: 13px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "●",
+    "li_number": "color: #e58b3a; font-weight: 800; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #e58b3a, transparent); margin: 38px 0; opacity: 0.6;",
+    "a": "color: #b5601c; text-decoration: none; border-bottom: 1px solid rgba(181,96,28,0.4);",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border-radius: 10px; overflow: hidden; border: 1px solid #f4d8b0; table-layout: fixed; word-break: break-word;",
+    "th": "background: #e58b3a; color: #ffffff; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #fbe8d0; color: #3a2a1e; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #9c8060; text-align: center; margin-top: 10px; letter-spacing: 0.5px; font-style: italic;",
+    "section_divider": "text-align: center; color: #e58b3a; letter-spacing: 14px; font-size: 13px; margin: 36px 0; user-select: none; opacity: 0.7;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 58%, #ffe8a8 58%); color: #3a2a1e; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #dde8f0; color: #2a4a6a; padding: 2px 7px; border-radius: 4px; font-weight: 500;",
+    "hl_pink": "background: #fbd8d0; color: #b52a1c; padding: 2px 7px; border-radius: 4px; font-weight: 500;",
+    "hl_green": "background: #dfeac8; color: #5a7a2a; padding: 2px 7px; border-radius: 4px; font-weight: 500;",
+    "em_red": "color: #c4431a; font-weight: 700;",
+    "em_blue": "color: #3a6a8a; font-weight: 700;",
+    "em_orange": "color: #b5601c; font-weight: 800;"
+  },
+  "section_divider_text": "◉ ◉ ◉",
+  "code_colors": {
+    "kw": "color: #ffb870; font-weight: 600;",
+    "str": "color: #ffe99a;",
+    "num": "color: #ffd0a8;",
+    "fn": "color: #f5a870;",
+    "cls": "color: #d8a588;",
+    "comm": "color: #a08670; font-style: italic;",
+    "punct": "color: #d8c0a0;"
+  },
+  "list_style": {
+    "label": "A · 橙圈数字",
+    "num_container": "display: inline-block; color: #b5601c; font-weight: 800; font-size: 18px; margin-right: 8px; line-height: 1; vertical-align: -1px;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "circled",
+    "bullet_container": "display: inline-block; color: #e58b3a; font-size: 13px; margin-right: 10px; font-weight: 800;",
+    "bullet_char": "❋"
+  }
+}

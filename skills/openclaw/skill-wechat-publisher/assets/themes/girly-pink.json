@@ -1,0 +1,58 @@
+{
+  "theme_name": "girly-pink",
+  "description": "少女粉系 - 粉紫渐变 + 可爱风,甜美轻盈,适合时尚 / 美妆 / 情感 / 少女向内容",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #4a2a3e; line-height: 1.85; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #fff5fa;",
+    "h1": "font-size: 22px; font-weight: 800; color: #b83f7a; text-align: center; margin: 34px 0 24px; padding: 16px 20px; background: linear-gradient(135deg, #ffe4f0 0%, #f4e0ff 100%); border-radius: 20px; letter-spacing: 1px; line-height: 1.5;",
+    "h2": "font-size: 17.5px; font-weight: 800; color: #b83f7a; margin: 38px 0 18px; padding: 8px 18px; background: linear-gradient(90deg, #ffe4f0 0%, transparent 100%); border-radius: 16px; line-height: 1.5; letter-spacing: 0.3px; display: inline-block;",
+    "h3": "font-size: 15.5px; font-weight: 700; color: #b83f7a; margin: 28px 0 12px; padding: 0 0 0 16px; border-left: 4px solid #ff87c2; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #4a2a3e; line-height: 1.9;",
+    "blockquote": "margin: 24px 0; padding: 18px 22px; background: linear-gradient(135deg, #ffeaf4 0%, #f4e0ff 100%); border-left: none; color: #7a355a; font-size: 14.5px; border-radius: 16px; line-height: 1.85; letter-spacing: 0.3px;",
+    "img": "max-width: 100%; height: auto; border-radius: 16px; margin: 24px auto; display: block; box-shadow: 0 8px 24px rgba(255,135,194,0.2); border: 2px solid #ffe4f0;",
+    "strong": "color: #b83f7a; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #ffd0e5 62%, #ffd0e5 95%, transparent 95%); padding: 1px 6px;",
+    "em": "font-style: italic; color: #a06080;",
+    "code_inline": "background: #ffe4f0; color: #b83f7a; padding: 2px 8px; border-radius: 8px; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;",
+    "code_block": "background: #3a1a2e; color: #ffe4f0; padding: 16px 18px; border-radius: 16px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.85; color: #4a2a3e; font-weight: 400;",
+    "li_bullet": "color: #ff87c2; font-weight: 900; font-size: 14px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "❀",
+    "li_number": "color: #ff87c2; font-weight: 800; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #ff87c2, transparent); margin: 38px 0;",
+    "a": "color: #b83f7a; text-decoration: none; border-bottom: 1px solid rgba(184,63,122,0.4);",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border-radius: 14px; overflow: hidden; border: 1px solid #ffd0e5; table-layout: fixed; word-break: break-word;",
+    "th": "background: linear-gradient(135deg, #ff87c2 0%, #c085ff 100%); color: #ffffff; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 12.5px; letter-spacing: 0.5px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #ffeaf4; color: #4a2a3e; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #a06080; text-align: center; margin-top: 10px; letter-spacing: 0.5px; font-style: italic;",
+    "section_divider": "text-align: center; color: #ff87c2; letter-spacing: 14px; font-size: 14px; margin: 36px 0; user-select: none; opacity: 0.7;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 58%, #fff4b8 58%); color: #4a2a3e; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #e4e0ff; color: #6a3fa0; padding: 2px 7px; border-radius: 6px; font-weight: 500;",
+    "hl_pink": "background: #ffd0e5; color: #b83f7a; padding: 2px 7px; border-radius: 6px; font-weight: 500;",
+    "hl_green": "background: #d8f0dc; color: #2d6a3a; padding: 2px 7px; border-radius: 6px; font-weight: 500;",
+    "em_red": "color: #e04a6a; font-weight: 700;",
+    "em_blue": "color: #8055c8; font-weight: 700;",
+    "em_orange": "color: #e58b3a; font-weight: 700;"
+  },
+  "section_divider_text": "♡ ♡ ♡",
+  "code_colors": {
+    "kw": "color: #ffb0dc; font-weight: 600;",
+    "str": "color: #ffe99a;",
+    "num": "color: #ffd0a8;",
+    "fn": "color: #c9a0ff;",
+    "cls": "color: #a8d8ff;",
+    "comm": "color: #a88ba0; font-style: italic;",
+    "punct": "color: #e8c9d8;"
+  },
+  "list_style": {
+    "label": "A · 粉心序号",
+    "num_container": "display: inline-block; color: #ff87c2; font-weight: 800; font-size: 13px; margin-right: 8px;",
+    "num_prefix": "❤ ",
+    "num_suffix": "",
+    "num_formatter": "decimal",
+    "bullet_container": "display: inline-block; color: #ff87c2; font-size: 13px; margin-right: 10px;",
+    "bullet_char": "❀"
+  }
+}

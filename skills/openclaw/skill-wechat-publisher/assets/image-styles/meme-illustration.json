@@ -1,0 +1,41 @@
+{
+  "style_name": "meme-illustration",
+  "display_name": "漫画梗图",
+  "description": "卡通人物 + 对话气泡 + 夸张表情,互联网 meme 风格。适合吐槽、互联网段子、行业梗、调侃类内容。",
+  "suitable_for": [
+    "tech-humor",
+    "industry-gossip",
+    "relatable-meme",
+    "roast-commentary",
+    "rant",
+    "programmer-humor"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "1:1",
+    "newspic_size": "1080x1080",
+    "article_aspect": "4:3",
+    "article_size": "1200x900"
+  },
+  "palette": {
+    "background": "#fff9e6",
+    "primary": "#ff5e5e",
+    "accent": "#4ecdc4",
+    "secondary": "#ffe66d",
+    "text": "#1a1a1a",
+    "outline": "#2d2d2d"
+  },
+  "typography": {
+    "heading": "粗黑体中文(庞门正道 / 阿里巴巴普惠 Heavy)",
+    "dialogue": "手写风(类似 楷体 / 江城律动黑)",
+    "weight_contrast": "全员超粗,突出夸张感"
+  },
+  "mood": ["playful", "irreverent", "funny", "relatable", "casual", "internet-native"],
+  "prompt_template": {
+    "newspic_card": "Generate a meme-style cartoon Chinese card, 1:1 square. Warm yellow (#fff9e6) background. Central: 1-2 simple cartoon characters (flat-color vector, thick black outlines, exaggerated expressions — annoyed, shocked, or deadpan; NOT anime-style, more like 'Corporate Memphis' / 'explain-like-I'm-5' illustration). A speech bubble or thought bubble contains the Chinese text '{card_main}' in big bold hand-written-ish font. Optional: '{card_sub}' as a caption below. Accent colors: bright red (#ff5e5e), teal (#4ecdc4), yellow (#ffe66d). No photos, no realistic people, no 3D. Feel: Reddit-style meme, programmer humor, 互联网段子图.",
+    "article_inline": "Generate a meme-style Chinese cartoon illustration, 4:3. Warm yellow background. Topic: '{image_subject}'. Flat-color cartoon characters with thick black outlines, exaggerated expressions. Chinese speech bubbles for labels. Red / teal / yellow accents. Playful, irreverent feel. No photos, no 3D, no anime style."
+  },
+  "example_reference": "(参考 r/ProgrammerHumor / 奇文共赏 / 好奇心日报插图)",
+  "notes": "慎用。meme 有保鲜期 —— 用过时的梗比没梗还尴尬。tech 账号葱哥可以偶尔用一张做文末吐槽收尾。"
+}

@@ -1,0 +1,58 @@
+{
+  "theme_name": "academic-paper",
+  "description": "学术严谨 - 论文格式 + 衬线正字,章节编号式层级,适合研究 / 论述 / 严肃长文",
+  "styles": {
+    "body": "font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Times New Roman', 'Songti SC', serif; font-size: 15.5px; color: #1a1a1a; line-height: 1.95; letter-spacing: 0.3px; word-spacing: 1.5px; padding: 20px 22px; background: #ffffff;",
+    "h1": "font-size: 24px; font-weight: 700; color: #1a1a1a; text-align: center; margin: 40px 0 28px; padding: 0 0 16px 0; border-bottom: 2px solid #1a1a1a; letter-spacing: 1px; line-height: 1.4;",
+    "h2": "font-size: 18px; font-weight: 700; color: #1a1a1a; margin: 40px 0 16px; padding: 0; line-height: 1.5; letter-spacing: 0.3px;",
+    "h3": "font-size: 15.5px; font-weight: 700; color: #1a1a1a; margin: 30px 0 12px; padding: 0; letter-spacing: 0.3px; font-style: italic;",
+    "p": "margin: 16px 0; text-indent: 2em; text-align: justify; color: #1a1a1a; line-height: 2.0;",
+    "blockquote": "margin: 26px 20px; padding: 2px 18px; background: transparent; border-left: 3px solid #1a1a1a; color: #3a3a3a; font-size: 14.5px; border-radius: 0; line-height: 1.9; letter-spacing: 0.3px; font-style: italic;",
+    "img": "max-width: 100%; height: auto; border-radius: 0; margin: 28px auto; display: block; border: 1px solid #d0d0d0;",
+    "strong": "color: #1a1a1a; font-weight: 700; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;",
+    "em": "font-style: italic; color: #3a3a3a;",
+    "code_inline": "background: #f2f2f2; color: #1a1a1a; padding: 1px 6px; border-radius: 2px; font-size: 13px; font-family: 'Times New Roman', serif; border: 1px solid #d8d8d8; font-style: italic;",
+    "code_block": "background: #f7f7f7; color: #1a1a1a; padding: 16px 18px; border-radius: 2px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; border: 1px solid #d8d8d8; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 8px 0; line-height: 1.95; color: #1a1a1a; font-weight: 400;",
+    "li_bullet": "color: #1a1a1a; font-weight: 700; font-size: 13px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "—",
+    "li_number": "color: #1a1a1a; font-weight: 700; font-size: 14px; min-width: 22px; font-style: italic; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: #1a1a1a; margin: 42px 0; opacity: 0.3;",
+    "a": "color: #1a1a1a; text-decoration: none; border-bottom: 1px solid #1a1a1a;",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13.5px; border-top: 1.5px solid #1a1a1a; border-bottom: 1.5px solid #1a1a1a; table-layout: fixed; word-break: break-word;",
+    "th": "background: transparent; color: #1a1a1a; padding: 10px 8px; text-align: left; font-weight: 700; font-size: 12.5px; border-bottom: 1px solid #1a1a1a; font-style: italic; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e5e5e5; color: #1a1a1a; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #5a5a5a; text-align: center; margin-top: 10px; letter-spacing: 0.3px; font-style: italic;",
+    "section_divider": "text-align: center; color: #1a1a1a; letter-spacing: 14px; font-size: 14px; margin: 42px 0; user-select: none; opacity: 0.35; font-style: italic; font-family: 'Times New Roman', serif;"
+  },
+  "highlights": {
+    "hl_yellow": "background: #fbeaa8; color: #1a1a1a; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_blue": "background: #dde4ef; color: #1a2a4a; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_pink": "background: #f5dcd4; color: #6a1a1a; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_green": "background: #dde4cf; color: #2d4a2f; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "em_red": "color: #1a1a1a; font-weight: 700; text-decoration: underline;",
+    "em_blue": "color: #1a1a1a; font-weight: 700; text-decoration: underline;",
+    "em_orange": "color: #1a1a1a; font-weight: 700; text-decoration: underline;"
+  },
+  "section_divider_text": "§  §  §",
+  "code_colors": {
+    "kw": "color: #8b2a1f; font-weight: 600;",
+    "str": "color: #2d5a2d;",
+    "num": "color: #b8690e;",
+    "fn": "color: #1e3a8a;",
+    "cls": "color: #6b2a6b;",
+    "comm": "color: #7a7a7a; font-style: italic;",
+    "punct": "color: #4a4a4a;"
+  },
+  "list_style": {
+    "label": "A · 斜体小罗马",
+    "num_container": "display: inline-block; color: #1a1a1a; font-weight: 400; font-style: italic; font-size: 15px; margin-right: 8px; min-width: 22px; font-family: 'Georgia','Times New Roman',serif;",
+    "num_prefix": "(",
+    "num_suffix": ")",
+    "num_formatter": "roman_lower",
+    "bullet_container": "display: inline-block; color: #1a1a1a; font-size: 13px; margin-right: 10px; font-family: 'Georgia',serif;",
+    "bullet_char": "—"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "magazine-editorial",
+  "name": "杂志大片/封面",
+  "keywords": ["杂志", "封面", "杂志大片", "editorial", "magazine cover", "时尚大片", "Vogue", "时尚摄影", "fashion editorial"],
+  "trigger_phrases": ["杂志封面", "杂志大片", "时尚大片", "editorial", "magazine cover", "品牌大片", "时尚杂志", "封面图"],
+  "prompt_template": {
+    "type": "fashion/beauty magazine cover editorial",
+    "subject": "{product_description}",
+    "model": "person holding or wearing product in editorial pose",
+    "makeup_hair": "polished editorial beauty look",
+    "background": "studio backdrop in warm/tonal color",
+    "lighting": "beauty dish + rim light, editorial setup",
+    "layout": "magazine masthead area at top, barcode space at bottom",
+    "quality": "8K, Vogue-quality editorial photography"
+  },
+  "defaults": {
+    "lighting": "beauty dish from front-left, soft rim light on hair",
+    "background": "studio backdrop warm peach-nude tone",
+    "layout": "masthead area top, issue text bottom-left, barcode bottom-right"
+  },
+  "variants": {
+    "beauty-cover": { "description": "美妆封面", "overrides": { "model": "close-up portrait with glowing skin, holding skincare near face", "makeup_hair": "dewy natural, glossy lips, subtle smoky eye" } },
+    "fashion-cover": { "description": "时尚封面", "overrides": { "model": "full or 3/4 body shot wearing fashion product, confident pose", "makeup_hair": "bold editorial makeup, high-fashion styling" } },
+    "fragrance-editorial": { "description": "香水大片", "overrides": { "model": "person in contemplative pose with fragrance bottle, atmospheric", "background": "dark moody backdrop with atmospheric haze" } },
+    "minimal-editorial": { "description": "极简杂志内页", "overrides": { "background": "clean white studio, no backdrop color", "layout": "no masthead, clean full-bleed editorial image" } }
+  },
+  "category_tips": {
+    "skincare": "dewy skin, product held at chin level, beauty lighting",
+    "fragrance": "atmospheric smoke, contemplative mood, bottle prominent",
+    "fashion": "confident pose, outfit fully visible, dramatic lighting",
+    "jewelry": "close-up on hands/neck, editorial styling, luxury backdrop",
+    "haircare": "hair as hero element, movement and texture, beauty lighting",
+    "makeup": "bold lip or eye focus, product in hand, editorial beauty"
+  },
+  "examples": [
+    "Beauty magazine cover. Woman with glowing skin holding {product} near face. Beauty dish lighting, soft background. Top area for masthead. Vogue-quality editorial, 8K, 1080x1350px",
+    "Fashion editorial magazine cover. Striking woman wearing {product} in contemplative pose. Bold makeup, sleek hair. High-contrast editorial lighting. Magazine layout overlay with border frame. 8K, 1080x1350px"
+  ],
+  "anti_ai_tips": "For authentic editorial feel: specify actual camera (Phase One IQ4, Canon EOS R5 85mm f/1.2), add visible skin texture, use real beauty lighting terminology",
+  "supports_image_reference": true
+}

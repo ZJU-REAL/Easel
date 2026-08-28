@@ -1,0 +1,58 @@
+{
+  "theme_name": "business-navy",
+  "description": "商务蓝金 - 深蓝主色 + 金色点缀,权威克制的金融感,适合商业 / 投研 / 行业分析",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #0f1a33; line-height: 1.8; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #ffffff;",
+    "h1": "font-size: 23px; font-weight: 800; color: #0b2445; text-align: left; margin: 34px 0 20px; padding: 0 0 14px 0; border-bottom: 3px double #0b2445; letter-spacing: 0.4px; line-height: 1.4;",
+    "h2": "font-size: 18px; font-weight: 800; color: #0b2445; margin: 40px 0 18px; padding: 2px 0 2px 16px; border-left: 4px solid #c9a74a; line-height: 1.5; letter-spacing: 0.3px;",
+    "h3": "font-size: 15.5px; font-weight: 700; color: #0b2445; margin: 28px 0 12px; padding: 0; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #1a233a; line-height: 1.85;",
+    "blockquote": "margin: 24px 0; padding: 18px 22px; background: #f4f6fb; border-left: 3px solid #c9a74a; color: #2a3552; font-size: 14.5px; border-radius: 0; line-height: 1.85; letter-spacing: 0.3px;",
+    "img": "max-width: 100%; height: auto; border-radius: 2px; margin: 24px auto; display: block; box-shadow: 0 6px 20px rgba(11,36,69,0.1); border: 1px solid #e0e5ee;",
+    "strong": "color: #0b2445; font-weight: 800; border-bottom: 2px solid #c9a74a; padding: 0 1px;",
+    "em": "font-style: italic; color: #5a6580;",
+    "code_inline": "background: #eef2f8; color: #0b2445; padding: 2px 7px; border-radius: 2px; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; border: 1px solid #d6dde9;",
+    "code_block": "background: #0b2445; color: #e7ecf5; padding: 16px 18px; border-radius: 4px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; border: 1px solid #1a3360; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.8; color: #1a233a; font-weight: 400;",
+    "li_bullet": "color: #c9a74a; font-weight: 900; font-size: 11px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "◆",
+    "li_number": "color: #c9a74a; font-weight: 800; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #c9a74a, transparent); margin: 40px 0;",
+    "a": "color: #1a4480; text-decoration: none; border-bottom: 1px solid rgba(26,68,128,0.4);",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border-top: 2px solid #0b2445; border-bottom: 2px solid #0b2445; table-layout: fixed; word-break: break-word;",
+    "th": "background: #0b2445; color: #c9a74a; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 12.5px; letter-spacing: 1px; text-transform: uppercase; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e6ebf3; color: #1a233a; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #7a85a0; text-align: center; margin-top: 10px; letter-spacing: 0.6px; font-style: italic;",
+    "section_divider": "text-align: center; color: #c9a74a; letter-spacing: 16px; font-size: 12px; margin: 38px 0; user-select: none;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 58%, #ffe79a 58%); color: #0f1a33; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #dee7f5; color: #0b2445; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "hl_pink": "background: #f5dfe6; color: #7a1e3a; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "hl_green": "background: #dfe9dc; color: #2d4a2f; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "em_red": "color: #a02a2a; font-weight: 700;",
+    "em_blue": "color: #1a4480; font-weight: 700;",
+    "em_orange": "color: #a8800e; font-weight: 700;"
+  },
+  "section_divider_text": "◇  ◇  ◇",
+  "code_colors": {
+    "kw": "color: #ffd770; font-weight: 600;",
+    "str": "color: #a8e6a3;",
+    "num": "color: #f5a870;",
+    "fn": "color: #8ec5ff;",
+    "cls": "color: #ffb0b0;",
+    "comm": "color: #6e7c98; font-style: italic;",
+    "punct": "color: #bfc9dc;"
+  },
+  "list_style": {
+    "label": "A · 金边罗马",
+    "num_container": "display: inline-block; border: 1.5px solid #c9a74a; color: #c9a74a; font-weight: 700; font-size: 11px; letter-spacing: 1px; min-width: 26px; height: 22px; line-height: 20px; text-align: center; margin-right: 12px; vertical-align: 2px; font-family: 'Georgia','Times New Roman',serif;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "roman_upper",
+    "bullet_container": "display: inline-block; color: #c9a74a; font-size: 12px; margin-right: 12px; font-weight: 900;",
+    "bullet_char": "◆"
+  }
+}

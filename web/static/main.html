@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Easel - 从灵感到发布，完整的社媒内容工作流。">
+<title>Easel - 让好内容自然发生</title>
+<link rel="icon" type="image/png" href="easel-icon-transparent.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&family=Manrope:wght@400;500;600&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --ink:#17191c;
+    --paper:#fff;
+    --fog:#fafafb;
+    --mist:#f2f2f3;
+    --line:#e7e7e8;
+    --muted:#777b86;
+    --quiet:#979799;
+    --peach:#fbe1d1;
+    --peach-ink:#5d2a1a;
+    --blue:#dceafb;
+    --serif:"Noto Serif SC","Songti SC","Iowan Old Style",serif;
+    --number:"Bodoni Moda","Didot","Baskerville",serif;
+    --sans:"Manrope","Avenir Next","Noto Sans SC","Microsoft YaHei",sans-serif;
+    --content:1200px;
+  }
+  html{scroll-behavior:smooth;background:var(--paper);overflow-x:clip}
+  body{font-family:var(--sans);color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased;overflow-x:clip;max-width:100%}
+  button,a{font:inherit}
+  a{color:inherit;text-decoration:none}
+  ::selection{background:var(--peach);color:var(--peach-ink)}
+  .shell{width:min(var(--content),calc(100% - 48px));margin:0 auto}
+
+  .topbar{height:76px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:20}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--number),var(--serif);font-size:21px;font-style:italic;font-weight:600;letter-spacing:-.045em}
+  .topbar .brand{gap:11px}.brand-tagline{font-family:var(--sans);font-size:11.5px;font-style:normal;font-weight:500;line-height:1.2;letter-spacing:.005em;color:var(--muted);white-space:nowrap}
+  .brand-mark{width:32px;height:32px;border-radius:9px;display:block;object-fit:cover;box-shadow:0 5px 14px rgba(51,66,148,.16)}
+  .nav{display:flex;align-items:center;gap:30px;font-size:14px}
+  .nav a:not(.pill){position:relative;padding:8px 0;color:#44474b}
+  .nav a:not(.pill)::after{content:"";position:absolute;left:0;right:100%;bottom:3px;height:1px;background:var(--ink);transition:right .25s ease}
+  .nav a:not(.pill):hover::after{right:0}
+  .pill{display:inline-flex;align-items:center;justify-content:center;gap:9px;height:44px;padding:0 21px;border-radius:999px;border:1px solid var(--ink);transition:transform .2s ease,background .2s ease,color .2s ease}
+  .pill:hover{transform:translateY(-2px)}
+  .pill-dark{background:var(--ink);color:#fff}
+  .pill-light{background:transparent;color:var(--ink)}
+  .pill-light:hover{background:var(--ink);color:#fff}
+
+  .hero-scroll{position:relative}
+  .hero{height:calc(100svh - 76px);min-height:720px;position:relative;display:grid;place-items:center;padding:96px 0 150px;isolation:isolate;overflow:hidden}
+  .hero-wash{position:absolute;z-index:-2;inset:3% 0 1%;background:
+    radial-gradient(circle at 22% 45%,rgba(220,234,251,.9),transparent 31%),
+    radial-gradient(circle at 73% 42%,rgba(251,225,209,.92),transparent 34%),
+    radial-gradient(circle at 52% 76%,rgba(244,238,224,.78),transparent 35%);
+    filter:blur(6px);opacity:.82}
+  .hero-wash::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 0 35%,rgba(255,255,255,.68) 72%,#fff 91%)}
+  .hero-copy{text-align:center;max-width:980px;position:relative;z-index:4}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--quiet);margin-bottom:26px}
+  .hero h1{font-family:var(--serif);font-size:clamp(62px,5.85vw,84px);font-weight:400;line-height:1.12;letter-spacing:-.052em}
+  .hero h1 em{font-family:var(--number),var(--serif);font-weight:500;font-style:italic;letter-spacing:-.075em}
+  .hero-desc{max-width:620px;margin:28px auto 0;color:var(--muted);font-size:17px;line-height:1.75;letter-spacing:-.01em}
+  .hero-actions{display:flex;justify-content:center;gap:10px;margin-top:30px}
+
+  .artifact{position:absolute;background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(4,23,43,.05),0 20px 25px -8px rgba(0,0,0,.12),0 8px 12px -8px rgba(0,0,0,.12);z-index:5;animation:arrive .8s cubic-bezier(.2,.8,.2,1) both;will-change:transform,border-radius,box-shadow}
+  .artifact small{color:var(--quiet);font-size:11px}
+  .signal{left:0;top:4%;width:230px;padding:16px 18px;animation-delay:.15s;transform:rotate(-3.2deg)}
+  .signal-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:15px}
+  .hot-list{display:flex;flex-direction:column;gap:7px;margin-top:10px;font-size:11px}.hot-list div{display:flex;gap:8px;align-items:center}.hot-list b{font-family:var(--number);font-size:13px;font-weight:500;color:#aaa}.hot-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .output{right:0;top:7%;width:230px;padding:18px;animation-delay:.25s;transform:rotate(2.6deg)}
+  .schedule-list{display:flex;flex-direction:column;margin-top:8px}.schedule-list div{display:grid;grid-template-columns:42px 1fr;gap:8px;padding:7px 0;border-top:1px solid #eee;font-size:10px}.schedule-list time{font-family:var(--number);font-size:13px;color:#777b86}
+  .ring{width:58px;height:58px;border-radius:50%;background:conic-gradient(var(--peach-ink) 0 76%,#eee 76%);display:grid;place-items:center;position:relative}
+  .ring::after{content:"";position:absolute;width:46px;height:46px;background:#fff;border-radius:50%}
+  .ring b{position:relative;z-index:1;font-size:11px;font-weight:500}
+  .trend{left:3%;bottom:3%;width:250px;padding:16px 18px;animation-delay:.35s;transform:rotate(2.2deg)}
+  .output-list{display:flex;flex-direction:column;margin-top:8px}.output-list div{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid #eee;font-size:10px}.output-list b{font-weight:400;color:#777b86}
+  .composer{right:3%;bottom:4%;width:315px;padding:12px 12px 12px 16px;display:flex;align-items:center;gap:10px;animation-delay:.45s;transform:rotate(-2.4deg)}
+  .composer span{flex:1;color:#a3a6af;font-size:13px}
+  .composer-button{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--ink);color:#fff;font-size:17px}
+  .avatar{width:32px;height:32px;display:block;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(51,66,148,.1))}
+  @keyframes arrive{from{opacity:0;translate:0 18px;scale:.97}to{opacity:1;translate:0 0;scale:1}}
+
+  .proof{border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .proof-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);min-height:142px}
+  .proof-item{padding:30px;border-left:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
+  .proof-item:first-child{border-left:0;padding-left:0}
+  .proof-kicker{font-size:12px;color:var(--quiet);margin-bottom:8px}
+  .proof-lead{font-family:var(--serif);font-size:25px;line-height:1.2;letter-spacing:-.025em}
+  .proof-value{font-family:var(--number);font-size:44px;line-height:1;font-weight:500;letter-spacing:-.05em;margin-bottom:8px;font-variant-numeric:lining-nums}
+  .proof-label{font-size:13px;color:var(--muted)}
+
+  .section{padding:120px 0}
+  .section-fog{background:var(--fog)}
+  .section-head{display:grid;grid-template-columns:1.1fr .9fr;gap:80px;align-items:end;margin-bottom:58px}
+  .section-label{font-size:13px;color:var(--quiet);margin-bottom:18px}
+  h2{font-family:var(--serif);font-size:clamp(44px,5vw,66px);line-height:1.12;font-weight:400;letter-spacing:-.055em}
+  h2 em{font-family:var(--number),var(--serif);font-weight:500;font-style:italic}
+  .section-intro{color:var(--muted);font-size:17px;line-height:1.75;max-width:480px;padding-bottom:6px}
+  .reveal{opacity:0;transform:translateY(34px);filter:blur(7px);transition:opacity .8s cubic-bezier(.2,.75,.2,1),transform .8s cubic-bezier(.2,.75,.2,1),filter .8s ease}.reveal.in-view{opacity:1;transform:none;filter:none}.flow .reveal:nth-child(2),.cap-grid .reveal:nth-child(2){transition-delay:.08s}.flow .reveal:nth-child(3),.cap-grid .reveal:nth-child(3){transition-delay:.16s}.flow .reveal:nth-child(4),.cap-grid .reveal:nth-child(4){transition-delay:.24s}.flow .reveal:nth-child(5){transition-delay:.32s}
+
+  /* Scroll-driven product story */
+  .story-scroll{height:520vh;background:#f4f4f2;color:var(--ink);position:relative}
+  .story-sticky{height:100vh;min-height:720px;position:sticky;top:0;display:grid;grid-template-columns:.58fr 1.42fr;gap:3vw;align-items:center;overflow:hidden;padding:0 max(24px,calc((100vw - var(--content))/2))}
+  .story-copy{position:relative;height:460px;z-index:4}
+  .story-kicker{position:absolute;top:0;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#858993}
+  .story-step{position:absolute;inset:58px 0 auto;opacity:0;visibility:hidden;transform:translateY(28px);transition:opacity .4s ease,transform .4s ease}
+  .story-step.active{opacity:1;visibility:visible;transform:none}
+  .story-step .step-no{font-family:var(--number);font-size:18px;font-style:italic;color:#8d9199;display:block;margin-bottom:18px}
+  .story-step h2{font-size:clamp(43px,3.75vw,56px);line-height:1.16;color:var(--ink);letter-spacing:-.045em}
+  .story-step p{margin-top:22px;color:#737781;line-height:1.75;font-size:16px;max-width:420px}
+  .story-progress{position:absolute;bottom:0;left:0;width:220px;height:1px;background:#d2d3d5}
+  .story-progress i{display:block;width:var(--story-progress,0%);height:100%;background:var(--ink);transition:width .12s linear}
+  .story-dots{position:absolute;bottom:18px;display:flex;gap:22px}
+  .story-dot{width:auto;height:auto;background:none;color:#62666e;font-family:var(--number);font-size:14px;font-style:normal;transition:color .3s ease}
+  .story-dot::after{content:"01"}.story-dot:nth-child(2)::after{content:"02"}.story-dot:nth-child(3)::after{content:"03"}.story-dot:nth-child(4)::after{content:"04"}.story-dot:nth-child(5)::after{content:"05"}
+  .story-dot.active{width:auto;background:none;color:var(--ink)}
+
+  .studio{width:100%;aspect-ratio:16/10;height:auto;min-height:0;border-radius:28px;background:#fff;color:var(--ink);position:relative;overflow:hidden;box-shadow:0 30px 80px rgba(35,38,48,.16);transform:perspective(1500px) rotateY(-2deg);transition:transform .5s ease}
+  .studio:hover{transform:perspective(1500px) rotateY(0)}
+  .studio-bar{height:58px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;padding:0 18px;gap:8px;position:relative;z-index:20}
+  .studio-dot{width:7px;height:7px;border-radius:50%;background:#c7c7c8}
+  .studio-title{position:absolute;left:50%;transform:translateX(-50%);font-size:11px;color:#8a8d93;letter-spacing:.05em}
+  .studio-status{margin-left:auto;font-size:10px;color:#5d2a1a;background:var(--peach);padding:6px 10px;border-radius:999px}
+  .studio-canvas{position:absolute;inset:58px 0 0;background:radial-gradient(circle at 70% 18%,rgba(220,234,251,.88),transparent 34%),radial-gradient(circle at 30% 78%,rgba(251,225,209,.78),transparent 36%),linear-gradient(135deg,#fafafb,#f4f4f2);}
+  .mock-sidebar{position:absolute;left:0;top:0;bottom:0;width:112px;padding:18px 12px;background:rgba(250,250,251,.94);border-right:1px solid #e7e7e8;display:flex;flex-direction:column;gap:5px;color:#777b86;font-size:9px}
+  .mock-sidebar strong{font-family:var(--number);font-size:18px;font-style:italic;color:var(--ink);margin:0 4px 14px}.mock-sidebar small{font-size:8px;color:#a0a3a8;margin:22px 4px 1px}.mock-sidebar b{font-size:9px;color:#4f535b;font-weight:600;margin:0 4px;line-height:1.45}.mock-nav{padding:7px 7px;border-radius:7px}.mock-nav.active{background:var(--blue);color:#334a72;font-weight:600}
+  .mock-main{position:absolute;inset:0 0 0 112px;padding:22px 24px;overflow:hidden}.mock-toolbar{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.mock-toolbar small{font-size:8px;color:#979799;letter-spacing:.05em}.mock-toolbar h3{font-family:var(--serif);font-weight:400;font-size:20px;line-height:1.2;margin-top:5px;letter-spacing:-.04em}.mock-toolbar-pill{font-size:8px;color:#48618f;background:var(--blue);border-radius:999px;padding:6px 9px}.mock-toolbar-pill.peach{background:var(--peach);color:var(--peach-ink)}
+  .mock-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:10px}.mock-panel{background:rgba(255,255,255,.9);border:1px solid #e4e4e5;border-radius:13px;padding:13px;min-height:130px;box-shadow:0 8px 18px rgba(35,38,48,.045)}.mock-panel-head{display:flex;align-items:center;justify-content:space-between;font-size:9px;color:#555960;margin-bottom:12px}.mock-panel-head em{font-size:8px;font-style:normal;color:#a0a3a8}.mock-panel h4{font-family:var(--serif);font-size:16px;line-height:1.3;font-weight:400;letter-spacing:-.025em}.mock-panel p{font-size:9px;color:#777b86;line-height:1.55;margin-top:8px}.mock-tags{display:flex;gap:4px;margin-top:10px}.mock-tags i{font-size:8px;font-style:normal;padding:4px 6px;border-radius:999px;background:var(--mist);color:#777b86}.mock-feature button{margin-top:13px;border:0;background:var(--ink);color:#fff;border-radius:999px;font-size:8px;padding:6px 9px}.mock-wide{grid-column:1/-1;min-height:83px}.mock-list{list-style:none;display:flex;flex-direction:column;gap:7px}.mock-list li{display:grid;grid-template-columns:18px 1fr auto;gap:5px;align-items:center;font-size:8px;color:#686c75}.mock-list b{font-family:var(--number);font-style:italic;color:#a0a3a8}.mock-list em{font-style:normal;color:#6f9b80;font-size:8px}.mock-recommend{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center}.mock-recommend strong{font-family:var(--serif);font-size:15px;font-weight:400}.mock-recommend span{font-size:8px;color:#777b86}.mock-recommend b{grid-row:1/3;grid-column:2;font-family:var(--number);font-size:27px;color:#52679e;font-weight:500}.mock-recommend small{font-family:var(--sans);font-size:8px;color:#979799;font-weight:400}.score-line{height:4px;background:#f0f0f1;border-radius:4px;margin-top:11px}.score-line i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#dceafb,#f0cdb9)}.calendar-panel{min-height:174px}.calendar-rows{display:flex;flex-direction:column}.calendar-rows div{display:grid;grid-template-columns:42px 1fr auto;gap:5px;align-items:center;padding:8px 0;border-top:1px solid #eee}.calendar-rows b{font-family:var(--number);font-size:10px;font-weight:500;color:#777b86}.calendar-rows span{font-size:8px;color:#555960}.calendar-rows i{font-size:7px;color:#9b806a;font-style:normal;background:var(--peach);padding:3px 5px;border-radius:999px}.matrix-row{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.matrix-row div{padding:9px 8px;background:#fafafa;border:1px solid #ededee;border-radius:9px}.matrix-row b{display:block;font-size:9px;font-weight:600;color:#555960}.matrix-row span{display:block;font-size:7px;color:#979799;margin-top:5px}
+  .publish-workspace{position:absolute;inset:22px 28px}.publish-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}.publish-head small{font-size:8px;color:#979799;letter-spacing:.05em}.publish-head h3{font-family:var(--serif);font-size:20px;font-weight:400;line-height:1.2;margin-top:5px;letter-spacing:-.04em}.publish-layout{display:grid;grid-template-columns:1.2fr .8fr;gap:10px}.publish-main-card,.publish-side-card{background:rgba(255,255,255,.92);border:1px solid #e4e4e5;border-radius:13px;padding:14px;box-shadow:0 8px 18px rgba(35,38,48,.045)}.publish-main-card{grid-row:span 2;min-height:236px}.publish-main-card h4{font-family:var(--serif);font-size:18px;line-height:1.3;font-weight:400}.publish-main-card p{font-size:9px;color:#777b86;line-height:1.55;margin-top:8px}.publish-checklist{display:flex;flex-direction:column;gap:7px;margin-top:16px;font-size:9px;color:#6f9b80}.publish-main-card button{margin-top:18px;border:0;background:var(--ink);color:#fff;border-radius:999px;font-size:8px;padding:7px 11px}.platform-list{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}.platform-list span{font-size:8px;padding:7px 4px;text-align:center;border:1px solid #e9e9ea;border-radius:7px;color:#686c75;background:#fafafa}.publish-progress{height:4px;background:#f0f0f1;border-radius:4px;margin-top:13px}.publish-progress i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#dceafb,#f0cdb9)}.publish-side-card>small{font-size:8px;color:#979799;display:block;margin-top:6px}.schedule-card>div:not(.mock-panel-head){display:grid;grid-template-columns:40px 1fr auto;gap:4px;align-items:center;border-top:1px solid #eee;padding:8px 0;font-size:8px}.schedule-card b{font-family:var(--number);font-size:10px;font-weight:500;color:#777b86}.schedule-card span{color:#686c75}.schedule-card i{font-size:7px;font-style:normal;color:#9b806a;background:var(--peach);padding:3px 5px;border-radius:999px}
+  .scene{position:absolute;inset:0;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(24px) scale(.975);filter:blur(8px);transition:opacity .5s ease,transform .65s cubic-bezier(.2,.8,.2,1),filter .5s ease}
+  .studio[data-stage="0"] .scene-0,.studio[data-stage="1"] .scene-1,.studio[data-stage="2"] .scene-2,.studio[data-stage="3"] .scene-3,.studio[data-stage="4"] .scene-4{opacity:1;visibility:visible;transform:none;filter:none}
+  .scene .ui-card{opacity:0;translate:0 22px}.scene[style] .ui-card{opacity:1}.studio[data-stage="0"] .scene-0 .ui-card,.studio[data-stage="1"] .scene-1 .ui-card,.studio[data-stage="2"] .scene-2 .ui-card,.studio[data-stage="3"] .scene-3 .ui-card,.studio[data-stage="4"] .scene-4 .ui-card{opacity:1;translate:0 0}.scene .ui-card:nth-child(2){transition-delay:.08s}.scene .ui-card:nth-child(3){transition-delay:.16s}.scene .ui-card:nth-child(4){transition-delay:.24s}
+  .story-panel{position:absolute;inset:7% 7%;display:flex;flex-direction:column}
+  .panel-meta{display:flex;justify-content:space-between;align-items:center;color:#8f9299;font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:20px}
+  .pipeline{background:#fff;border:1px solid #e7e7e8;border-radius:20px;overflow:hidden;margin:auto 0}
+  .pipeline-row{display:grid;grid-template-columns:42px 92px 1fr 38px;align-items:center;gap:12px;min-height:64px;padding:0 20px;border-top:1px solid #ececee}
+  .pipeline-row:first-child{border-top:0}.pipeline-no{font-family:var(--number);font-style:italic;color:#a0a3a8}.pipeline-row strong{font-family:var(--serif);font-size:18px;font-weight:500}.pipeline-row span{font-size:11px;color:#7c7f86}.pipeline-row b{font-family:var(--number);font-size:20px;font-weight:500;text-align:right}
+  .execution-map{display:grid;grid-template-columns:1fr 46px 1fr;align-items:stretch;margin:auto 0;min-height:360px}
+  .exec-block{border:1px solid #e1e1e3;border-radius:22px;background:#fff;padding:28px;display:flex;flex-direction:column}.exec-block.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .exec-block small{font-size:10px;letter-spacing:.1em;color:#93969c}.exec-block h3{font-family:var(--serif);font-size:32px;line-height:1.15;font-weight:400;margin:22px 0 12px}.exec-block p{font-size:12px;line-height:1.65;color:#7b7e84}.exec-block.dark p{color:#aeb1b7}
+  .exec-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:28px}.exec-tags span{font-size:9px;padding:5px 8px;border-radius:999px;background:var(--mist);color:#75787e}.exec-block.dark .exec-tags span{background:#2d3035;color:#c4c6ca}
+  .exec-link{display:grid;place-items:center;color:#91949a;font-size:22px}
+  .delivery-project{margin:auto 0;background:#fff;border:1px solid #e4e4e5;border-radius:22px;overflow:hidden}
+  .delivery-head{padding:24px 26px;background:var(--peach);color:var(--peach-ink);display:flex;align-items:center;justify-content:space-between}.delivery-head small{font-size:10px;letter-spacing:.08em}.delivery-head strong{font-family:var(--serif);font-size:23px;font-weight:500}
+  .delivery-body{display:grid;grid-template-columns:1.25fr .75fr}.file-list{padding:12px 24px}.file-row{display:flex;justify-content:space-between;align-items:center;min-height:48px;border-top:1px solid #ececee;font-size:12px}.file-row:first-child{border-top:0}.file-row span{color:#8b8e94;font-size:10px}
+  .delivery-aside{border-left:1px solid #ececee;padding:22px;display:flex;flex-direction:column;justify-content:space-between}.delivery-aside small{font-size:10px;color:#999ca2}.delivery-aside b{font-family:var(--number);font-size:44px;font-weight:500}.platform-list{display:flex;flex-wrap:wrap;gap:5px}.platform-list span{font-size:9px;background:var(--mist);border-radius:999px;padding:5px 7px}
+  .ui-card{position:absolute;background:#fff;border-radius:18px;box-shadow:0 0 0 1px rgba(4,23,43,.05),0 18px 30px -14px rgba(0,0,0,.22);padding:18px;transition:transform .65s cubic-bezier(.2,.8,.2,1),opacity .45s ease}
+  .ui-label{font-size:10px;color:#989ba1;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+  .ui-title{font-size:15px;font-weight:600;letter-spacing:-.02em;line-height:1.35}
+  .ui-copy{font-size:11px;color:#777b86;line-height:1.55;margin-top:7px}
+  .ui-chip{display:inline-block;font-size:9px;padding:4px 7px;border-radius:999px;background:var(--mist);color:#777b86;margin:8px 4px 0 0}
+  .ui-num{font-family:var(--number);font-size:38px;line-height:1;font-weight:500;letter-spacing:-.05em}
+  .ui-num em{font-size:17px;color:#777b86;font-style:normal;margin-left:4px}
+  .mini-bars{display:flex;align-items:end;gap:5px;height:42px;margin-top:15px}
+  .mini-bars i{width:9px;border-radius:5px 5px 2px 2px;background:#dceafb}
+  .mini-bars i:nth-child(3n){background:#17191c}
+  .scene-heading{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);font-family:var(--serif);font-size:42px;line-height:1.12;text-align:center;letter-spacing:-.055em;width:70%}
+  .scene-heading small{display:block;font-family:var(--sans);font-size:11px;color:#8b8e94;letter-spacing:.12em;text-transform:uppercase;margin-bottom:13px}
+  .idea-card{width:210px;left:5%;top:8%;transform:rotate(-4deg)}
+  .calendar-card{width:225px;right:5%;top:11%;transform:rotate(3deg)}
+  .profile-card{width:196px;left:9%;bottom:8%;transform:rotate(2deg)}
+  .profile-row{display:flex;align-items:center;gap:10px}.profile-face{width:36px;height:36px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-size:10px}
+  .signal-card{width:210px;right:7%;bottom:7%;transform:rotate(-3deg)}
+  .script-card{width:52%;left:8%;top:10%;height:55%;padding:24px}
+  .script-line{height:7px;background:#ececee;border-radius:9px;margin:11px 0}.script-line:nth-child(2n){width:78%}.script-line:nth-child(3n){width:91%}
+  .shot-card{width:39%;right:6%;bottom:8%;height:48%;background:#202226;color:#fff;padding:20px}
+  .shot-frame{height:62%;border-radius:12px;background:linear-gradient(145deg,#7f8e9f,#d4bca9 50%,#5b4b42);margin-top:10px;position:relative;overflow:hidden}
+  .shot-frame::after{content:"▶";position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:20px;background:rgba(0,0,0,.12)}
+  .audio-card{width:40%;left:5%;bottom:6%;padding:14px 18px}
+  .wave{display:flex;align-items:center;gap:3px;height:32px}.wave i{width:3px;border-radius:5px;background:var(--peach-ink);height:var(--h)}
+  .publish-card{width:52%;left:24%;top:16%;padding:28px;text-align:center}
+  .publish-check{width:54px;height:54px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;margin:0 auto 16px;font-size:22px}
+  .metric-card{width:180px}.metric-a{left:4%;bottom:8%;transform:rotate(-4deg)}.metric-b{right:4%;bottom:9%;transform:rotate(4deg)}
+  .platform-row{display:flex;justify-content:center;gap:6px;margin-top:18px}.platform-row span{width:27px;height:27px;border-radius:50%;background:var(--mist);display:grid;place-items:center;font-size:9px}
+
+  .skill-marquee{overflow:hidden;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:34px 0;background:#fff}
+  .marquee-track{display:flex;width:max-content;gap:12px;animation:marquee 32s linear infinite}
+  .marquee-card{width:250px;height:140px;border-radius:20px;background:var(--mist);padding:20px;display:flex;flex-direction:column;justify-content:space-between}
+  .marquee-card.peach{background:var(--peach);color:var(--peach-ink)}
+  .marquee-card.dark{background:var(--ink);color:#fff}
+  .marquee-card .m-top{display:flex;justify-content:space-between;font-size:10px;color:var(--quiet)}
+  .marquee-card.dark .m-top{color:#92969e}.marquee-card.peach .m-top{color:rgba(93,42,26,.6)}
+  .marquee-card strong{font-family:var(--serif);font-size:22px;font-weight:400;letter-spacing:-.035em}
+  @keyframes marquee{to{transform:translateX(calc(-50% - 6px))}}
+  .work-reel{padding:42px 0 48px;background:#f7f7f8;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden}
+  .work-reel-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:22px}.work-reel-head small{color:var(--quiet);font-size:11px;letter-spacing:.12em;text-transform:uppercase}.work-reel-head strong{font-family:var(--serif);font-size:23px;font-weight:400}.work-reel-head span{font-size:12px;color:var(--muted)}
+  .work-track{display:flex;gap:14px;width:max-content;animation:work-marquee 44s linear infinite}
+  .work-grid{display:grid;grid-template-columns:1fr;row-gap:26px}.work-category{min-width:0;overflow:hidden;position:relative;contain:paint;isolation:isolate;clip-path:inset(0)}.work-category-head{display:flex;align-items:center;gap:10px;margin:0 0 12px;color:#686c75;font-size:11px;letter-spacing:.1em;text-transform:uppercase}.work-category-head i{display:block;width:24px;height:1px;background:#b8bbc1}.category-track{display:flex;width:max-content;animation:work-marquee 64s linear infinite;animation-play-state:running!important;will-change:transform}.track-set{display:flex;gap:14px;padding-right:14px;flex:none}.work-category:nth-child(2) .category-track{animation-duration:54s;animation-direction:reverse}
+  .work-tile{width:330px;height:218px;border-radius:20px;background:#fff;border:1px solid #e4e4e6;overflow:hidden;position:relative;box-shadow:0 12px 28px rgba(20,20,25,.07);flex:none}.work-tile img,.work-tile video{display:block;width:100%;height:100%;object-fit:cover}.work-tile.video-tile{background:#15171b}.work-tile video{object-fit:cover}.work-caption{position:absolute;left:0;right:0;bottom:0;padding:30px 16px 14px;background:linear-gradient(transparent,rgba(10,11,14,.88));color:#fff}.work-caption b{display:block;font-family:var(--serif);font-size:18px;font-weight:400}.work-caption span{font-size:10px;color:#d5d7dc;letter-spacing:.08em;text-transform:uppercase}.work-badge{position:absolute;top:12px;left:12px;padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.88);color:#2c2e34;font-size:9px;letter-spacing:.08em;text-transform:uppercase;z-index:2}
+  .work-tile:has(img[src*="cards-strip"]){width:818px;height:218px;background:#ececf0}.work-tile:has(img[src*="cards-strip"]) img{object-fit:contain;background:#ececf0}.work-tile:has(img[src*="cards-strip"]) .work-caption{padding-top:26px}
+  .work-tile:has(img[src*="life-"]){width:491px;height:218px}.work-tile:has(img[src*="jokes-"]){width:327px;height:218px}
+  @keyframes work-marquee{to{transform:translateX(-50%)}}
+
+  .profile-rail{min-height:104px;margin-bottom:14px;padding:20px 24px;border:1px solid #ece8e4;border-radius:24px;background:linear-gradient(108deg,#fcf7f2 0%,#faf8f6 44%,#f1f7fa 100%);color:var(--ink);display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:28px;position:relative;box-shadow:0 14px 34px rgba(86,76,68,.055)}
+  .profile-rail-mark{width:52px;height:52px;border-radius:17px;background:rgba(255,255,255,.88);border:1px solid rgba(113,91,73,.1);color:#966f58;display:grid;place-items:center;font-family:var(--serif);font-size:22px;box-shadow:0 7px 18px rgba(109,82,62,.055)}
+  .profile-rail-copy strong{display:block;font-family:var(--serif);font-size:24px;font-weight:400;letter-spacing:-.025em;margin-bottom:5px}.profile-rail-copy p{font-size:13px;line-height:1.55;color:#716b68}
+  .profile-rail-signals{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap;max-width:480px}.profile-rail-signals span{padding:7px 10px;border:1px solid rgba(106,94,84,.1);border-radius:999px;background:rgba(255,255,255,.82);font-size:10px;color:#68635f;white-space:nowrap}
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .flow-card{min-height:280px;padding:24px 20px;background:var(--mist);border-radius:24px;display:flex;flex-direction:column;transition:transform .25s ease,background .25s ease}
+  .flow-card:hover{transform:translateY(-5px);background:#ededee}
+  .flow-no{color:var(--quiet);font-size:12px;margin-bottom:auto}
+  .flow-icon{width:42px;height:42px;border:1px solid #d6d6d7;border-radius:50%;display:grid;place-items:center;margin-bottom:18px;font-family:var(--serif);font-size:18px}
+  .flow-card h3{font-size:19px;font-weight:500;margin-bottom:9px;letter-spacing:-.02em}
+  .flow-card p{font-size:14px;line-height:1.65;color:var(--muted)}
+  .flow-link{font-size:14px;margin-top:20px;padding-top:12px}
+
+  .feature-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+  .feature-card{border-radius:24px;min-height:430px;padding:38px;position:relative;overflow:hidden}
+  .feature-main{background:var(--mist);display:flex;flex-direction:column}
+  .feature-accent{background:var(--peach);color:var(--peach-ink);display:flex;flex-direction:column}
+  .feature-tag{font-size:12px;color:var(--quiet);margin-bottom:22px}
+  .feature-accent .feature-tag{color:rgba(93,42,26,.6)}
+  .feature-card h3{font-family:var(--serif);font-size:38px;line-height:1.08;font-weight:400;letter-spacing:-.035em;max-width:500px}
+  .feature-card p{font-size:16px;line-height:1.7;margin-top:18px;max-width:520px;color:var(--muted)}
+  .feature-accent p{color:var(--peach-ink)}
+  .feature-demo{margin-top:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-top:44px}
+  .demo-cell{background:#fff;border-radius:16px;padding:16px;min-height:92px}
+  .demo-cell span{display:block;color:var(--quiet);font-size:10px;margin-bottom:12px}
+  .demo-cell strong{font-size:18px;font-weight:500}
+  .quote{font-family:var(--serif);font-size:25px;line-height:1.35;margin-top:auto;padding-top:50px;letter-spacing:-.02em}
+  .quote-by{font-family:var(--sans);font-size:12px;margin-top:20px;color:rgba(93,42,26,.65)}
+
+  .cap-section{padding:120px 0;background:var(--fog)}
+  .cap-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:54px}
+  .cap-card{background:#fff;border-radius:24px;padding:32px;min-height:300px;display:flex;flex-direction:column}
+  .cap-index{font-family:var(--number);font-style:italic;font-size:18px;color:var(--quiet)}
+  .cap-card h3{font-family:var(--serif);font-size:31px;font-weight:500;letter-spacing:-.045em;margin:34px 0 14px}
+  .cap-card p{color:var(--muted);font-size:15px;line-height:1.7;max-width:500px}
+  .cap-tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:auto;padding-top:28px}.cap-tags span{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:#5f6269}
+  .cap-card.dark{background:var(--ink);color:#fff}.cap-card.dark p{color:#aaadb4}.cap-card.dark .cap-tags span{border-color:#3b3e43;color:#c7c9cd}
+  .cap-card.peach{background:var(--peach);color:var(--peach-ink)}.cap-card.peach p{color:rgba(93,42,26,.75)}.cap-card.peach .cap-index{color:rgba(93,42,26,.55)}.cap-card.peach .cap-tags span{border-color:rgba(93,42,26,.18);color:var(--peach-ink)}
+
+  .research-section{padding:140px 0;background:#101216;color:#fff;overflow:hidden}
+  .research-section .section-label{color:#8f949f}.research-section h2{color:#fff}.research-section .section-intro{color:#aeb3bd}
+  .research-grid{display:grid;gap:18px;margin-top:58px}
+  .research-project{border:1px solid #2b2f37;border-radius:28px;background:#181b21;padding:26px;overflow:hidden;position:relative}
+  .research-project::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 90% 0,rgba(255,255,255,.09),transparent 32%);pointer-events:none}
+  .research-meta{display:flex;justify-content:space-between;align-items:center;gap:18px;color:#9096a1;font-size:11px;letter-spacing:.12em;text-transform:uppercase;position:relative;z-index:1}
+  .research-meta strong{color:#fff;font-family:var(--serif);font-size:25px;font-weight:400;letter-spacing:-.03em;text-transform:none}
+  .research-copy{display:grid;grid-template-columns:1fr 1.8fr;gap:28px;align-items:end;margin:20px 0 24px;position:relative;z-index:1}
+  .research-copy p{color:#b7bbc4;line-height:1.7;font-size:14px;max-width:430px}.research-tag{color:#fff;background:#2d323c;border:1px solid #414752;border-radius:999px;padding:7px 11px;font-size:10px;display:inline-flex;margin-top:14px}
+  .strip-frame{border-radius:18px;background:#0c0e12;border:1px solid #30343d;padding:12px;overflow:auto;position:relative;z-index:1;box-shadow:0 24px 60px rgba(0,0,0,.24)}
+  .strip-frame img{display:block;width:100%;min-width:900px;height:auto;border-radius:10px}
+  .strip-hint{display:flex;justify-content:space-between;color:#747b87;font-size:10px;margin-top:10px;letter-spacing:.04em}
+
+  .cta{padding:130px 0 100px;text-align:center}
+  .cta h2{max-width:840px;margin:0 auto}
+  .cta p{color:var(--muted);font-size:17px;margin:24px auto 30px;max-width:560px;line-height:1.7}
+  .cta-actions{display:flex;justify-content:center;gap:10px}
+  .footer{border-top:1px solid var(--line);height:92px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:12px}
+
+  @media(max-width:980px){
+    .nav a:not(.pill){display:none}
+    .hero{padding-top:70px;min-height:900px;align-items:start}
+    .hero h1{font-size:clamp(58px,10vw,84px)}
+    .signal{left:2%;top:54%}.output{right:2%;top:57%}.trend{left:7%;bottom:8%}.composer{right:5%;bottom:5%}
+    .proof-grid{grid-template-columns:repeat(3,1fr)}
+    .proof-item:first-child{grid-column:1/-1;padding:26px 0;border-bottom:1px solid var(--line)}
+    .flow{grid-template-columns:repeat(2,1fr)}
+    .flow-card:last-child{grid-column:1/-1;min-height:220px}
+    .profile-rail{grid-template-columns:auto 1fr;gap:18px;margin-bottom:14px}.profile-rail-signals{grid-column:1/-1;justify-content:flex-start;max-width:none}
+    .section-head{grid-template-columns:1fr;gap:24px}
+    .story-scroll{height:auto;padding:90px 0;background:#f4f4f2}
+    .story-sticky{height:auto;min-height:0;position:relative;grid-template-columns:1fr;padding:0 24px;gap:45px;overflow:visible}
+    .story-copy{height:auto}.story-kicker{position:relative;top:auto;margin-bottom:26px}
+    .story-step{position:relative;inset:auto;opacity:1;visibility:visible;transform:none;padding:0 0 52px}.story-step:last-of-type{padding-bottom:0}
+    .story-step .step-no{margin-bottom:12px}.story-step h2{font-size:48px}.story-step p{max-width:620px}
+    .story-progress,.story-dots{display:none}
+    .studio{height:auto;aspect-ratio:16/10;min-height:0;width:100%;transform:none;order:-1}.studio:hover{transform:none}
+  }
+  @media(max-width:680px){
+    .shell{width:min(100% - 30px,var(--content))}
+    .topbar{height:66px}.topbar .brand-tagline{display:none}.nav{gap:8px}.nav .pill{height:38px;padding:0 15px;font-size:12px}
+    .hero{height:auto;min-height:790px;padding-top:74px;padding-bottom:350px}
+    .eyebrow{font-size:10px;margin-bottom:20px}
+    .hero h1{font-size:clamp(48px,14vw,68px);line-height:.98}
+    .hero-desc{font-size:15px;margin-top:22px}
+    .hero-actions{flex-direction:column;align-items:stretch;width:210px;margin-left:auto;margin-right:auto}
+    .artifact{animation:none}.signal{transform:scale(.84) rotate(-3.2deg)}.output{transform:scale(.84) rotate(2.6deg)}.trend{transform:scale(.84) rotate(2.2deg)}.composer{transform:scale(.84) rotate(-2.4deg)}
+    .signal{left:0;top:auto;bottom:182px}.output{right:0;top:auto;bottom:170px}
+    .trend{left:0;bottom:28px}.composer{right:0;bottom:34px;width:250px}
+    .proof-grid{grid-template-columns:1fr 1fr}.proof-item{padding:24px 12px}.proof-item:nth-child(2){border-left:0}.proof-item:last-child{grid-column:1/-1;border-top:1px solid var(--line);border-left:0}
+    .proof-lead{font-size:22px}.proof-value{font-size:28px}
+    .section{padding:82px 0}.section-head{margin-bottom:36px}h2{font-size:44px}
+    .profile-rail{padding:20px;grid-template-columns:auto 1fr;border-radius:20px}.profile-rail-mark{width:46px;height:46px;border-radius:15px}.profile-rail-copy strong{font-size:21px}.profile-rail-signals{gap:6px}.profile-rail-signals span{padding:6px 8px}
+    .flow{grid-template-columns:1fr}.flow-card,.flow-card:last-child{grid-column:auto;min-height:225px}
+    .feature-grid{grid-template-columns:1fr}.feature-card{min-height:390px;padding:28px}.feature-card h3{font-size:32px}
+    .feature-demo{grid-template-columns:1fr}.demo-cell{min-height:auto}.quote{font-size:23px}
+    .cap-section{padding:82px 0}.cap-grid{grid-template-columns:1fr;margin-top:36px}.cap-card{min-height:280px;padding:27px}
+    .research-section{padding:92px 0}.research-copy{grid-template-columns:1fr;gap:10px}.research-project{padding:18px}.strip-frame img{min-width:760px}.work-grid{grid-template-columns:1fr;row-gap:26px}.work-tile{height:190px}.work-tile:has(img[src*="cards-strip"]){width:713px;height:190px}.work-tile:has(img[src*="life-"]){width:428px;height:190px}.work-tile:has(img[src*="jokes-"]){width:285px;height:190px}
+    .story-scroll{padding:68px 0}.story-sticky{padding:0 15px;gap:38px}.studio{height:auto;aspect-ratio:16/10;border-radius:22px;order:0}
+    .story-step h2{font-size:40px}.story-step p{font-size:14px}.scene-heading{font-size:28px;width:80%}
+    .mock-sidebar{width:86px;padding:14px 8px}.mock-sidebar strong{font-size:15px;margin-bottom:10px}.mock-nav{padding:6px 5px;font-size:8px}.mock-sidebar small{margin-top:14px;font-size:7px}.mock-sidebar b{font-size:8px}
+    .mock-main{left:86px;padding:15px 14px}.mock-toolbar{margin-bottom:12px}.mock-toolbar h3{font-size:16px}.mock-grid{grid-template-columns:1fr;gap:8px}.mock-panel{min-height:112px;padding:10px}.mock-wide{grid-column:auto;min-height:78px}.mock-panel h4{font-size:14px}.mock-panel p{font-size:8px}.calendar-panel{min-height:146px}.matrix-row{grid-template-columns:repeat(2,1fr);gap:5px}
+    .publish-workspace{inset:15px 14px}.publish-head{margin-bottom:10px}.publish-head h3{font-size:16px}.publish-layout{grid-template-columns:1fr;gap:8px}.publish-main-card{grid-row:auto;min-height:0}.publish-side-card{padding:10px}.publish-main-card h4{font-size:15px}.publish-checklist{margin-top:10px;gap:5px}.publish-main-card button{margin-top:12px}.platform-list{grid-template-columns:repeat(3,1fr)}
+    .idea-card{width:160px}.calendar-card{width:165px}.profile-card{width:150px}.signal-card{width:155px}
+    .script-card{width:62%;left:4%;height:52%}.shot-card{width:45%;right:3%}.audio-card{width:48%}
+    .publish-card{width:70%;left:15%}.metric-card{width:135px}.ui-card{padding:13px}.ui-num{font-size:30px}
+    .story-panel{inset:5%}.pipeline-row{grid-template-columns:28px 54px 1fr 24px;gap:6px;min-height:60px;padding:0 12px}.pipeline-row strong{font-size:15px}.pipeline-row span{font-size:9px}.pipeline-row b{font-size:17px}
+    .execution-map{grid-template-columns:1fr;min-height:0}.exec-block{padding:18px}.exec-block h3{font-size:23px;margin:12px 0 8px}.exec-tags{padding-top:14px}.exec-link{height:24px;transform:rotate(90deg);font-size:17px}
+    .delivery-head{padding:18px;display:block}.delivery-head strong{display:block;font-size:19px;margin-top:7px}.delivery-body{grid-template-columns:1fr}.delivery-aside{border-left:0;border-top:1px solid #ececee;display:grid;grid-template-columns:auto 1fr;align-items:end;gap:14px;padding:14px 18px}.delivery-aside b{font-size:32px}.file-list{padding:8px 18px}.file-row{min-height:42px}
+    .skill-marquee{padding:24px 0}.marquee-card{width:210px;height:124px}
+    .cta{padding:90px 0 70px}.cta-actions{flex-direction:column;width:220px;margin:0 auto}
+    .footer{height:auto;padding:28px 0;gap:14px;align-items:flex-start;flex-direction:column}
+  }
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.artifact,.marquee-track{animation:none}}
+</style>
+</head>
+<body>
+  <header class="shell topbar">
+    <a class="brand" href="#top" aria-label="Easel 首页"><img class="brand-mark" src="easel-icon-transparent.png" alt=""><span>Easel</span><span class="brand-tagline">Your private evolving social media assistant, making creation easier</span></a>
+    <nav class="nav" aria-label="主导航">
+      <a href="#workflow">工作流</a>
+      <a href="#features">产品能力</a>
+      <a href="#workflow">产物案例</a>
+      <a href="#about">关于</a>
+      <a class="pill pill-dark" href="../">进入 Easel <span>↗</span></a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="hero-scroll" id="heroScroll">
+    <section class="shell hero" id="heroStage">
+      <div class="hero-wash" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <div class="eyebrow">One agent · five content loops</div>
+        <h1>从一句想法，<br>到一份<em>可发布的作品</em></h1>
+        <p class="hero-desc">Easel 把一个 Agent 变成你的社媒内容搭档：懂你的风格，接住平台变化，从热点发现一直陪你做到发布和复盘。</p>
+        <div class="hero-actions">
+          <a class="pill pill-dark" href="../">开始创作 <span>→</span></a>
+          <a class="pill pill-light" href="#workflow">看看怎么工作</a>
+        </div>
+      </div>
+
+      <div class="artifact signal" aria-hidden="true">
+        <div class="signal-head"><span>今日热点</span><small>热点雷达 →</small></div>
+        <div class="hot-list"><div><b>01</b><span>平台热榜与行业信号</span></div><div><b>02</b><span>竞品动态与爆款结构</span></div><div><b>03</b><span>适合当前画像的机会</span></div></div>
+      </div>
+      <div class="artifact output" aria-hidden="true">
+        <div class="signal-head"><span>近期排期</span><small>内容日历 →</small></div>
+        <div class="schedule-list"><div><time>09.09</time><span>平台活动与节日节点</span></div><div><time>09.10</time><span>待发布内容与账号节奏</span></div><div><time>09.25</time><span>创作计划自动读回</span></div></div>
+      </div>
+      <div class="artifact trend" aria-hidden="true">
+        <div class="signal-head"><span>最近产物</span><small>内容库 →</small></div>
+        <div class="output-list"><div><span>如月站v2</span><b>AI 短剧</b></div><div><span>论文解说-Transformer</span><b>视频</b></div><div><span>知乎恐怖问答</span><b>长文</b></div></div>
+      </div>
+      <div class="artifact composer" aria-hidden="true"><img class="avatar" src="easel-icon-transparent.png" alt=""><span>选题 / 文案 / 卡片 / 视频 / 发布都行…</span><div class="composer-button">↑</div></div>
+    </section>
+    </div>
+
+    <section class="proof">
+      <div class="shell proof-grid">
+        <div class="proof-item"><span class="proof-kicker">项目定位</span><p class="proof-lead">一个 Agent，<br>贯穿五层内容工作流</p></div>
+        <div class="proof-item"><strong class="proof-value">112</strong><span class="proof-label">个可组合的内容能力</span></div>
+        <div class="proof-item"><strong class="proof-value">5</strong><span class="proof-label">层端到端内容工作流</span></div>
+        <div class="proof-item"><strong class="proof-value">6</strong><span class="proof-label">个已接入发布平台</span></div>
+      </div>
+    </section>
+
+    <section class="story-scroll" id="productStory">
+      <div class="story-sticky">
+        <div class="story-copy">
+          <div class="story-kicker">Easel / How it works</div>
+          <article class="story-step active" data-copy-stage="0">
+            <span class="step-no">01 / Discover</span>
+            <h2>发现热点，<br>先找到<em>适合你的机会</em></h2>
+            <p>聚合平台热榜、行业新闻、竞品动态和用户讨论，再结合账号定位与受众筛选，不追每一个热点，只找你真正能做的。</p>
+          </article>
+          <article class="story-step" data-copy-stage="1">
+            <span class="step-no">02 / Plan</span>
+            <h2>策划题材，<br>把灵感放进<em>创作节奏</em></h2>
+            <p>从选题评分、标题钩子到脚本和内容矩阵，并把节点、排期和平台活动写进同一份内容日历。</p>
+          </article>
+          <article class="story-step" data-copy-stage="2">
+            <span class="step-no">03 / Create</span>
+            <h2>创作内容，<br>直接拿到<em>可发布素材</em></h2>
+            <p>文案、卡片、海报、小说、配音、字幕、短剧、论文 PPT 和视频都能在同一个项目里完成。</p>
+          </article>
+          <article class="story-step" data-copy-stage="3">
+            <span class="step-no">04 / Publish</span>
+            <h2>一键发布，<br>每个平台都<em>用对格式</em></h2>
+            <p>连接已登录账号，完成平台适配、发布检查和内容分发，让做好的素材不用再手工搬来搬去。</p>
+          </article>
+          <article class="story-step" data-copy-stage="4">
+            <span class="step-no">05 / Attribute</span>
+            <h2>归因回流，<br>让下一次创作<em>更懂账号</em></h2>
+            <p>把流量、互动、评论和内容表现带回创作者画像，形成可以持续协作、持续学习的内容 Agent。</p>
+          </article>
+          <div class="story-progress"><i id="storyProgress"></i></div>
+          <div class="story-dots"><i class="story-dot active"></i><i class="story-dot"></i><i class="story-dot"></i><i class="story-dot"></i><i class="story-dot"></i></div>
+        </div>
+
+        <div class="studio" id="studio" data-stage="0">
+          <div class="studio-bar"><i class="studio-dot"></i><i class="studio-dot"></i><i class="studio-dot"></i><span class="studio-title">EASEL · CREATIVE CANVAS</span><span class="studio-status">Live workflow</span></div>
+          <div class="studio-canvas">
+            <div class="scene scene-0">
+              <div class="mock-sidebar"><strong>Easel</strong><span class="mock-nav active">概览</span><span class="mock-nav">热点雷达</span><span class="mock-nav">内容日历</span><span class="mock-nav">内容库</span><small>本周画像</small><b>科技内容创作者</b></div>
+              <div class="mock-main"><div class="mock-toolbar"><div><small>周一 · 09:42</small><h3>今天什么值得做？</h3></div><span class="mock-toolbar-pill">画像已同步</span></div><div class="mock-grid discover-grid"><article class="mock-panel mock-feature"><div class="mock-panel-head"><span>热榜雷达</span><em>实时更新</em></div><h4>AI 陪伴正在成为新的内容入口</h4><p>从平台热榜、竞品动向和你的账号定位里，筛出值得跟进的选题。</p><div class="mock-tags"><i>趋势上升</i><i>匹配受众</i></div><button>生成选题简报 →</button></article><article class="mock-panel"><div class="mock-panel-head"><span>竞品动态</span><em>12 个账号</em></div><h4>同赛道近期高互动内容</h4><ul class="mock-list"><li><b>01</b><span>先抛问题，再展示实验结果</span><em>+28%</em></li><li><b>02</b><span>一张图讲清复杂技术概念</span><em>+19%</em></li><li><b>03</b><span>把新闻节点改写成个人观点</span><em>+14%</em></li></ul></article><article class="mock-panel mock-wide"><div class="mock-panel-head"><span>画像匹配</span><em>今日推荐 03</em></div><div class="mock-recommend"><strong>科技论文解读</strong><span>适合你的“专业但不端着”表达方式</span><b>92 <small>匹配度</small></b></div><p>建议从空间智能、具身 AI、Agent 协作三个方向开始。</p></article></div></div>
+            </div>
+
+            <div class="scene scene-1">
+              <div class="mock-sidebar"><strong>Easel</strong><span class="mock-nav">概览</span><span class="mock-nav">热点雷达</span><span class="mock-nav active">内容日历</span><span class="mock-nav">内容库</span><small>本周计划</small><b>4 条待制作</b></div>
+              <div class="mock-main"><div class="mock-toolbar"><div><small>内容日历 · 09 月 09 日</small><h3>把一个灵感，排进内容节奏</h3></div><span class="mock-toolbar-pill peach">本周 4 条</span></div><div class="mock-grid plan-grid"><article class="mock-panel mock-feature"><div class="mock-panel-head"><span>选题评分</span><em>88 / 100</em></div><h4>空间智能为什么是 AI 的下一道坎？</h4><p>已有热点信号和账号画像支持，适合做成连续三期的解释型内容。</p><div class="score-line"><i style="width:88%"></i></div><div class="mock-tags"><i>抓痛点</i><i>适合连载</i></div></article><article class="mock-panel calendar-panel"><div class="mock-panel-head"><span>内容日历</span><em>本周</em></div><div class="calendar-rows"><div><b>09.10</b><span>论文卡片 · 认识空间智能</span><i>草稿</i></div><div><b>09.12</b><span>口播视频 · 三分钟讲清楚</span><i>待制作</i></div><div><b>09.14</b><span>长文复盘 · 从热点到观点</span><i>已排期</i></div></div></article><article class="mock-panel mock-wide"><div class="mock-panel-head"><span>内容矩阵</span><em>1 个主题 → 4 种形态</em></div><div class="matrix-row"><div><b>论文卡片</b><span>小红书 / 朋友圈</span></div><div><b>口播视频</b><span>抖音 / 视频号</span></div><div><b>深度长文</b><span>知乎 / 长文</span></div><div><b>短帖摘要</b><span>微博 / 即刻</span></div></div></article></div></div>
+            </div>
+
+            <div class="scene scene-2">
+              <div class="scene-heading"><small>Create</small>文字、画面和声音一起完成</div>
+              <div class="ui-card script-card"><div class="ui-label"><span>分镜脚本</span><span>12 scenes</span></div><div class="ui-title">从核心观点到逐页视觉叙事</div><div class="script-line"></div><div class="script-line"></div><div class="script-line"></div><div class="script-line"></div><div class="script-line"></div></div>
+              <div class="ui-card shot-card"><div class="ui-label"><span>成片预览</span><span>16:9</span></div><div class="shot-frame"></div><div class="ui-copy">配音 · 字幕 · 画面 · 节奏</div></div>
+              <div class="ui-card audio-card"><div class="ui-label"><span>同步配音</span><span>02:36</span></div><div class="wave"><i style="--h:28%"></i><i style="--h:66%"></i><i style="--h:42%"></i><i style="--h:90%"></i><i style="--h:52%"></i><i style="--h:76%"></i><i style="--h:35%"></i><i style="--h:82%"></i><i style="--h:48%"></i></div></div>
+            </div>
+
+            <div class="scene scene-3">
+              <div class="publish-workspace"><div class="publish-head"><div><small>Publish center · 09 月 12 日</small><h3>一次检查，适配六个平台</h3></div><span class="mock-toolbar-pill peach">已通过预检</span></div><div class="publish-layout"><article class="publish-main-card"><div class="mock-panel-head"><span>内容预览</span><em>论文解读 · 视频</em></div><h4>空间智能为什么是 AI 的下一道坎？</h4><p>标题、正文、封面和视频素材已按账号画像完成适配。</p><div class="publish-checklist"><span>✓ 敏感信息扫描</span><span>✓ 画幅与字数检查</span><span>✓ 账号风格一致</span></div><button>确认并发布 →</button></article><article class="publish-side-card"><div class="mock-panel-head"><span>发布到</span><em>6 / 6</em></div><div class="platform-list"><span>小红书</span><span>抖音</span><span>快手</span><span>知乎</span><span>B站</span><span>视频号</span></div><div class="publish-progress"><i style="width:100%"></i></div><small>六个平台格式均已准备</small></article><article class="publish-side-card schedule-card"><div class="mock-panel-head"><span>发布排期</span><em>今日</em></div><div><b>18:30</b><span>小红书 · 论文卡片</span><i>待发布</i></div><div><b>20:00</b><span>抖音 / B站 · 视频</span><i>已就绪</i></div></article></div></div>
+            </div>
+
+            <div class="scene scene-4">
+              <div class="scene-heading"><small>Attribute</small>每次表现，都让下一次更准</div>
+              <div class="ui-card metric-card metric-a"><div class="ui-label">内容播放</div><div class="ui-num">12.8<em>万</em></div><div class="mini-bars"><i style="height:32%"></i><i style="height:48%"></i><i style="height:61%"></i><i style="height:78%"></i><i style="height:94%"></i></div></div>
+              <div class="ui-card metric-card metric-b"><div class="ui-label">互动率</div><div class="ui-num">8.4<em>%</em></div><div class="ui-copy">高于账号近 30 天均值</div></div>
+              <div class="ui-card script-card"><div class="ui-label"><span>复盘建议</span><span>已回流画像</span></div><div class="ui-title">观众更喜欢“先抛问题，再展示实验结果”的讲法</div><div class="ui-copy">保留成功结构，下一次选题优先考虑空间智能与具身 AI。</div><div class="exec-tags"><span>更新偏好</span><span>记录有效钩子</span><span>调整发布时间</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-fog" id="workflow">
+      <div class="shell">
+        <div class="section-head reveal">
+          <div><div class="section-label">Easel 到底能做什么</div><h2>五层能力串起，<br><em>内容创作全流程</em></h2></div>
+          <p class="section-intro">五个阶段共享同一份创作者画像：从“这个账号适合做什么”开始，到“这条内容表现如何”结束，形成持续变聪明的创作闭环。</p>
+        </div>
+        <aside class="profile-rail reveal" aria-label="用户画像贯穿全部五层能力">
+          <div class="profile-rail-mark">◎</div>
+          <div class="profile-rail-copy"><strong>用户画像 · 五层能力的共同底座</strong><p>每一步都从同一个“你”出发，并把新的内容表现持续写回画像。</p></div>
+          <div class="profile-rail-signals"><span>账号定位</span><span>核心受众</span><span>内容偏好</span><span>历史表现</span><span>创作习惯</span></div>
+        </aside>
+        <div class="flow">
+          <article class="flow-card reveal"><span class="flow-no">01 / 05</span><div class="flow-icon">⌁</div><h3>发现热点</h3><p>找热榜、新闻、竞品和 UGC，再筛出真正适合你账号定位与受众的机会。</p><span class="flow-link">Find a signal →</span></article>
+          <article class="flow-card reveal"><span class="flow-no">02 / 05</span><div class="flow-icon">◇</div><h3>策划题材</h3><p>把灵感变成选题、标题和脚本，结合内容日历记录节点、排期和账号节奏。</p><span class="flow-link">Shape an idea →</span></article>
+          <article class="flow-card reveal"><span class="flow-no">03 / 05</span><div class="flow-icon">✦</div><h3>创作内容</h3><p>从文案、卡片、海报、信息图到配音、短剧、论文 PPT 和视频，一次做成可发布素材。</p><span class="flow-link">Make the piece →</span></article>
+          <article class="flow-card reveal"><span class="flow-no">04 / 05</span><div class="flow-icon">↗</div><h3>一键发布</h3><p>适配小红书、抖音、快手、知乎、B 站和视频号，登录后把做好的内容直接发出去。</p><span class="flow-link">Send it live →</span></article>
+          <article class="flow-card reveal"><span class="flow-no">05 / 05</span><div class="flow-icon">∿</div><h3>归因回流</h3><p>读取登录账号的流量、互动和内容表现，把有效经验带回下一次选题和创作。</p><span class="flow-link">Learn and loop →</span></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="work-reel" aria-label="真实内容产物">
+      <div class="shell">
+        <div class="work-reel-head"><div><small>Selected work · content library</small><strong>能力下面，直接看它做出来的东西。</strong></div><span>真实产物 · 持续滚动</span></div>
+      </div>
+      <div class="work-grid">
+      <div class="work-category"><div class="shell work-category-head"><i></i><span>小红书卡片 · 5-card stories</span></div><div class="category-track">
+        <article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/spatialevo-cards-strip.jpg" alt="SpatialEvo 五张小红书卡片" loading="lazy"><div class="work-caption"><b>SpatialEvo</b><span>论文解读 · 小红书卡片</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/spatialladder-cards-strip.jpg" alt="SpatialLadder 五张小红书卡片" loading="lazy"><div class="work-caption"><b>SpatialLadder</b><span>VLM 论文 · 视觉叙事</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/culture-mt-cards-strip.jpg" alt="CULTURE-MT 五张小红书卡片" loading="lazy"><div class="work-caption"><b>CULTURE-MT</b><span>文化翻译 · 研究卡片</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/knowu-cards-strip.jpg" alt="KnowU Bench 五张小红书卡片" loading="lazy"><div class="work-caption"><b>KnowU-Bench</b><span>论文解读 · 侦探漫画</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/agentg2-cards-strip.jpg" alt="AGENT G2 五张小红书卡片" loading="lazy"><div class="work-caption"><b>AGENT G2</b><span>论文解读 · 暗夜英雄</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/pause-cards-strip.jpg" alt="Pause or Fabricate 五张小红书卡片" loading="lazy"><div class="work-caption"><b>Pause or Fabricate</b><span>论文解读 · 角色化科普</span></div></article>
+        <article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/spatialevo-cards-strip.jpg" alt="SpatialEvo 五张小红书卡片" loading="lazy"><div class="work-caption"><b>SpatialEvo</b><span>论文解读 · 小红书卡片</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/spatialladder-cards-strip.jpg" alt="SpatialLadder 五张小红书卡片" loading="lazy"><div class="work-caption"><b>SpatialLadder</b><span>VLM 论文 · 视觉叙事</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/culture-mt-cards-strip.jpg" alt="CULTURE-MT 五张小红书卡片" loading="lazy"><div class="work-caption"><b>CULTURE-MT</b><span>文化翻译 · 研究卡片</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/knowu-cards-strip.jpg" alt="KnowU Bench 五张小红书卡片" loading="lazy"><div class="work-caption"><b>KnowU-Bench</b><span>论文解读 · 侦探漫画</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/agentg2-cards-strip.jpg" alt="AGENT G2 五张小红书卡片" loading="lazy"><div class="work-caption"><b>AGENT G2</b><span>论文解读 · 暗夜英雄</span></div></article><article class="work-tile"><span class="work-badge">5-card strip</span><img src="showcase/pause-cards-strip.jpg" alt="Pause or Fabricate 五张小红书卡片" loading="lazy"><div class="work-caption"><b>Pause or Fabricate</b><span>论文解读 · 角色化科普</span></div></article>
+      </div></div>
+      <div class="work-category"><div class="shell work-category-head"><i></i><span>小说与故事 · markdown → visual</span></div><div class="category-track">
+        <article class="work-tile"><img src="showcase/novel-xiuxian.png" alt="外门弟子整顿修仙界小说介绍" loading="lazy"><div class="work-caption"><b>外门弟子整顿修仙界</b><span>知乎小说 · 搞笑修仙</span></div></article><article class="work-tile"><img src="showcase/novel-horror.png" alt="中元节那晚纸扎人的眼睛动了小说介绍" loading="lazy"><div class="work-caption"><b>中元节那晚</b><span>知乎小说 · 恐怖短篇</span></div></article><article class="work-tile"><img src="showcase/novel-romance.png" alt="我和相亲对象互演正常人小说介绍" loading="lazy"><div class="work-caption"><b>我和相亲对象互演正常人</b><span>知乎小说 · 爱情喜剧</span></div></article><article class="work-tile"><img src="showcase/novel-seventh.png" alt="恐怖短篇第七格小说介绍" loading="lazy"><div class="work-caption"><b>第七格</b><span>恐怖短篇 · 故事成稿</span></div></article>
+        <article class="work-tile"><img src="showcase/novel-xiuxian.png" alt="外门弟子整顿修仙界小说介绍" loading="lazy"><div class="work-caption"><b>外门弟子整顿修仙界</b><span>知乎小说 · 搞笑修仙</span></div></article><article class="work-tile"><img src="showcase/novel-horror.png" alt="中元节那晚纸扎人的眼睛动了小说介绍" loading="lazy"><div class="work-caption"><b>中元节那晚</b><span>知乎小说 · 恐怖短篇</span></div></article><article class="work-tile"><img src="showcase/novel-romance.png" alt="我和相亲对象互演正常人小说介绍" loading="lazy"><div class="work-caption"><b>我和相亲对象互演正常人</b><span>知乎小说 · 爱情喜剧</span></div></article><article class="work-tile"><img src="showcase/novel-seventh.png" alt="恐怖短篇第七格小说介绍" loading="lazy"><div class="work-caption"><b>第七格</b><span>恐怖短篇 · 故事成稿</span></div></article>
+      </div></div>
+      <div class="work-category"><div class="shell work-category-head"><i></i><span>生活分享与梗图 · lifestyle / memes</span></div><div class="category-track">
+        <article class="work-tile"><img src="showcase/life-color-cards-strip.jpg" alt="丰富多彩的生活卡片" loading="lazy"><div class="work-caption"><b>丰富多彩的生活</b><span>小红书卡片 · 生活分享</span></div></article><article class="work-tile"><img src="showcase/life-mountain-cards-strip.jpg" alt="大山大水生活卡片" loading="lazy"><div class="work-caption"><b>大山大水</b><span>小红书卡片 · 生活分享</span></div></article><article class="work-tile"><img src="showcase/life-chengdu-cards-strip.jpg" alt="成都乡土生活卡片" loading="lazy"><div class="work-caption"><b>成都乡土生活</b><span>小红书卡片 · 城市记录</span></div></article><article class="work-tile"><img src="showcase/jokes-cards-strip.jpg" alt="开学趣事梗卡" loading="lazy"><div class="work-caption"><b>开学趣事梗卡</b><span>小红书卡片 · 梗内容</span></div></article>
+        <article class="work-tile"><img src="showcase/life-color-cards-strip.jpg" alt="丰富多彩的生活卡片" loading="lazy"><div class="work-caption"><b>丰富多彩的生活</b><span>小红书卡片 · 生活分享</span></div></article><article class="work-tile"><img src="showcase/life-mountain-cards-strip.jpg" alt="大山大水生活卡片" loading="lazy"><div class="work-caption"><b>大山大水</b><span>小红书卡片 · 生活分享</span></div></article><article class="work-tile"><img src="showcase/life-chengdu-cards-strip.jpg" alt="成都乡土生活卡片" loading="lazy"><div class="work-caption"><b>成都乡土生活</b><span>小红书卡片 · 城市记录</span></div></article><article class="work-tile"><img src="showcase/jokes-cards-strip.jpg" alt="开学趣事梗卡" loading="lazy"><div class="work-caption"><b>开学趣事梗卡</b><span>小红书卡片 · 梗内容</span></div></article>
+      </div></div>
+      <div class="work-category"><div class="shell work-category-head"><i></i><span>视频成片 · vertical / horizontal</span></div><div class="category-track">
+        <article class="work-tile video-tile"><span class="work-badge">口播剧 · 竖版</span><video src="showcase/demo/war-serial.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>穿越抗战：来自未来的她</b><span>口播剧 · 多集连续剧</span></div></article><article class="work-tile video-tile"><span class="work-badge">口播剧 · 竖版</span><video src="showcase/demo/ordinary-person.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>普通人</b><span>口播剧 · 单集成片</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/cyber-turtle.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>赛博吃播甲鱼</b><span>AI 短视频 · 角色内容</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/flower-bedroom.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>花朵卧室</b><span>AI 短视频 · 氛围影像</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/cyber-cultivation.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>赛博修仙：拒绝打怪</b><span>AI 短视频 · 原生音频</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/hanako-change.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>花子的转变</b><span>AI 短视频 · 角色叙事</span></div></article>
+        <article class="work-tile video-tile"><span class="work-badge">横版视频</span><video src="showcase/demo/jilong-news.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>西藏吉隆泥石流</b><span>新闻报道 · 横版</span></div></article><article class="work-tile video-tile"><span class="work-badge">横版视频</span><video src="showcase/demo/daomu-book.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>盗墓笔记</b><span>书籍介绍 · 横版</span></div></article><article class="work-tile video-tile"><span class="work-badge">横版视频</span><video src="showcase/demo/zju-intro.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>浙江大学</b><span>学校介绍 · 横版</span></div></article>
+        <article class="work-tile video-tile"><span class="work-badge">口播剧 · 竖版</span><video src="showcase/demo/war-serial.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>穿越抗战：来自未来的她</b><span>口播剧 · 多集连续剧</span></div></article><article class="work-tile video-tile"><span class="work-badge">口播剧 · 竖版</span><video src="showcase/demo/ordinary-person.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>普通人</b><span>口播剧 · 单集成片</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/cyber-turtle.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>赛博吃播甲鱼</b><span>AI 短视频 · 角色内容</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/flower-bedroom.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>花朵卧室</b><span>AI 短视频 · 氛围影像</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/cyber-cultivation.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>赛博修仙：拒绝打怪</b><span>AI 短视频 · 原生音频</span></div></article><article class="work-tile video-tile"><span class="work-badge">AI 短视频 · 竖版</span><video src="showcase/demo/hanako-change.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>花子的转变</b><span>AI 短视频 · 角色叙事</span></div></article><article class="work-tile video-tile"><span class="work-badge">横版视频</span><video src="showcase/demo/jilong-news.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>西藏吉隆泥石流</b><span>新闻报道 · 横版</span></div></article><article class="work-tile video-tile"><span class="work-badge">横版视频</span><video src="showcase/demo/daomu-book.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>盗墓笔记</b><span>书籍介绍 · 横版</span></div></article><article class="work-tile video-tile"><span class="work-badge">横版视频</span><video src="showcase/demo/zju-intro.mp4" muted loop autoplay playsinline controls preload="metadata"></video><div class="work-caption"><b>浙江大学</b><span>学校介绍 · 横版</span></div></article>
+      </div></div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="shell">
+        <div class="section-head reveal">
+          <div><div class="section-label">为什么创作者会一直用下去</div><h2>不是一个聊天窗口，<br>而是你的<em>内容搭档</em></h2></div>
+          <p class="section-intro">Easel 跑在成熟的 Agent 生态之上，把 Agent 编排、账号画像和社媒创作场景整合起来，让建议、素材和复盘始终围绕同一个创作者。</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card feature-main reveal">
+            <span class="feature-tag">一个 Agent · 五层工作流</span>
+            <h3>从“我想做什么”，到“这条已经发出去了”。</h3>
+            <p>它了解你的定位、风格、受众、平台、偏好和历史表现，帮你发现机会、做出内容、适配平台，并把结果带回下一轮创作。</p>
+            <div class="feature-demo">
+              <div class="demo-cell"><span>发现</span><strong>找到适合你的机会</strong></div>
+              <div class="demo-cell"><span>创作</span><strong>直接产出素材包</strong></div>
+              <div class="demo-cell"><span>回流</span><strong>越用越懂账号</strong></div>
+            </div>
+          </article>
+          <article class="feature-card feature-accent reveal" id="about">
+            <span class="feature-tag">六维跨平台 Profile</span>
+            <h3>每一条内容，都属于同一个创作者。</h3>
+            <p>定位、风格、受众、平台、偏好和记忆分别保存。发现、策划、发布与复盘读取完整画像；制作阶段只凝练当前任务真正需要的部分。</p>
+            <blockquote class="quote">“不是通用热点，而是这个账号能做的热点；不是模板文案，而是这个人会说的话。”</blockquote>
+            <span class="quote-by">IDENTITY · STYLE · AUDIENCE · PLATFORMS · PREFERENCES · MEMORY</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cap-section">
+      <div class="shell">
+        <div class="section-head">
+          <div><div class="section-label">已经落地的产品能力</div><h2>从灵感到成片发布，<br>发现策划创作复盘</h2></div>
+          <p class="section-intro">从一条灵感到一份完整素材包，Easel 把发现、策划、创作、发布和复盘放在同一个工作台里，让创作者少切换工具，多把时间留给内容本身。</p>
+        </div>
+        <div class="cap-grid">
+          <article class="cap-card"><span class="cap-index">01 / Content</span><h3>从一条文案，到一整套内容项目</h3><p>支持社媒文案、小红书笔记与卡片、金句卡、海报、信息图、长文、小说、思维导图、数据报告和论文解读。成品与中间素材按项目归档，不散落在聊天记录里。</p><div class="cap-tags"><span>社媒文案</span><span>小红书笔记</span><span>金句卡片</span><span>论文解读</span><span>小说写作</span></div></article>
+          <article class="cap-card dark"><span class="cap-index">02 / Media</span><h3>真正执行的图片、音频与视频制作链</h3><p>AI 生图、生视频与音乐，配音、声音克隆、字幕、降噪、混音、转竖屏、长视频切片、片头片尾和绿幕处理都有对应脚本。AI 短剧包含定妆复核、逐镜生成、原生对白审计和最终合成硬门。</p><div class="cap-tags"><span>图片生成</span><span>视频生成</span><span>AI 短剧</span><span>配音与声音克隆</span><span>自动字幕</span><span>视频剪辑</span></div></article>
+          <article class="cap-card peach"><span class="cap-index">03 / Publishing</span><h3>六个平台的登录、适配与发布</h3><p>已接入小红书、抖音、快手、知乎、B 站、微信视频号。发布前经过敏感信息扫描与画像一致性门禁，发布成功后自动写入内容日历和指标记录。</p><div class="cap-tags"><span>小红书</span><span>抖音</span><span>快手</span><span>知乎</span><span>Bilibili</span><span>视频号</span></div></article>
+          <article class="cap-card"><span class="cap-index">04 / Operations</span><h3>创作之后，还有日历、数据与复盘</h3><p>统一日历同时记录排期、发布和平台活动；账号数据、评论洞察、内容表现、增长趋势与 ROI 进入归因层。真正可复用的偏好和有效经验，在用户同意后沉淀回 Profile。</p><div class="cap-tags"><span>内容日历</span><span>账号数据</span><span>评论洞察</span><span>ROI</span><span>内容复盘</span><span>画像记忆</span></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="shell cta reveal">
+      <div class="section-label">现在，轮到你的下一条内容</div>
+      <h2>少一点工具切换，<br>多一点真正的<em>创作</em></h2>
+      <p>进入 Easel，从一个热点、一句话或一份素材开始，把今天的想法真正做成。</p>
+      <div class="cta-actions"><a class="pill pill-dark" href="../">进入 Easel <span>→</span></a><a class="pill pill-light" href="#top">返回顶部</a></div>
+    </section>
+  </main>
+
+  <footer class="shell footer"><a class="brand" href="#top"><img class="brand-mark" src="easel-icon-transparent.png" alt="">Easel</a><span>从灵感到影响力，一站式社媒内容工作流。</span><span>© 2026 Easel</span></footer>
+
+<script>
+  (() => {
+    const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+    const categories = [...document.querySelectorAll('.work-category')];
+    if (categories.length === 4) {
+      const imageItems = categories.slice(0, 3).flatMap((category) => {
+        const items = [...category.querySelector('.category-track').children];
+        return items.slice(0, Math.floor(items.length / 2));
+      });
+      const imageTrack = categories[0].querySelector('.category-track');
+      imageTrack.replaceChildren(...imageItems, ...imageItems.map((item) => item.cloneNode(true)));
+      categories[0].querySelector('.work-category-head span').textContent = '图文作品 · 论文卡片 / 小说 / 生活分享 / 梗图';
+      categories[1].remove();
+      categories[2].remove();
+    }
+    document.querySelectorAll('.category-track').forEach((track) => {
+      const items = [...track.children];
+      const groupSize = Math.floor(items.length / 2);
+      if (!groupSize || items.length !== groupSize * 2) return;
+      const first = document.createElement('div');
+      const second = document.createElement('div');
+      first.className = 'track-set';
+      second.className = 'track-set';
+      items.slice(0, groupSize).forEach((item) => first.appendChild(item));
+      items.slice(groupSize).forEach((item) => second.appendChild(item));
+      second.setAttribute('aria-hidden', 'true');
+      track.replaceChildren(first, second);
+    });
+    document.querySelectorAll('.work-reel img').forEach((image) => image.loading = 'eager');
+    const story = document.getElementById('productStory');
+    const studio = document.getElementById('studio');
+    const storySteps = [...document.querySelectorAll('[data-copy-stage]')];
+    const storyDots = [...document.querySelectorAll('.story-dot')];
+    const storyProgress = document.getElementById('storyProgress');
+    document.querySelectorAll('.proof-item,.work-reel-head,.work-category-head,.cap-card').forEach((element) => element.classList.add('reveal'));
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in-view');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: .14, rootMargin: '0px 0px -7% 0px' });
+    document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
+    let ticking = false;
+
+    const setStoryStage = (stage) => {
+      studio.dataset.stage = String(stage);
+      storySteps.forEach((step, index) => step.classList.toggle('active', index === stage));
+      storyDots.forEach((dot, index) => dot.classList.toggle('active', index === stage));
+    };
+
+    const render = () => {
+      const desktop = window.innerWidth > 980;
+      if (desktop) {
+        const storyRect = story.getBoundingClientRect();
+        const storyRange = Math.max(1, story.offsetHeight - window.innerHeight);
+        const sp = clamp(-storyRect.top / storyRange);
+        const stage = Math.min(4, Math.floor(sp * 5));
+        setStoryStage(stage);
+        storyProgress.style.width = `${sp * 100}%`;
+      }
+      ticking = false;
+    };
+
+    const requestRender = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(render);
+      }
+    };
+    window.addEventListener('scroll', requestRender, { passive: true });
+    window.addEventListener('resize', requestRender);
+    render();
+
+    let mobileStage = 0;
+    window.setInterval(() => {
+      if (window.innerWidth <= 980) {
+        mobileStage = (mobileStage + 1) % 5;
+        studio.dataset.stage = String(mobileStage);
+      }
+    }, 2600);
+  })();
+</script>
+</body>
+</html>

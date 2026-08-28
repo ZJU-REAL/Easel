@@ -1,0 +1,48 @@
+{
+  "id": "detail-macro",
+  "name": "细节微距图",
+  "keywords": ["细节图", "微距", "macro", "特写", "close-up", "detail shot", "细节展示"],
+  "trigger_phrases": ["细节图", "微距图", "产品特写", "材质特写", "detail shot", "macro photography"],
+  "prompt_template": {
+    "type": "macro product photography",
+    "subject": "{product_description}, extreme close-up on {focus_area}",
+    "detail": "visible {texture_description}",
+    "lighting": "{lighting_style}",
+    "camera": "shot with {camera_setup}",
+    "quality": "ultra macro detail, 8K, professional product photography"
+  },
+  "defaults": {
+    "focus_area": "texture and material quality",
+    "detail": "fine texture, material grain, surface quality",
+    "lighting": "soft directional lighting highlighting texture",
+    "camera": "dedicated macro lens setup"
+  },
+  "variants": {
+    "texture": {
+      "description": "材质纹理展示",
+      "overrides": { "focus_area": "material surface showing grain and quality" }
+    },
+    "formula": {
+      "description": "产品配方展示",
+      "overrides": { "focus_area": "product formula showing cream/liquid texture", "detail": "formula consistency, light reflection" }
+    },
+    "craftsmanship": {
+      "description": "工艺细节展示",
+      "overrides": { "focus_area": "stitching, joints, edges, manufacturing precision" }
+    }
+  },
+  "category_tips": {
+    "beauty": "show cream formula texture, shimmer particles, light reflection",
+    "electronics": "show port precision, material finish, button detail",
+    "food": "show ingredient texture, cross-section, freshness",
+    "fashion": "show fabric weave, stitching quality, hardware detail",
+    "jewelry": "show gemstone cut, metal finish, clasp detail"
+  },
+  "examples": [
+    "Extreme close-up beauty macro, Canon EOS R5 100mm f/2.8 macro. {product} filling 80% of frame, focusing on {focus_area}. Visible pores, fine lines, natural imperfections, NOT retouched. Formula visible with realistic light reflection. Natural side lighting. 8K",
+    "Cinematic {category} close-up. {product} detail showing {texture_description}. Formula/texture visible between fingertips with subtle light reflection. Soft blur background. Dramatic side lighting, warm tones, 8K",
+    "Macro detail of {product}, Sony A7R V 90mm macro, focus stacking. Extreme detail showing {focus_area}. Professional product photography, 8K"
+  ],
+  "anti_ai_tips": "For hand shots: specify real skin (visible knuckle lines, slight dryness on cuticles, natural warm tone). NOT retouched or smoothed.",
+  "supports_image_reference": true
+}

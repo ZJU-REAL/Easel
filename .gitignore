@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.local
+.env.xhs
+
+# Docker
+docker/data/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OpenClaw runtime
+.openclaw/
+
+# Outputs (keep directory structure via .gitkeep, ignore actual content)
+outputs/**/*
+!outputs/**/.gitkeep
+
+# Assets (user materials are not tracked; curated brand/README media is)
+assets/**/*
+!assets/**/.gitkeep
+!assets/icon.png
+!assets/icon-transparent.png
+!assets/icon-noword.png
+!assets/readme/
+!assets/readme/**
+
+# Session files
+*.jsonl
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+*.egg-info/
+.last-session
+.pytest_cache/
+
+# 登录态 / 凭证（绝不入库——含 SESSDATA 等 token）
+cookies.json
+
+# Local account profiles (publish only the reusable template)
+profiles/*/
+!profiles/_template/
+!profiles/_template/**
+
+# 临时 / scratch（ad-hoc 运行残留）
+.scratch/
+.drama_run/
+.drama_tmp/
+.claude/
+
+# SKILL 自研原始版本（保留备查，含嵌套 git 仓库，不入库）
+skill-test/
+
+# 备份/临时文件
+*.bak
+*.orig
+*.tmp
+*.swp

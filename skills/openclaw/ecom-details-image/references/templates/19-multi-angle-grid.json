@@ -1,0 +1,41 @@
+{
+  "id": "multi-angle-grid",
+  "name": "产品多角度网格",
+  "keywords": ["多角度", "网格", "grid", "多面", "颜色展示", "colorway", "产品角度", "catalog grid", "产品目录"],
+  "trigger_phrases": ["多角度展示", "产品网格", "多面展示", "颜色对比", "multi-angle", "grid layout", "产品目录图", "多色展示"],
+  "prompt_template": {
+    "type": "product photography grid layout",
+    "subject": "{product_description}",
+    "grid": "2x2 or 3x3 equal squares",
+    "variation": "different angles or colorways",
+    "background": "clean white in each cell",
+    "separators": "thin white borders between cells",
+    "quality": "8K, catalog photography, uniform lighting across all cells"
+  },
+  "defaults": {
+    "grid": "2x2 grid, 4 views",
+    "variation": "front, side, back, top-down angles",
+    "background": "clean white per cell",
+    "separators": "thin white borders"
+  },
+  "variants": {
+    "angle-view": { "description": "多角度视角", "overrides": { "variation": "front, side, back, top-down, 3/4 angle views", "grid": "2x2 or 3x3" } },
+    "colorway": { "description": "多配色展示", "overrides": { "variation": "same product in different colors, consistent 3/4 angle", "grid": "3x3 for 9 colors or 2x3 for 6 colors" } },
+    "feature-grid": { "description": "带功能标注网格", "overrides": { "variation": "each cell shows different product feature with label and icon", "grid": "hero image left + 4 smaller shots right column" } },
+    "comparison": { "description": "对比网格", "overrides": { "variation": "before/after or product vs competitor in side-by-side grid" } }
+  },
+  "category_tips": {
+    "beauty": "show bottle angle, cap detail, texture close-up, and open product",
+    "electronics": "show front face, side ports, back panel, and included accessories",
+    "fashion": "show front view, back view, detail close-up, and fabric texture",
+    "food": "show packaging front, back nutrition, open product, and serving suggestion",
+    "home": "show full product, detail angle, material texture, and in-context shot",
+    "sports": "show product front, side profile, sole/bottom, and action usage shot"
+  },
+  "examples": [
+    "2x2 product grid. {product} shown from 4 angles: front, side, back, top-down. Clean white background per cell. Thin borders. Uniform studio lighting, 8K, 2000x2000px",
+    "3x3 color variation grid. Same {product} in 9 different colors, identical 3/4 angle. Clean white cells, subtle drop shadow. Professional catalog, 8K, 2000x2000px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

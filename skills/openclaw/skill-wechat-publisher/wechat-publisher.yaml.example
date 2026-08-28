@@ -1,0 +1,57 @@
+# wechat-publisher 统一配置示例
+# 复制为 skill 根目录下的 wechat-publisher.yaml。
+# 注意:真实文件包含密钥,已被 .gitignore 忽略,不要提交。
+
+default: main
+
+accounts:
+  main:
+    name: "我的主公众号"
+    app_id: "wx1234567890abcdef"
+    app_secret: "your_app_secret_here"
+    author: "飞哥"
+    theme: "refined-blue"
+    image_style: "hand-drawn-blue"
+    newspic_image_style: "infographic-warm"
+    voice: |
+      飞哥，独立开发者，专注 AI 与效率工具。
+      微信公众号：某某号。
+    sync_platforms: [zhihu, juejin, csdn]
+
+  tech:
+    name: "技术博客号"
+    app_id: "wx0987654321fedcba"
+    app_secret: "another_app_secret"
+    author: "技术团队"
+    theme: "minimal-mono"
+    image_style: "marker-lime"
+    newspic_image_style: "infographic-blue"
+    voice: |
+      技术团队，持续输出工程实践。
+
+image_generation:
+  # 默认 baoyu-image-gen; 如需使用 Web 登录版 Gemini,改为 baoyu-danger-gemini-web
+  generator: "baoyu-image-gen"
+
+  # baoyu-image-gen / provider=openai
+  openai:
+    api_key: "sk-..."
+    base_url: "https://api.openai.com/v1"
+    image_model: "gpt-image-1"
+
+  # baoyu-image-gen / provider=gemini-proxy
+  gemini_proxy:
+    base_url: "https://generativelanguage.googleapis.com"
+    api_key: "AIza..."
+    image_model: "gemini-2.5-flash"
+
+  # baoyu-danger-gemini-web
+  gemini_web:
+    # data_dir: "/Users/you/Library/Application Support/baoyu-skills/gemini-web"
+    # cookie_path: "/Users/you/Library/Application Support/baoyu-skills/gemini-web/cookies.json"
+    # chrome_profile_dir: "/Users/you/Library/Application Support/baoyu-skills/gemini-web/chrome-profile"
+    # chrome_path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+integrations:
+  # 多平台同步: @wechatsync/cli + Chrome 扩展 MCP token
+  wechatsync_mcp_token: ""

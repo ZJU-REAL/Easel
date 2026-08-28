@@ -1,0 +1,35 @@
+// Easel — OpenClaw gateway 配置 (JSON5)
+// ⚠️ 本文件仅作参考，实际配置由 setup.sh 通过 `openclaw config set` 直接写入
+//    ~/.openclaw-easel/openclaw.json，此模板从不被 setup.sh 应用。
+//    其中的字段（如 workspace 路径、agent 结构）可能已与实际配置漂移，
+//    请勿假设此文件生效。
+// Phase 0: 最简配置，只验证连通性
+{
+  // ---- 模型供应商 ----
+  models: {
+    providers: {
+      anthropic: {
+        apiKey: "${ANTHROPIC_API_KEY}",
+        // 若使用代理，取消下行注释
+        // baseUrl: "${ANTHROPIC_BASE_URL}",
+      },
+    },
+  },
+
+  // ---- Agent 配置 ----
+  // OpenClaw 自己的 agent 直接执行五层（发现/策划/制作/发布/归因），产物落 outputs/。
+  agent: {
+    // workspace 实际由 --profile easel 决定（~/.openclaw/workspace-easel/），
+    // 无需硬编码绝对路径；此处仅示意，本模板从不被 setup.sh 应用。
+    workspace: "~/.openclaw/workspace-easel",
+    model: {
+      primary: "${CLAUDE_MODEL:-anthropic/claude-sonnet-4-6}",
+    },
+  },
+
+  // ---- Gateway ----
+  gateway: {
+    bind: "lan",  // 容器内绑定所有接口
+    port: 18789,
+  },
+}

@@ -1,0 +1,40 @@
+{
+  "id": "seasonal-campaign",
+  "name": "季节主题网格",
+  "keywords": ["季节", "四季", "campaign", "季节主题", "seasonal", "春夏秋冬", "年度campaign", "品牌campaign", "季节变体"],
+  "trigger_phrases": ["季节主题", "四季展示", "seasonal campaign", "年度campaign", "春夏秋冬", "季节变体", "品牌年度", "四季网格"],
+  "prompt_template": {
+    "type": "seasonal product campaign grid",
+    "subject": "{product_description}",
+    "layout": "2x2 grid, one product in four seasonal settings",
+    "spring": "pastel tones, blossoms, morning dew, soft light",
+    "summer": "bright warm tones, tropical elements, golden light",
+    "autumn": "warm amber, dried leaves, cinnamon, window light",
+    "winter": "cool blues, pine branches, frost, moonlight",
+    "quality": "8K, brand campaign photography, consistent product placement"
+  },
+  "defaults": {
+    "layout": "2x2 grid with thin white or gold borders",
+    "consistency": "same product angle and size across all four quadrants"
+  },
+  "variants": {
+    "four-seasons": { "description": "经典四季", "overrides": { "layout": "2x2, each quadrant a full seasonal scene" } },
+    "holiday-series": { "description": "节日系列", "overrides": { "layout": "2x3 or 3x2 grid, each cell a different holiday theme (Valentine's, Easter, Summer, Halloween, Thanksgiving, Christmas)" } },
+    "day-to-night": { "description": "日夜变体", "overrides": { "layout": "2x2 grid, same scene at dawn, morning, afternoon, night" } },
+    "travel-series": { "description": "旅行主题", "overrides": { "layout": "2x2 grid, product in 4 travel destinations with local elements" } }
+  },
+  "category_tips": {
+    "skincare": "spring=blossoms+dew, summer=sun+kisses, autumn=cozy+cream, winter=frost+glow",
+    "fragrance": "each season with matching botanical elements and color palette",
+    "fashion": "season-appropriate styling visible in each quadrant",
+    "food": "seasonal ingredients and color palette matching product",
+    "home": "seasonal decor elements and lighting mood",
+    "candles": "seasonal scents visualized through corresponding natural elements"
+  },
+  "examples": [
+    "2x2 seasonal grid. Same {product} in four settings: Spring with cherry blossoms, Summer with citrus and sunshine, Autumn with maple leaves, Winter with pine and snow. Consistent product angle, 8K, 2000x2000px",
+    "Brand seasonal campaign 2x2 grid. {product} in four seasonal worlds: Spring=pastel marble+dew, Summer=tropical leaves+sunset, Autumn=walnut wood+cinnamon, Winter=frosted glass+pine. Season labels in serif font, 8K"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

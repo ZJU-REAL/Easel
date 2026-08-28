@@ -1,0 +1,58 @@
+{
+  "theme_name": "news-bold",
+  "description": "新闻时讯 - 红黑强对比 + 快节奏,信息密度高,适合资讯 / 热点 / 速读类短文",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #1a1a1a; line-height: 1.8; letter-spacing: 0.3px; word-spacing: 1.5px; padding: 20px 22px; background: #ffffff;",
+    "h1": "font-size: 22px; font-weight: 900; color: #1a1a1a; text-align: left; margin: 32px 0 18px; padding: 0 0 14px 0; border-bottom: 3px solid #d4231c; line-height: 1.35; letter-spacing: 0;",
+    "h2": "font-size: 17px; font-weight: 900; color: #ffffff; margin: 36px 0 16px; padding: 8px 14px; background: #1a1a1a; border-left: 6px solid #d4231c; line-height: 1.45; letter-spacing: 0.3px; display: inline-block;",
+    "h3": "font-size: 15.5px; font-weight: 800; color: #d4231c; margin: 26px 0 12px; padding: 0 0 0 12px; border-left: 4px solid #d4231c; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #1a1a1a; line-height: 1.85;",
+    "blockquote": "margin: 24px 0; padding: 14px 20px; background: #1a1a1a; border-left: 4px solid #d4231c; color: #f5f5f5; font-size: 14.5px; border-radius: 0; line-height: 1.8; letter-spacing: 0.3px;",
+    "img": "max-width: 100%; height: auto; border-radius: 0; margin: 24px auto; display: block; border: 1px solid #d0d0d0;",
+    "strong": "color: #d4231c; font-weight: 900;",
+    "em": "font-style: italic; color: #3a3a3a;",
+    "code_inline": "background: #f2f2f2; color: #d4231c; padding: 2px 7px; border-radius: 0; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; border: 1px solid #e0e0e0;",
+    "code_block": "background: #1a1a1a; color: #f5f5f5; padding: 16px 18px; border-radius: 0; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; border-left: 4px solid #d4231c; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.8; color: #1a1a1a; font-weight: 400;",
+    "li_bullet": "color: #d4231c; font-weight: 900; font-size: 16px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "▍",
+    "li_number": "color: #ffffff; font-weight: 900; font-size: 12px; min-width: 22px; height: 22px; background: #d4231c; text-align: center; border-radius: 2px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 2px; background: #1a1a1a; margin: 34px 0;",
+    "a": "color: #d4231c; text-decoration: none; border-bottom: 1px solid #d4231c;",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13.5px; border: 2px solid #1a1a1a; table-layout: fixed; word-break: break-word;",
+    "th": "background: #1a1a1a; color: #ffffff; padding: 10px 12px; text-align: left; font-weight: 800; font-size: 12.5px; letter-spacing: 0.5px; border-bottom: 2px solid #d4231c; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e5e5e5; color: #1a1a1a; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12px; color: #6a6a6a; text-align: center; margin-top: 10px; letter-spacing: 0.5px; text-transform: uppercase;",
+    "section_divider": "text-align: center; color: #d4231c; letter-spacing: 8px; font-size: 13px; margin: 34px 0; user-select: none; font-weight: 800;"
+  },
+  "highlights": {
+    "hl_yellow": "background: #fff27a; color: #1a1a1a; padding: 2px 7px; border-radius: 0; font-weight: 600;",
+    "hl_blue": "background: #dde4ef; color: #1a2a4a; padding: 2px 7px; border-radius: 0; font-weight: 500;",
+    "hl_pink": "background: #f7d8de; color: #a82a2a; padding: 2px 7px; border-radius: 0; font-weight: 500;",
+    "hl_green": "background: #dfeedb; color: #2d4a2f; padding: 2px 7px; border-radius: 0; font-weight: 500;",
+    "em_red": "color: #d4231c; font-weight: 800;",
+    "em_blue": "color: #1a4ed8; font-weight: 800;",
+    "em_orange": "color: #d46b08; font-weight: 800;"
+  },
+  "section_divider_text": "/ / NEWS / /",
+  "code_colors": {
+    "kw": "color: #ff6b6b; font-weight: 600;",
+    "str": "color: #a8e6a0;",
+    "num": "color: #ffc870;",
+    "fn": "color: #6bc5ff;",
+    "cls": "color: #d8a0ff;",
+    "comm": "color: #7a7a7a; font-style: italic;",
+    "punct": "color: #c8c8c8;"
+  },
+  "list_style": {
+    "label": "A · 红块反白",
+    "num_container": "display: inline-block; background: #d4231c; color: #ffffff; font-weight: 900; font-size: 12px; letter-spacing: 0.5px; min-width: 24px; height: 22px; line-height: 22px; text-align: center; margin-right: 12px; vertical-align: 2px;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "padded",
+    "bullet_container": "display: inline-block; width: 10px; height: 10px; background: #d4231c; margin-right: 12px; vertical-align: 2px;",
+    "bullet_char": ""
+  }
+}

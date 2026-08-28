@@ -1,0 +1,49 @@
+{
+  "id": "livestream",
+  "name": "电商直播间场景",
+  "keywords": ["直播", "livestream", "直播间", "电商直播", "直播截图", "抖音直播", "带货"],
+  "trigger_phrases": ["直播图", "直播间截图", "电商直播", "livestream", "抖音直播", "带货图", "live commerce"],
+  "prompt_template": {
+    "type": "e-commerce livestream screenshot",
+    "host": "{host_description}",
+    "product_action": "{product_demonstration}",
+    "background": "real home-style livestream setup",
+    "ui_overlay": "live commerce UI elements",
+    "lighting": "ring light from front, warm indoor overhead mixing in",
+    "quality": "authentic phone screen capture, NOT AI-generated look"
+  },
+  "defaults": {
+    "host": "friendly person, natural expression, visible skin texture, NOT retouched",
+    "product_action": "holding product close to camera showing details",
+    "background": "organized but real product shelf, LED strip, small plants",
+    "ui_overlay": "viewer count, LIVE badge, comments, product card, buy button",
+    "lighting": "ring light circular catchlight in eyes, warm indoor overhead"
+  },
+  "variants": {
+    "douyin": {
+      "description": "抖音直播风格",
+      "overrides": { "ui_overlay": "Douyin UI: LIVE badge, viewer count, scrolling comments, product card with price and buy button, gift icons, shopping cart" }
+    },
+    "taobao": {
+      "description": "淘宝直播风格",
+      "overrides": { "ui_overlay": "Taobao Live UI: product listing, coupon badges, viewer count, chat" }
+    },
+    "setup": {
+      "description": "直播间布景展示",
+      "overrides": { "ui_overlay": "no UI overlay, showing physical setup", "background": "full view of studio with lighting, backdrop, shelves" }
+    }
+  },
+  "category_tips": {
+    "beauty": "host demonstrating application, showing texture, real-time swatching",
+    "fashion": "host wearing/showing clothing, fit demo, fabric close-up",
+    "food": "host tasting/preparing, showing freshness, unboxing",
+    "electronics": "host demonstrating features, hands-on product demo"
+  },
+  "examples": [
+    "Ultra-realistic Douyin livestream screenshot, phone screen capture. Host in casual {outfit}, minimal makeup, visible pores and skin texture, NOT retouched. Demonstrating {product}, showing details, other hand gesturing. Ring light natural shine, NOT plastic AI look. Background: real home setup - product shelf, whiteboard with prices, string lights, coffee mug. Phone UI: LIVE badge, viewer count, scrolling comments, product card with price, yellow buy button. Warm cast, slight noise, Kodak Portra 400 tone, NOT AI-generated look, 1080x1920px",
+    "Phone screenshot of livestream. Host holding {product}. Ring light catchlight. Product shelf behind. Phone noise, warm indoor, NOT professional, real livestream feel, 1080x1920px",
+    "Livestream scene. Host with {product} in home studio. Ring light, visible skin texture. Product display. Live UI elements. Authentic phone capture, 1080x1920px"
+  ],
+  "anti_ai_tips": "CRITICAL: (1) Phone screen capture style, (2) Ring light: circular catchlight in eyes, (3) Real skin: pores, undereye darkness, NOT smoothed, (4) Real environment: slightly messy, real objects, (5) Warm yellowish cast, (6) Slight noise, (7) 'NOT AI-generated look, NOT plastic smooth', (8) Kodak Portra 400 tone, (9) Realistic UI overlay",
+  "supports_image_reference": true
+}

@@ -1,0 +1,58 @@
+{
+  "theme_name": "sage-premium",
+  "description": "鼠尾草墨绿 - 深绿 + 象牙白,克制专业的自然色,适合数据分析 / 研究报告 / 长篇深度内容",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #1e2a21; line-height: 1.85; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #f7f5ee;",
+    "h1": "font-size: 23px; font-weight: 800; color: #1e2a21; text-align: left; margin: 34px 0 22px; padding: 0 0 14px 0; border-bottom: 2px solid #1e2a21; letter-spacing: 0.3px; line-height: 1.4;",
+    "h2": "font-size: 18px; font-weight: 700; color: #1e2a21; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #5c7a65; background: linear-gradient(90deg, #e8ede3 0%, transparent 80%); border-radius: 0 4px 4px 0; line-height: 1.5; letter-spacing: 0.3px;",
+    "h3": "font-size: 16px; font-weight: 700; color: #3a4f3f; margin: 28px 0 12px; padding: 0 0 6px 0; border-bottom: 1px dashed #b8c5bb; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #1e2a21; line-height: 1.9;",
+    "blockquote": "margin: 24px 0; padding: 18px 22px; background: #eef1ea; border-left: 3px solid #5c7a65; color: #3a4f3f; font-size: 14.5px; border-radius: 0 8px 8px 0; line-height: 1.9; letter-spacing: 0.3px; font-style: italic;",
+    "img": "max-width: 100%; height: auto; border-radius: 6px; margin: 24px auto; display: block; box-shadow: 0 6px 20px rgba(30,42,33,0.08); border: 1px solid #dfe4d8;",
+    "strong": "color: #1e2a21; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #d4deaa 62%, #d4deaa 95%, transparent 95%); padding: 1px 6px;",
+    "em": "font-style: italic; color: #5a6b5f;",
+    "code_inline": "background: #e8ede3; color: #3a4f3f; padding: 2px 8px; border-radius: 4px; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', 'SF Mono', monospace; border: 1px solid #d0d9ca;",
+    "code_block": "background: #1e2a21; color: #e8ede3; padding: 16px 18px; border-radius: 8px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; border: 1px solid #2d3e32; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.85; color: #1e2a21; font-weight: 400;",
+    "li_bullet": "color: #5c7a65; font-weight: 900; font-size: 12px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "▪",
+    "li_number": "color: #5c7a65; font-weight: 700; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #b8c5bb, transparent); margin: 38px 0;",
+    "a": "color: #3a4f3f; text-decoration: none; border-bottom: 1px solid rgba(58,79,63,0.4); padding-bottom: 1px;",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border-radius: 6px; overflow: hidden; border: 1px solid #dfe4d8; table-layout: fixed; word-break: break-word;",
+    "th": "background: #1e2a21; color: #f7f5ee; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12.5px; letter-spacing: 0.3px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e8ede3; color: #1e2a21; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #8a9580; text-align: center; margin-top: 10px; letter-spacing: 0.5px; font-style: italic;",
+    "section_divider": "text-align: center; color: #b8c5bb; letter-spacing: 14px; font-size: 12px; margin: 36px 0; user-select: none;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 55%, #eae2a8 55%); color: #1e2a21; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #dce4ed; color: #1e3a5a; padding: 2px 7px; border-radius: 3px; font-weight: 500;",
+    "hl_pink": "background: #f0dcd8; color: #8a3a3a; padding: 2px 7px; border-radius: 3px; font-weight: 500;",
+    "hl_green": "background: #d4deaa; color: #3a4a1e; padding: 2px 7px; border-radius: 3px; font-weight: 600;",
+    "em_red": "color: #8a3a3a; font-weight: 700;",
+    "em_blue": "color: #2a4a6a; font-weight: 700;",
+    "em_orange": "color: #b5601c; font-weight: 700;"
+  },
+  "section_divider_text": "◆  ◆  ◆",
+  "code_colors": {
+    "kw": "color: #a8c088; font-weight: 600;",
+    "str": "color: #d4c48a;",
+    "num": "color: #c89a60;",
+    "fn": "color: #88b0c8;",
+    "cls": "color: #c0a8d8;",
+    "comm": "color: #7a8a70; font-style: italic;",
+    "punct": "color: #b8c0a8;"
+  },
+  "list_style": {
+    "label": "A · 墨绿棱形",
+    "num_container": "display: inline-block; color: #2f4a3a; font-weight: 700; font-size: 13px; margin-right: 8px; font-family: 'Georgia','Times New Roman',serif;",
+    "num_prefix": "◆ ",
+    "num_suffix": "",
+    "num_formatter": "padded",
+    "bullet_container": "display: inline-block; color: #2f4a3a; font-size: 12px; margin-right: 12px; font-weight: 700;",
+    "bullet_char": "◆"
+  }
+}

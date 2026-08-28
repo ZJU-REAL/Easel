@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WeChat Publisher · 主题预览(15 套 · v2026)</title>
+<style>
+  :root {
+    --ink: #0b1022;
+    --ink-soft: #2a3148;
+    --muted: #6a7187;
+    --surface: #f6f7fb;
+    --surface-2: #eef0f7;
+    --border: #e2e6f1;
+    --border-soft: #edf0f7;
+    --accent: #2e5bff;
+    --accent-soft: #eef2ff;
+    --shadow-sm: 0 1px 2px rgba(11, 16, 34, 0.04);
+    --shadow-md: 0 4px 24px rgba(11, 16, 34, 0.06);
+    --shadow-lg: 0 16px 48px rgba(11, 16, 34, 0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--surface); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.55;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 56px 40px 8px;
+  }
+  header .eyebrow {
+    font-size: 11.5px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  header h1 {
+    font-size: 42px;
+    font-weight: 800;
+    margin: 10px 0 8px;
+    letter-spacing: -0.6px;
+    line-height: 1.15;
+  }
+  header .lede {
+    font-size: 15.5px;
+    color: var(--ink-soft);
+    max-width: 780px;
+    line-height: 1.7;
+    margin: 6px 0 0;
+  }
+  header .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+    font-size: 12.5px;
+  }
+  header .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--ink-soft);
+    background: #fff;
+    box-shadow: var(--shadow-sm);
+  }
+  header .pill b { color: var(--ink); font-weight: 700; }
+  header .pill code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    padding: 1px 6px;
+    background: var(--surface-2);
+    border-radius: 4px;
+    color: var(--ink);
+  }
+
+  /* ---------- Filter bar ---------- */
+  .filter-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(246, 247, 251, 0.92);
+    backdrop-filter: saturate(180%) blur(14px);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    border-bottom: 1px solid var(--border-soft);
+    margin-top: 28px;
+  }
+  .filter-bar .inner {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .filter-bar .label {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 13px;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-weight: 500;
+    user-select: none;
+  }
+  .filter:hover {
+    border-color: var(--ink-soft);
+    color: var(--ink);
+  }
+  .filter.active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: #fff;
+    font-weight: 600;
+  }
+  .filter .count {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .filter.active .count { color: rgba(255,255,255,0.6); }
+
+  /* ---------- Grid ---------- */
+  main {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 28px 40px 80px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 28px;
+  }
+
+  /* ---------- Card ---------- */
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    transition: box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+  }
+  .card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+  .card.hidden { display: none; }
+
+  .card .head {
+    padding: 18px 20px 16px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .card .name-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .card .name {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0;
+    letter-spacing: -0.2px;
+  }
+  .card .badges {
+    display: inline-flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .card .badge {
+    font-size: 10.5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .card .badge.main {
+    background: #e7eeff;
+    color: #1f3fb8;
+  }
+  .card .badge.tech {
+    background: #1a1a1a;
+    color: #fff;
+  }
+  .card .desc {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin: 0;
+  }
+  .card .meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border-soft);
+    background: #fbfcfe;
+    gap: 12px;
+  }
+  .card .swatches {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card .swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(11, 16, 34, 0.10);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
+  }
+  .card .font-tag {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+    letter-spacing: 0.2px;
+  }
+  .card .frame-wrap {
+    background: var(--surface-2);
+    padding: 18px;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+  .card iframe {
+    width: 100%;
+    max-width: 380px;
+    height: 660px;
+    border: none;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 2px 14px rgba(11, 16, 34, 0.08);
+  }
+  .card .actions {
+    display: flex;
+    border-top: 1px solid var(--border-soft);
+  }
+  .card .action {
+    flex: 1;
+    padding: 13px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-weight: 600;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .card .action + .action { border-left: 1px solid var(--border-soft); }
+  .card .action:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .card .action.copied {
+    background: #e8f7ed;
+    color: #1f7a3e;
+  }
+  .card .action svg {
+    width: 13px;
+    height: 13px;
+    vertical-align: -2px;
+    margin-right: 4px;
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 0 40px 56px;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.75;
+  }
+  footer code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    padding: 1px 6px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  footer a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  /* ---------- Empty state ---------- */
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .empty.hidden { display: none; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 720px) {
+    header { padding: 40px 20px 8px; }
+    header h1 { font-size: 32px; }
+    .filter-bar .inner { padding: 14px 20px; }
+    main { padding: 22px 20px 60px; }
+    footer { padding: 0 20px 40px; }
+    .grid { grid-template-columns: 1fr; gap: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">WeChat Publisher · Themes</div>
+  <h1>15 套公众号主题预览</h1>
+  <p class="lede">同一篇示例文章用 15 套主题渲染。每张卡是手机宽度 frame,可点击底部「在新窗口打开」看完整渲染,或直接复制 <code>--theme</code> 命令。所有样式均 inline,粘贴进公众号编辑器不丢样式。</p>
+  <div class="meta">
+    <span class="pill"><b>主题数</b> · 15</span>
+    <span class="pill"><b>版本</b> · v2026</span>
+    <span class="pill"><b>正文</b> · 15.5px / 1.85</span>
+    <span class="pill"><b>frame</b> · 380px(手机)</span>
+    <span class="pill"><b>样式</b> · 全 inline</span>
+  </div>
+</header>
+
+<nav class="filter-bar" aria-label="主题分类筛选">
+  <div class="inner">
+    <span class="label">筛选</span>
+    <button class="filter active" data-cat="all">全部 <span class="count">15</span></button>
+    <button class="filter" data-cat="business">商业 / 深度 <span class="count">3</span></button>
+    <button class="filter" data-cat="tech">技术 / 工程 <span class="count">3</span></button>
+    <button class="filter" data-cat="news">新闻 / 资讯 <span class="count">2</span></button>
+    <button class="filter" data-cat="humanities">人文 / 文化 <span class="count">3</span></button>
+    <button class="filter" data-cat="lifestyle">生活 / 美食 <span class="count">3</span></button>
+    <button class="filter" data-cat="fashion">时尚 / 情感 <span class="count">1</span></button>
+  </div>
+</nav>
+
+<main>
+  <section class="grid" id="grid">
+
+    <!-- ===== AI / 商业 / 深度 ===== -->
+    <article class="card" data-cat="business" data-name="refined-blue">
+      <div class="head">
+        <div class="name-row">
+          <h2 class="name">refined-blue</h2>
+          <div class="badges"><span class="badge main">main 默认</span></div>
+        </div>
+        <p class="desc">蓝调极简 + 精致层次 / 渐变方块数字标号 / 渐变高亮。AI · 产品 · 深度分析的安全选择。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches" title="背景 / 正文 / 强调">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#242832"></span>
+          <span class="swatch" style="background:#2e5bff"></span>
+        </span>
+        <span class="font-tag">无衬线 · System UI</span>
+      </div>
+      <div class="frame-wrap"><iframe src="refined-blue.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="refined-blue">复制 --theme</button>
+        <a class="action" href="refined-blue.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="business" data-name="business-navy">
+      <div class="head">
+        <div class="name-row"><h2 class="name">business-navy</h2></div>
+        <p class="desc">深蓝主色 + 金色点缀,权威克制的金融感。商业 · 投研 · 行业分析首选。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#0f1a33"></span>
+          <span class="swatch" style="background:#c9a74a"></span>
+        </span>
+        <span class="font-tag">无衬线 + 金</span>
+      </div>
+      <div class="frame-wrap"><iframe src="business-navy.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="business-navy">复制 --theme</button>
+        <a class="action" href="business-navy.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="business" data-name="sage-premium">
+      <div class="head">
+        <div class="name-row"><h2 class="name">sage-premium</h2></div>
+        <p class="desc">鼠尾草墨绿 + 象牙白,克制专业的自然色。数据分析 / 研究报告 / 长篇深度内容。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#f7f5ee"></span>
+          <span class="swatch" style="background:#1e2a21"></span>
+          <span class="swatch" style="background:#5c7a65"></span>
+        </span>
+        <span class="font-tag">无衬线 · 自然色</span>
+      </div>
+      <div class="frame-wrap"><iframe src="sage-premium.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="sage-premium">复制 --theme</button>
+        <a class="action" href="sage-premium.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <!-- ===== 技术 / 工程 ===== -->
+    <article class="card" data-cat="tech" data-name="minimal-mono">
+      <div class="head">
+        <div class="name-row">
+          <h2 class="name">minimal-mono</h2>
+          <div class="badges"><span class="badge tech">tech 默认</span></div>
+        </div>
+        <p class="desc">纯黑白 + 等宽字,工程师审美。技术 · 工程 · 开发类长文,带 commit hash 那种。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#1a1a1a"></span>
+          <span class="swatch" style="background:#000000"></span>
+        </span>
+        <span class="font-tag">等宽 · JetBrains Mono</span>
+      </div>
+      <div class="frame-wrap"><iframe src="minimal-mono.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="minimal-mono">复制 --theme</button>
+        <a class="action" href="minimal-mono.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="tech" data-name="minimal-bw">
+      <div class="head">
+        <div class="name-row"><h2 class="name">minimal-bw</h2></div>
+        <p class="desc">瑞士现代主义 · Helvetica,只用粗细 / 留白 / 对齐做层级。Essay 长文。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#1a1a1a"></span>
+          <span class="swatch" style="background:#000000"></span>
+        </span>
+        <span class="font-tag">Helvetica Neue</span>
+      </div>
+      <div class="frame-wrap"><iframe src="minimal-bw.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="minimal-bw">复制 --theme</button>
+        <a class="action" href="minimal-bw.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="tech" data-name="academic-paper">
+      <div class="head">
+        <div class="name-row"><h2 class="name">academic-paper</h2></div>
+        <p class="desc">论文格式 + 衬线正字,章节编号式层级。研究 / 论述 / 严肃长文。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#1a1a1a"></span>
+          <span class="swatch" style="background:#3a4459"></span>
+        </span>
+        <span class="font-tag">衬线 · Georgia</span>
+      </div>
+      <div class="frame-wrap"><iframe src="academic-paper.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="academic-paper">复制 --theme</button>
+        <a class="action" href="academic-paper.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <!-- ===== 新闻 / 资讯 ===== -->
+    <article class="card" data-cat="news" data-name="news-bold">
+      <div class="head">
+        <div class="name-row"><h2 class="name">news-bold</h2></div>
+        <p class="desc">红黑强对比 + 快节奏,信息密度高。资讯 · 热点 · 速读类短文。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#1a1a1a"></span>
+          <span class="swatch" style="background:#d4231c"></span>
+        </span>
+        <span class="font-tag">无衬线 · 强对比</span>
+      </div>
+      <div class="frame-wrap"><iframe src="news-bold.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="news-bold">复制 --theme</button>
+        <a class="action" href="news-bold.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="news" data-name="warm-editorial">
+      <div class="head">
+        <div class="name-row"><h2 class="name">warm-editorial</h2></div>
+        <p class="desc">栗色暖调 + 米白 + 宋体,温厚的长文阅读感。观点 / 随笔 / 行业评论。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#fbf7f0"></span>
+          <span class="swatch" style="background:#3a2e26"></span>
+          <span class="swatch" style="background:#8b3a2e"></span>
+        </span>
+        <span class="font-tag">宋体 · 暖调</span>
+      </div>
+      <div class="frame-wrap"><iframe src="warm-editorial.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="warm-editorial">复制 --theme</button>
+        <a class="action" href="warm-editorial.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <!-- ===== 人文 / 文化 ===== -->
+    <article class="card" data-cat="humanities" data-name="ink-wash">
+      <div class="head">
+        <div class="name-row"><h2 class="name">ink-wash</h2></div>
+        <p class="desc">米黄纸 + 朱砂宋体,中式留白美学。传统文化 / 人文 / 诗意随笔。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#f8f3e8"></span>
+          <span class="swatch" style="background:#2b2420"></span>
+          <span class="swatch" style="background:#8b2a1f"></span>
+        </span>
+        <span class="font-tag">宋体 · 朱砂红</span>
+      </div>
+      <div class="frame-wrap"><iframe src="ink-wash.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="ink-wash">复制 --theme</button>
+        <a class="action" href="ink-wash.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="humanities" data-name="elegant-ink">
+      <div class="head">
+        <div class="name-row"><h2 class="name">elegant-ink</h2></div>
+        <p class="desc">墨黑 + 朱砂红,衬线现代宋体。观点 / 人文 / 深度长文。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#fafaf7"></span>
+          <span class="swatch" style="background:#1d1a17"></span>
+          <span class="swatch" style="background:#c43a30"></span>
+        </span>
+        <span class="font-tag">现代宋体</span>
+      </div>
+      <div class="frame-wrap"><iframe src="elegant-ink.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="elegant-ink">复制 --theme</button>
+        <a class="action" href="elegant-ink.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="humanities" data-name="magazine-grid">
+      <div class="head">
+        <div class="name-row"><h2 class="name">magazine-grid</h2></div>
+        <p class="desc">衬线大标题 + 大留白,杂志内页感。专题报道 / 长篇深度 / 艺术人文。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#fbfaf6"></span>
+          <span class="swatch" style="background:#1f1a14"></span>
+          <span class="swatch" style="background:#a0330f"></span>
+        </span>
+        <span class="font-tag">衬线 · 杂志感</span>
+      </div>
+      <div class="frame-wrap"><iframe src="magazine-grid.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="magazine-grid">复制 --theme</button>
+        <a class="action" href="magazine-grid.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <!-- ===== 生活 / 美食 ===== -->
+    <article class="card" data-cat="lifestyle" data-name="warm-orange">
+      <div class="head">
+        <div class="name-row"><h2 class="name">warm-orange</h2></div>
+        <p class="desc">暖橙生活号,亲切日常感。生活方式 / 美食 / 旅行 / 记录类。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#fdf8f2"></span>
+          <span class="swatch" style="background:#3a2a1e"></span>
+          <span class="swatch" style="background:#e58b3a"></span>
+        </span>
+        <span class="font-tag">圆角无衬线 · 暖橙</span>
+      </div>
+      <div class="frame-wrap"><iframe src="warm-orange.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="warm-orange">复制 --theme</button>
+        <a class="action" href="warm-orange.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="lifestyle" data-name="mint-fresh">
+      <div class="head">
+        <div class="name-row"><h2 class="name">mint-fresh</h2></div>
+        <p class="desc">薄荷绿 + 圆角卡片,轻盈透气。日常 / 生活方式 / 轻话题。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#f4faf7"></span>
+          <span class="swatch" style="background:#1f3a33"></span>
+          <span class="swatch" style="background:#3eb588"></span>
+        </span>
+        <span class="font-tag">圆角无衬线 · 薄荷</span>
+      </div>
+      <div class="frame-wrap"><iframe src="mint-fresh.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="mint-fresh">复制 --theme</button>
+        <a class="action" href="mint-fresh.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <article class="card" data-cat="lifestyle" data-name="sunset-coral">
+      <div class="head">
+        <div class="name-row"><h2 class="name">sunset-coral</h2></div>
+        <p class="desc">暖橙 + 奶白,热烈克制的活力色。热点 · 榜单 · 潮流 · 轻快话题。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#fffaf5"></span>
+          <span class="swatch" style="background:#2b1a10"></span>
+          <span class="swatch" style="background:#ff7054"></span>
+        </span>
+        <span class="font-tag">无衬线 · 珊瑚</span>
+      </div>
+      <div class="frame-wrap"><iframe src="sunset-coral.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="sunset-coral">复制 --theme</button>
+        <a class="action" href="sunset-coral.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <!-- ===== 时尚 / 情感 ===== -->
+    <article class="card" data-cat="fashion" data-name="girly-pink">
+      <div class="head">
+        <div class="name-row"><h2 class="name">girly-pink</h2></div>
+        <p class="desc">粉紫渐变 + 可爱风,甜美轻盈。时尚 / 美妆 / 情感 / 少女向内容。</p>
+      </div>
+      <div class="meta-row">
+        <span class="swatches">
+          <span class="swatch" style="background:#fff5fa"></span>
+          <span class="swatch" style="background:#4a2a3e"></span>
+          <span class="swatch" style="background:#ff6fa5"></span>
+        </span>
+        <span class="font-tag">圆体 · 粉紫渐变</span>
+      </div>
+      <div class="frame-wrap"><iframe src="girly-pink.html" loading="lazy"></iframe></div>
+      <div class="actions">
+        <button class="action copy-btn" data-theme="girly-pink">复制 --theme</button>
+        <a class="action" href="girly-pink.html" target="_blank">新窗口打开 →</a>
+      </div>
+    </article>
+
+    <p class="empty hidden" id="empty-state">没有匹配该分类的主题</p>
+  </section>
+</main>
+
+<footer>
+  <p>
+    <b style="color:var(--ink);">命令行用法</b> &nbsp;
+    <code>python3 scripts/html_converter.py article.md --theme &lt;name&gt; -o article.html</code>
+  </p>
+  <p>
+    <b style="color:var(--ink);">主题文件</b> &nbsp; 15 套全部在 <a href="../themes/">../themes/*.json</a>。每个主题都是单文件 JSON,改 <code>styles</code> / <code>highlights</code> / <code>list_style</code> / <code>section_divider_text</code> 任意字段都不需要改 <code>html_converter.py</code>。
+  </p>
+  <p>
+    <b style="color:var(--ink);">默认绑定</b> &nbsp; main 号 = <code>refined-blue</code> · tech 号 = <code>minimal-mono</code> · 改 <code>wechat-publisher.yaml</code> 里的 <code>theme</code> 字段切换。
+  </p>
+  <p style="margin-top:18px;color:#9aa0b3;">Theme set v2026 · 15 themes · 渲染:scripts/html_converter.py · 示例文:assets/theme-previews/sample.md</p>
+</footer>
+
+<script>
+  // ---------- Filter ----------
+  const filters = document.querySelectorAll('.filter');
+  const cards = document.querySelectorAll('.card');
+  const empty = document.getElementById('empty-state');
+  filters.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filters.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const cat = btn.dataset.cat;
+      let visible = 0;
+      cards.forEach(c => {
+        const match = (cat === 'all') || c.dataset.cat === cat;
+        c.classList.toggle('hidden', !match);
+        if (match) visible++;
+      });
+      empty.classList.toggle('hidden', visible > 0);
+      // smooth scroll back to grid top so user sees the change
+      document.getElementById('grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // ---------- Copy command ----------
+  const copyBtns = document.querySelectorAll('.copy-btn');
+  copyBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const theme = btn.dataset.theme;
+      const cmd = `python3 scripts/html_converter.py article.md --theme ${theme} -o article.html`;
+      try {
+        await navigator.clipboard.writeText(cmd);
+        const orig = btn.textContent;
+        btn.textContent = '✓ 已复制命令';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove('copied');
+        }, 1600);
+      } catch (e) {
+        // Fallback: show command inline
+        btn.textContent = `--theme ${theme}`;
+        setTimeout(() => { btn.textContent = '复制 --theme'; }, 1600);
+      }
+    });
+  });
+</script>
+</body>
+</html>
