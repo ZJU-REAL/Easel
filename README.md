@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/readme/brand.png" width="680" alt="Easel">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/brand-dark.png">
+    <img src="assets/readme/brand.png" width="680" alt="Easel">
+  </picture>
 </p>
 
 <p align="center">
