@@ -12,10 +12,12 @@
 </p>
 
 <p align="center">
+  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
   <img src="https://img.shields.io/badge/OpenClaw-powered-111827?style=flat-square" alt="Powered by OpenClaw">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+">
   <a href="docs/skill-function-mapping.md"><img src="https://img.shields.io/badge/Skills-112-0F9D8A?style=flat-square" alt="112 Skills"></a>
-  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
+  <a href="https://github.com/ZJU-REAL/Easel/stargazers"><img src="https://img.shields.io/github/stars/ZJU-REAL/Easel?style=flat-square&color=F6C344" alt="GitHub Stars"></a>
+  <a href="https://github.com/ZJU-REAL/Easel/releases/latest"><img src="https://img.shields.io/github/v/release/ZJU-REAL/Easel?style=flat-square&color=0F9D8A&label=release" alt="Latest Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-2EA44F?style=flat-square" alt="License: Apache 2.0"></a>
 </p>
 
@@ -26,6 +28,8 @@
 Easel is an open-source content workspace for social media creators. It connects an OpenClaw Agent, account profiles, content Skills, and real media tools, enabling the Agent to produce and archive content instead of merely explaining what to do.
 
 Think of Easel as a content partner that remembers your positioning, audience, voice, platform constraints, preferences, and past performance. It stays with you from trend discovery through publishing, then carries what it learns into the next creation cycle.
+
+#### 📌 Usage Notes and Research Vision
 
 > - **Use the Web workspace for the complete experience:** it includes conversations, assets, accounts, profiles, a content library, and publishing management beyond the CLI entry points.
 > - **Be cautious with automated Xiaohongshu publishing:** automation may trigger verification, reach restrictions, or account risk. Use preview and preflight checks, and prefer human-confirmed publishing.
@@ -233,6 +237,19 @@ Easel uses an isolated `easel` OpenClaw profile and does not overwrite an existi
 ## 🙏 Acknowledgments
 
 Easel's Skill system and workflows benefit from many excellent open-source projects, tools, and content methodologies. We thank their original authors and contributors. See the [full acknowledgments](docs/ACKNOWLEDGMENTS.md) for projects, usage, and license information.
+
+### 🤝 Contributors
+
+<p align="center">
+  <a href="https://github.com/lidingm"><img src="https://github.com/lidingm.png?size=96" width="72" alt="lidingm"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/qywMichelle"><img src="https://github.com/qywMichelle.png?size=96" width="72" alt="qywdier"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/wulinjuan"><img src="https://github.com/wulinjuan.png?size=96" width="72" alt="wlj"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/lidingm"><strong>lidingm</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/qywMichelle"><strong>qywdier</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/wulinjuan"><strong>wlj</strong></a>
+</p>
 
 ## ⚖️ License
 

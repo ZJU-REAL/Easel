@@ -12,14 +12,14 @@
 </p>
 
 <p align="center">
+  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
   <img src="https://img.shields.io/badge/OpenClaw-powered-111827?style=flat-square" alt="Powered by OpenClaw">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+">
   <a href="docs/skill-function-mapping.md"><img src="https://img.shields.io/badge/Skills-112-0F9D8A?style=flat-square" alt="112 Skills"></a>
-  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
+  <a href="https://github.com/ZJU-REAL/Easel/stargazers"><img src="https://img.shields.io/github/stars/ZJU-REAL/Easel?style=flat-square&color=F6C344" alt="GitHub Stars"></a>
+  <a href="https://github.com/ZJU-REAL/Easel/releases/latest"><img src="https://img.shields.io/github/v/release/ZJU-REAL/Easel?style=flat-square&color=0F9D8A&label=release" alt="Latest Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-2EA44F?style=flat-square" alt="License: Apache 2.0"></a>
 </p>
-
-<!-- 仓库公开并确定最终 GitHub 地址后，可在这里增加 Stars / Release 徽章。 -->
 
 ![Easel 产品宣传海报](assets/readme/poster.png)
 
@@ -28,6 +28,8 @@
 Easel 是一个面向社交媒体创作者的开源内容工作台。它把 OpenClaw Agent、账号画像、内容技能和真实的媒体工具接在一起，让 Agent 不只回答“应该怎么做”，而是直接把内容做出来并归档。
 
 你可以把它理解成一个会记住你的内容搭档：它了解账号定位、受众、风格、平台限制和历史表现，从热点发现一直陪你做到发布，再把结果带回下一次创作。
+
+#### 📌 使用提示与研究愿景
 
 > - **推荐使用 Web 前端**：前端提供完整的会话、素材、账号、画像、内容库和发布管理能力，体验和功能比单独使用 CLI 更全面。
 > - **谨慎自动发布到小红书**：小红书平台可能检测自动化操作，存在验证、限流或账号风控风险；建议使用预览与发布前检查，并由用户确认后手动发布，其他平台正常。
@@ -282,6 +284,19 @@ Easel 使用独立的 `easel` OpenClaw profile，不会覆盖你本机已有的 
 
 Easel 的技能体系和工作流受益于许多优秀的开源项目、工具与内容方法论。感谢所有原作者和社区贡献者；
 具体项目、用途和许可信息请查看[完整致谢](docs/ACKNOWLEDGMENTS.md)。
+
+### 🤝 Contributors
+
+<p align="center">
+  <a href="https://github.com/lidingm"><img src="https://github.com/lidingm.png?size=96" width="72" alt="lidingm"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/qywMichelle"><img src="https://github.com/qywMichelle.png?size=96" width="72" alt="qywdier"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/wulinjuan"><img src="https://github.com/wulinjuan.png?size=96" width="72" alt="wlj"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/lidingm"><strong>lidingm</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/qywMichelle"><strong>qywdier</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/wulinjuan"><strong>wlj</strong></a>
+</p>
 
 ## ⚖️ 许可证
 
