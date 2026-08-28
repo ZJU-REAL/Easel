@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <strong>简体中文</strong> · <a href="README_EN.md">English</a>
+</p>
+
+<p align="center">
   你的私人、持续进化的社媒内容助手<br>
   从一个想法开始，完成发现、策划、创作、发布与复盘。
 </p>
@@ -11,7 +15,7 @@
   <img src="https://img.shields.io/badge/OpenClaw-powered-111827?style=flat-square" alt="Powered by OpenClaw">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+">
   <a href="docs/skill-function-mapping.md"><img src="https://img.shields.io/badge/Skills-112-0F9D8A?style=flat-square" alt="112 Skills"></a>
-  <a href="web/static/main.html"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
+  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-2EA44F?style=flat-square" alt="License: Apache 2.0"></a>
 </p>
 
@@ -26,7 +30,7 @@ Easel 是一个面向社交媒体创作者的开源内容工作台。它把 Open
 你可以把它理解成一个会记住你的内容搭档：它了解账号定位、受众、风格、平台限制和历史表现，从热点发现一直陪你做到发布，再把结果带回下一次创作。
 
 > - **推荐使用 Web 前端**：前端提供完整的会话、素材、账号、画像、内容库和发布管理能力，体验和功能比单独使用 CLI 更全面。
-> - **谨慎自动发布到小红书**：平台可能检测自动化操作，存在验证、限流或账号风控风险；建议使用预览与发布前检查，并由用户确认后手动发布。
+> - **谨慎自动发布到小红书**：小红书平台可能检测自动化操作，存在验证、限流或账号风控风险；建议使用预览与发布前检查，并由用户确认后手动发布，其他平台正常。
 > - **从研究走向真实生活**：Easel 是我们将研究成果应用到真实社媒创作场景的一次实践。后续我们会继续研究 AI 在社媒场景中的社交智能，让 Agent 更好地理解创作者、受众与真实互动。
 
 ## ✨ 为什么是 Easel
