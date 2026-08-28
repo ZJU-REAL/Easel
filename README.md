@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/brand.png" width="680" alt="Easel" style="margin-left: 60px;">
+  <img src="assets/readme/brand.png" width="680" alt="Easel" style="margin-left: 70px;">
 </p>
 
 <p align="center">
@@ -25,7 +25,6 @@ Easel 是一个面向社交媒体创作者的开源内容工作台。它把 Open
 
 你可以把它理解成一个会记住你的内容搭档：它了解账号定位、受众、风格、平台限制和历史表现，从热点发现一直陪你做到发布，再把结果带回下一次创作。
 
-> [!IMPORTANT]
 > - **推荐使用 Web 前端**：前端提供完整的会话、素材、账号、画像、内容库和发布管理能力，体验和功能比单独使用 CLI 更全面。
 > - **谨慎自动发布到小红书**：平台可能检测自动化操作，存在验证、限流或账号风控风险；建议使用预览与发布前检查，并由用户确认后手动发布。
 > - **从研究走向真实生活**：Easel 是我们将研究成果应用到真实社媒创作场景的一次实践。后续我们会继续研究 AI 在社媒场景中的社交智能，让 Agent 更好地理解创作者、受众与真实互动。
