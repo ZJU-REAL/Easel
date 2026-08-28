@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Project-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Project Page"></a>
+  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Easel-Page-F28C6F?style=flat-square&logo=googlechrome&logoColor=white" alt="Easel Page"></a>
   <img src="https://img.shields.io/badge/OpenClaw-powered-111827?style=flat-square" alt="Powered by OpenClaw">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+">
   <a href="docs/skill-function-mapping.md"><img src="https://img.shields.io/badge/Skills-112-0F9D8A?style=flat-square" alt="112 Skills"></a>
