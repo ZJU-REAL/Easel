@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/brand.png" width="680" alt="Easel" style="margin-left: 70px;">
+  <img src="assets/readme/brand.png" width="680" alt="Easel">
 </p>
 
 <p align="center">
@@ -140,8 +140,8 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ### 🎬 视频成片
 
-GitHub README 不支持内嵌 HTML 视频播放器，因此这里使用可点击的视频封面。点击封面查看最长 1 分钟的
-轻量预览，点击封面下方标题查看完整成片。
+为便于快速浏览，这里使用可点击的视频封面。点击封面查看最长 1 分钟的轻量预览，点击封面下方标题
+查看完整成片。
 
 **论文解读视频**
 
