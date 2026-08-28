@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Easel-Page-F05A3C?style=flat-square&logo=googlechrome&logoColor=white" alt="Easel Page"></a>
+  <a href="https://zju-real.github.io/Easel/"><img src="https://img.shields.io/badge/Easel-Project_Page-F05A3C?style=flat-square&logo=googlechrome&logoColor=white" alt="Easel Project Page"></a>
   <img src="https://img.shields.io/badge/OpenClaw-powered-111827?style=flat-square" alt="Powered by OpenClaw">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+">
   <a href="docs/skill-function-mapping.md"><img src="https://img.shields.io/badge/Skills-112-0F9D8A?style=flat-square" alt="112 Skills"></a>
@@ -242,13 +242,13 @@ Easel's Skill system and workflows benefit from many excellent open-source proje
 
 <p align="left">
   <a href="https://github.com/lidingm"><img src="https://github.com/lidingm.png?size=96" width="72" alt="lidingm"></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/qywMichelle"><img src="https://github.com/qywMichelle.png?size=96" width="72" alt="qywdier"></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/wulinjuan"><img src="https://github.com/wulinjuan.png?size=96" width="72" alt="wlj"></a>
+  <a href="https://github.com/qywMichelle"><img src="https://github.com/qywMichelle.png?size=96" width="72" alt="qywMichelle"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/wulinjuan"><img src="https://github.com/wulinjuan.png?size=96" width="72" alt="wulinjuan"></a>
 </p>
 <p align="left">
   <a href="https://github.com/lidingm"><strong>lidingm</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/qywMichelle"><strong>qywdier</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/wulinjuan"><strong>wlj</strong></a>
+  <a href="https://github.com/qywMichelle"><strong>qywMichelle</strong></a>&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/wulinjuan"><strong>wulinjuan</strong></a>
 </p>
 
 ## ⚖️ License
