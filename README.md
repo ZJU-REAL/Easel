@@ -25,6 +25,11 @@ Easel 是一个面向社交媒体创作者的开源内容工作台。它把 Open
 
 你可以把它理解成一个会记住你的内容搭档：它了解账号定位、受众、风格、平台限制和历史表现，从热点发现一直陪你做到发布，再把结果带回下一次创作。
 
+> [!IMPORTANT]
+> - **推荐使用 Web 前端**：前端提供完整的会话、素材、账号、画像、内容库和发布管理能力，体验和功能比单独使用 CLI 更全面。
+> - **谨慎自动发布到小红书**：平台可能检测自动化操作，存在验证、限流或账号风控风险；建议使用预览与发布前检查，并由用户确认后手动发布。
+> - **从研究走向真实生活**：Easel 是我们将研究成果应用到真实社媒创作场景的一次实践。后续我们会继续研究 AI 在社媒场景中的社交智能，让 Agent 更好地理解创作者、受众与真实互动。
+
 ## ✨ 为什么是 Easel
 
 - **一个 Agent 贯穿完整链路**：发现热点、评估选题、规划日历、生成文案与视觉、制作视频、发布和归因在同一个工作流中完成。
@@ -136,34 +141,35 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ### 🎬 视频成片
 
-为便于 README 快速加载，页面内只播放最长 1 分钟的轻量预览；点击视频下方标题可查看完整成片。
+GitHub README 不支持内嵌 HTML 视频播放器，因此这里使用可点击的视频封面。点击封面查看最长 1 分钟的
+轻量预览，点击封面下方标题查看完整成片。
 
 **论文解读视频**
 
 <p align="center">
-  <video controls preload="metadata" width="49%" src="assets/readme/videos/preview/spatialladder-explainer.mp4"></video>
-  <video controls preload="metadata" width="49%" src="assets/readme/videos/preview/culture-mt-explainer.mp4"></video>
+  <a href="assets/readme/videos/preview/spatialladder-explainer.mp4"><img src="assets/readme/videos/thumbnails/spatialladder-explainer.jpg" width="49%" alt="播放 SpatialLadder 论文解读预览"></a>
+  <a href="assets/readme/videos/preview/culture-mt-explainer.mp4"><img src="assets/readme/videos/thumbnails/culture-mt-explainer.jpg" width="49%" alt="播放 CULTURE-MT 论文解读预览"></a>
 </p>
-<p align="center"><sub>查看完整视频：<a href="assets/readme/videos/full/spatialladder-explainer.mp4">SpatialLadder</a>　/　<a href="assets/readme/videos/full/culture-mt-explainer.mp4">CULTURE-MT</a></sub></p>
+<p align="center"><sub>▶ 点击封面播放预览 · 查看完整视频：<a href="assets/readme/videos/full/spatialladder-explainer.mp4">SpatialLadder</a>　/　<a href="assets/readme/videos/full/culture-mt-explainer.mp4">CULTURE-MT</a></sub></p>
 
 **口播、连续剧与 AI 角色短视频**
 
 <p align="center">
-  <video controls preload="metadata" width="24%" src="assets/readme/videos/preview/ordinary-person.mp4"></video>
-  <video controls preload="metadata" width="24%" src="assets/readme/videos/preview/hanako-change.mp4"></video>
-  <video controls preload="metadata" width="24%" src="assets/readme/videos/preview/cyber-cultivation.mp4"></video>
-  <video controls preload="metadata" width="24%" src="assets/readme/videos/preview/cyber-turtle.mp4"></video>
+  <a href="assets/readme/videos/preview/ordinary-person.mp4"><img src="assets/readme/videos/thumbnails/ordinary-person.jpg" width="24%" alt="播放普通人口播剧预览"></a>
+  <a href="assets/readme/videos/preview/hanako-change.mp4"><img src="assets/readme/videos/thumbnails/hanako-change.jpg" width="24%" alt="播放花子的转变预览"></a>
+  <a href="assets/readme/videos/preview/cyber-cultivation.mp4"><img src="assets/readme/videos/thumbnails/cyber-cultivation.jpg" width="24%" alt="播放赛博修仙预览"></a>
+  <a href="assets/readme/videos/preview/cyber-turtle.mp4"><img src="assets/readme/videos/thumbnails/cyber-turtle.jpg" width="24%" alt="播放赛博吃播甲鱼预览"></a>
 </p>
-<p align="center"><sub>查看完整视频：<a href="assets/readme/videos/full/ordinary-person.mp4">普通人</a>　/　<a href="assets/readme/videos/full/hanako-change.mp4">花子的转变</a>　/　<a href="assets/readme/videos/full/cyber-cultivation.mp4">赛博修仙</a>　/　<a href="assets/readme/videos/full/cyber-turtle.mp4">赛博吃播甲鱼</a></sub></p>
+<p align="center"><sub>▶ 点击封面播放预览 · 查看完整视频：<a href="assets/readme/videos/full/ordinary-person.mp4">普通人</a>　/　<a href="assets/readme/videos/full/hanako-change.mp4">花子的转变</a>　/　<a href="assets/readme/videos/full/cyber-cultivation.mp4">赛博修仙</a>　/　<a href="assets/readme/videos/full/cyber-turtle.mp4">赛博吃播甲鱼</a></sub></p>
 
 **氛围影像与横版内容**
 
 <p align="center">
-  <video controls preload="metadata" width="32%" src="assets/readme/videos/preview/jilong-news.mp4"></video>
-  <video controls preload="metadata" width="32%" src="assets/readme/videos/preview/daomu-book.mp4"></video>
-  <video controls preload="metadata" width="32%" src="assets/readme/videos/preview/zju-intro.mp4"></video>
+  <a href="assets/readme/videos/preview/jilong-news.mp4"><img src="assets/readme/videos/thumbnails/jilong-news.jpg" width="32%" alt="播放西藏吉隆泥石流预览"></a>
+  <a href="assets/readme/videos/preview/daomu-book.mp4"><img src="assets/readme/videos/thumbnails/daomu-book.jpg" width="32%" alt="播放盗墓笔记小说介绍预览"></a>
+  <a href="assets/readme/videos/preview/zju-intro.mp4"><img src="assets/readme/videos/thumbnails/zju-intro.jpg" width="32%" alt="播放浙江大学介绍预览"></a>
 </p>
-<p align="center"><sub>查看完整视频：<a href="assets/readme/videos/full/jilong-news.mp4">西藏吉隆泥石流</a>　/　<a href="assets/readme/videos/full/daomu-book.mp4">盗墓笔记小说介绍</a>　/　<a href="assets/readme/videos/full/zju-intro.mp4">浙江大学</a></sub></p>
+<p align="center"><sub>▶ 点击封面播放预览 · 查看完整视频：<a href="assets/readme/videos/full/jilong-news.mp4">西藏吉隆泥石流</a>　/　<a href="assets/readme/videos/full/daomu-book.mp4">盗墓笔记小说介绍</a>　/　<a href="assets/readme/videos/full/zju-intro.mp4">浙江大学</a></sub></p>
 
 ## 🚀 快速开始
 
