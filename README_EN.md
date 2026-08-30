@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/brand-dark.png">
-    <img src="assets/readme/brand.png" width="680" alt="Easel">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/brand-with-labs-dark.png">
+    <img src="assets/readme/brand-with-labs.png" width="640" alt="Easel · Zhejiang University · Peking University · REAL Lab · OpenDCAI Lab">
   </picture>
 </p>
 
@@ -28,9 +28,11 @@
 
 ## 🎨 What Is Easel?
 
-Easel is an open-source content workspace for social media creators. It connects an OpenClaw Agent, account profiles, content Skills, and real media tools, enabling the Agent to produce and archive content instead of merely explaining what to do.
+Easel is an open-source content workspace for social media creators. It connects an OpenClaw Agent, account profiles, content Skills, and real media tools, enabling the Agent to produce and archive content instead of merely explaining what to do, with direct or on-demand publishing when needed.
 
 Think of Easel as a content partner that remembers your positioning, audience, voice, platform constraints, preferences, and past performance. It stays with you from trend discovery through publishing, then carries what it learns into the next creation cycle.
+
+Easel follows five connected workflows: **Discover** relevant trends and opportunities, **Plan** topics, hooks, scripts, and schedules, **Produce** text, audio, and video, **Publish** checked and platform-ready content directly to the appropriate platforms, and **Attribute** performance insights back to the account profile.
 
 #### 📌 Usage Notes and Research Vision
 
