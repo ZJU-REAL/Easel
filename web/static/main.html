@@ -205,22 +205,6 @@
   .flow-card p{font-size:14px;line-height:1.65;color:var(--muted)}
   .flow-link{font-size:14px;margin-top:20px;padding-top:12px}
 
-  .feature-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
-  .feature-card{border-radius:24px;min-height:430px;padding:38px;position:relative;overflow:hidden}
-  .feature-main{background:var(--mist);display:flex;flex-direction:column}
-  .feature-accent{background:var(--peach);color:var(--peach-ink);display:flex;flex-direction:column}
-  .feature-tag{font-size:12px;color:var(--quiet);margin-bottom:22px}
-  .feature-accent .feature-tag{color:rgba(93,42,26,.6)}
-  .feature-card h3{font-family:var(--serif);font-size:38px;line-height:1.08;font-weight:400;letter-spacing:-.035em;max-width:500px}
-  .feature-card p{font-size:16px;line-height:1.7;margin-top:18px;max-width:520px;color:var(--muted)}
-  .feature-accent p{color:var(--peach-ink)}
-  .feature-demo{margin-top:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-top:44px}
-  .demo-cell{background:#fff;border-radius:16px;padding:16px;min-height:92px}
-  .demo-cell span{display:block;color:var(--quiet);font-size:10px;margin-bottom:12px}
-  .demo-cell strong{font-size:18px;font-weight:500}
-  .quote{font-family:var(--serif);font-size:25px;line-height:1.35;margin-top:auto;padding-top:50px;letter-spacing:-.02em}
-  .quote-by{font-family:var(--sans);font-size:12px;margin-top:20px;color:rgba(93,42,26,.65)}
-
   .cap-section{padding:120px 0;background:var(--fog)}
   .cap-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:54px}
   .cap-card{background:#fff;border-radius:24px;padding:32px;min-height:300px;display:flex;flex-direction:column}
@@ -285,8 +269,6 @@
     .section{padding:82px 0}.section-head{margin-bottom:36px}h2{font-size:44px}
     .profile-rail{padding:20px;grid-template-columns:auto 1fr;border-radius:20px}.profile-rail-mark{width:46px;height:46px;border-radius:15px}.profile-rail-copy strong{font-size:21px}.profile-rail-signals{gap:6px}.profile-rail-signals span{padding:6px 8px}
     .flow{grid-template-columns:1fr}.flow-card,.flow-card:last-child{grid-column:auto;min-height:225px}
-    .feature-grid{grid-template-columns:1fr}.feature-card{min-height:390px;padding:28px}.feature-card h3{font-size:32px}
-    .feature-demo{grid-template-columns:1fr}.demo-cell{min-height:auto}.quote{font-size:23px}
     .cap-section{padding:82px 0}.cap-grid{grid-template-columns:1fr;margin-top:36px}.cap-card{min-height:280px;padding:27px}
     .research-section{padding:92px 0}.research-copy{grid-template-columns:1fr;gap:10px}.research-project{padding:18px}.strip-frame img{min-width:760px}.work-grid{grid-template-columns:1fr;row-gap:26px}.work-tile{height:190px}.work-tile:has(img[src*="cards-strip"]){width:713px;height:190px}.work-tile:has(img[src*="life-"]){width:428px;height:190px}.work-tile:has(img[src*="jokes-"]){width:285px;height:190px}
     .story-scroll{padding:68px 0}.story-sticky{padding:0 15px;gap:38px}.studio{height:auto;aspect-ratio:16/10;border-radius:22px;order:0}
@@ -472,45 +454,17 @@
       </div>
     </section>
 
-    <section class="section" id="features">
+    <section class="cap-section" id="features">
       <div class="shell">
         <div class="section-head reveal">
-          <div><div class="section-label">为什么创作者会一直用下去</div><h2>不是一个聊天窗口，<br>而是你的<em>内容搭档</em></h2></div>
-          <p class="section-intro">Easel 跑在成熟的 Agent 生态之上，把 Agent 编排、账号画像和社媒创作场景整合起来，让建议、素材和复盘始终围绕同一个创作者。</p>
-        </div>
-        <div class="feature-grid">
-          <article class="feature-card feature-main reveal">
-            <span class="feature-tag">一个 Agent · 五层工作流</span>
-            <h3>从“我想做什么”，到“这条已经发出去了”。</h3>
-            <p>它了解你的定位、风格、受众、平台、偏好和历史表现，帮你发现机会、做出内容、适配平台，并把结果带回下一轮创作。</p>
-            <div class="feature-demo">
-              <div class="demo-cell"><span>发现</span><strong>找到适合你的机会</strong></div>
-              <div class="demo-cell"><span>创作</span><strong>直接产出素材包</strong></div>
-              <div class="demo-cell"><span>回流</span><strong>越用越懂账号</strong></div>
-            </div>
-          </article>
-          <article class="feature-card feature-accent reveal" id="about">
-            <span class="feature-tag">六维跨平台 Profile</span>
-            <h3>每一条内容，都属于同一个创作者。</h3>
-            <p>定位、风格、受众、平台、偏好和记忆分别保存。发现、策划、发布与复盘读取完整画像；制作阶段只凝练当前任务真正需要的部分。</p>
-            <blockquote class="quote">“不是通用热点，而是这个账号能做的热点；不是模板文案，而是这个人会说的话。”</blockquote>
-            <span class="quote-by">IDENTITY · STYLE · AUDIENCE · PLATFORMS · PREFERENCES · MEMORY</span>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="cap-section">
-      <div class="shell">
-        <div class="section-head">
-          <div><div class="section-label">已经落地的产品能力</div><h2>从灵感到成片发布，<br>发现策划创作复盘</h2></div>
-          <p class="section-intro">从一条灵感到一份完整素材包，Easel 把发现、策划、创作、发布和复盘放在同一个工作台里，让创作者少切换工具，多把时间留给内容本身。</p>
+          <div><div class="section-label">为什么创作者会一直用下去 · 已落地产品能力</div><h2>不只是聊天窗口，<br>而是能把内容<em>真正做完</em>的搭档</h2></div>
+          <p class="section-intro">Easel 把账号画像、内容制作、跨平台发布和效果复盘放进同一个工作台。从一条灵感到一份完整素材包，每一步围绕同一个创作者，并把有效经验带回下一次创作。</p>
         </div>
         <div class="cap-grid">
-          <article class="cap-card"><span class="cap-index">01 / Content</span><h3>从一条文案，到一整套内容项目</h3><p>支持社媒文案、小红书笔记与卡片、金句卡、海报、信息图、长文、小说、思维导图、数据报告和论文解读。成品与中间素材按项目归档，不散落在聊天记录里。</p><div class="cap-tags"><span>社媒文案</span><span>小红书笔记</span><span>金句卡片</span><span>论文解读</span><span>小说写作</span></div></article>
-          <article class="cap-card dark"><span class="cap-index">02 / Media</span><h3>真正执行的图片、音频与视频制作链</h3><p>AI 生图、生视频与音乐，配音、声音克隆、字幕、降噪、混音、转竖屏、长视频切片、片头片尾和绿幕处理都有对应脚本。AI 短剧包含定妆复核、逐镜生成、原生对白审计和最终合成硬门。</p><div class="cap-tags"><span>图片生成</span><span>视频生成</span><span>AI 短剧</span><span>配音与声音克隆</span><span>自动字幕</span><span>视频剪辑</span></div></article>
-          <article class="cap-card peach"><span class="cap-index">03 / Publishing</span><h3>六个平台的登录、适配与发布</h3><p>已接入小红书、抖音、快手、知乎、B 站、微信视频号。发布前经过敏感信息扫描与画像一致性门禁，发布成功后自动写入内容日历和指标记录。</p><div class="cap-tags"><span>小红书</span><span>抖音</span><span>快手</span><span>知乎</span><span>Bilibili</span><span>视频号</span></div></article>
-          <article class="cap-card"><span class="cap-index">04 / Operations</span><h3>创作之后，还有日历、数据与复盘</h3><p>统一日历同时记录排期、发布和平台活动；账号数据、评论洞察、内容表现、增长趋势与 ROI 进入归因层。真正可复用的偏好和有效经验，在用户同意后沉淀回 Profile。</p><div class="cap-tags"><span>内容日历</span><span>账号数据</span><span>评论洞察</span><span>ROI</span><span>内容复盘</span><span>画像记忆</span></div></article>
+          <article class="cap-card reveal"><span class="cap-index">01 / Content</span><h3>从一句想法，到一整套内容项目</h3><p>支持社媒文案、图文卡片、海报、信息图、长文、小说和论文解读。成品与中间素材按项目归档，不再散落在聊天记录和不同工具里。</p><div class="cap-tags"><span>社媒文案</span><span>图文卡片</span><span>海报与信息图</span><span>论文解读</span><span>小说写作</span></div></article>
+          <article class="cap-card dark reveal"><span class="cap-index">02 / Media</span><h3>真正执行的图片、音频与视频制作链</h3><p>从 AI 生图、生视频、配音和字幕，到短剧、剪辑、横竖版转换与长视频切片，都有可执行的工具链，直接交付可发布素材。</p><div class="cap-tags"><span>图片生成</span><span>视频生成</span><span>AI 短剧</span><span>配音与声音克隆</span><span>自动字幕</span><span>视频剪辑</span></div></article>
+          <article class="cap-card peach reveal"><span class="cap-index">03 / Publishing</span><h3>六个平台的适配、检查与发布</h3><p>已接入小红书、抖音、快手、知乎、B 站和微信视频号。发布前完成格式、敏感信息与画像一致性检查，发布结果自动写回日历。</p><div class="cap-tags"><span>小红书</span><span>抖音</span><span>快手</span><span>知乎</span><span>Bilibili</span><span>视频号</span></div></article>
+          <article class="cap-card reveal" id="about"><span class="cap-index">04 / Profile & Operations</span><h3>记住账号，也记住什么内容真正有效</h3><p>定位、风格、受众、平台、偏好和记忆组成跨平台 Profile；内容日历、账号数据、评论洞察和复盘结果持续回流，让下一次选题与表达更贴近你。</p><div class="cap-tags"><span>六维画像</span><span>内容日历</span><span>账号数据</span><span>评论洞察</span><span>内容复盘</span><span>长期记忆</span></div></article>
         </div>
       </div>
     </section>
