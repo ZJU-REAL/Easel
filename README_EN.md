@@ -1,22 +1,16 @@
 <p align="left">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/logos/zhejiang_university_horizontal_dark.png">
-    <img src="assets/readme/logos/zhejiang_university_horizontal.png" width="106" align="middle" alt="Zhejiang University">
-  </picture>
+  <img src="assets/readme/logos/zhejiang_university_horizontal.png#gh-light-mode-only" width="106" align="middle" alt="Zhejiang University">
+  <img src="assets/readme/logos/zhejiang_university_horizontal_dark.png#gh-dark-mode-only" width="106" align="middle" alt="Zhejiang University">
   &nbsp;&nbsp;&nbsp;
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/logos/peking_university_horizontal_dark.png">
-    <img src="assets/readme/logos/peking_university_horizontal_red.png" width="98" align="middle" alt="Peking University">
-  </picture>
+  <img src="assets/readme/logos/peking_university_horizontal_red.png#gh-light-mode-only" width="98" align="middle" alt="Peking University">
+  <img src="assets/readme/logos/peking_university_horizontal_dark.png#gh-dark-mode-only" width="98" align="middle" alt="Peking University">
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/brand-dark.png">
-    <img src="assets/readme/brand.png" width="640" alt="Easel">
-  </picture>
+  <img src="assets/readme/brand.png#gh-light-mode-only" width="640" alt="Easel">
+  <img src="assets/readme/brand-dark.png#gh-dark-mode-only" width="640" alt="Easel">
   <br>
-  <img src="assets/readme/logos/real_lab_horizontal_readme.png" width="74" alt="REAL Lab">&thinsp;&thinsp;<picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/logos/opendcai_lab_horizontal_readme_dark.png"><img src="assets/readme/logos/opendcai_lab_horizontal_readme.png" width="83" alt="OpenDCAI Lab"></picture>
+  <img src="assets/readme/logos/real_lab_horizontal_readme.png" width="74" alt="REAL Lab">&thinsp;&thinsp;<img src="assets/readme/logos/opendcai_lab_horizontal_readme.png#gh-light-mode-only" width="83" alt="OpenDCAI Lab"><img src="assets/readme/logos/opendcai_lab_horizontal_readme_dark.png#gh-dark-mode-only" width="83" alt="OpenDCAI Lab">
 </p>
 
 <p align="center">
