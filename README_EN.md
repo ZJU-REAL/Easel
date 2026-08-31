@@ -1,5 +1,5 @@
 <p align="left">
-  <img src="assets/readme/logos/zhejiang_university_horizontal.png#gh-light-mode-only" width="106" align="middle" alt="Zhejiang University">
+  <img src="assets/readme/logos/zhejiang_university_horizontal_readme.png#gh-light-mode-only" width="106" align="middle" alt="Zhejiang University">
   <img src="assets/readme/logos/zhejiang_university_horizontal_dark.png#gh-dark-mode-only" width="106" align="middle" alt="Zhejiang University">
   &nbsp;&nbsp;&nbsp;
   <img src="assets/readme/logos/peking_university_horizontal_red.png#gh-light-mode-only" width="98" align="middle" alt="Peking University">
