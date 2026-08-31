@@ -1,8 +1,16 @@
+<p align="left">
+  <img src="assets/readme/logos/zhejiang_university_horizontal.png" width="98" alt="Zhejiang University">
+  &nbsp;&nbsp;&nbsp;
+  <img src="assets/readme/logos/peking_university_horizontal_red.png" width="98" alt="Peking University">
+</p>
+
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/brand-with-labs-dark.png">
-    <img src="assets/readme/brand-with-labs.png" width="640" alt="Easel · Zhejiang University · Peking University · REAL Lab · OpenDCAI Lab">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/brand-dark.png">
+    <img src="assets/readme/brand.png" width="640" alt="Easel">
   </picture>
+  <br>
+  <img src="assets/readme/logos/real_lab_horizontal_readme.png" width="74" alt="REAL Lab">&thinsp;&thinsp;<img src="assets/readme/logos/opendcai_lab_horizontal_readme.png" width="83" alt="OpenDCAI Lab">
 </p>
 
 <p align="center">
