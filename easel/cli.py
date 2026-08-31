@@ -63,7 +63,7 @@ def cmd_chat(_args) -> int:
             identity = PROFILES_DIR / name / "identity.md"
             desc = ""
             if identity.is_file():
-                for line in identity.read_text().splitlines():
+                for line in identity.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line and not line.startswith("#") and not line.startswith("<!--"):
                         desc = f"  — {line[:50]}"
