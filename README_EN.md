@@ -1,7 +1,7 @@
 <p align="left">
-  <img src="assets/readme/logos/zhejiang_university_horizontal.png" width="98" alt="Zhejiang University">
+  <img src="assets/readme/logos/zhejiang_university_horizontal.png" width="106" align="middle" alt="Zhejiang University">
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/readme/logos/peking_university_horizontal_red.png" width="98" alt="Peking University">
+  <img src="assets/readme/logos/peking_university_horizontal_red.png" width="98" align="middle" alt="Peking University">
 </p>
 
 <p align="center">
