@@ -44,12 +44,12 @@ def load_profile_text(name: str) -> str:
     for filename in _FILE_ORDER:
         filepath = profile_dir / filename
         if filepath.is_file():
-            text = filepath.read_text().strip()
+            text = filepath.read_text(encoding="utf-8").strip()
             if text:
                 parts.append(text)
     for filepath in sorted(profile_dir.glob("*.md")):
         if filepath.name not in _FILE_ORDER:
-            text = filepath.read_text().strip()
+            text = filepath.read_text(encoding="utf-8").strip()
             if text:
                 parts.append(text)
     return "\n\n---\n\n".join(parts)

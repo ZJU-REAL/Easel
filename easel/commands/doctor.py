@@ -80,7 +80,7 @@ def _env_key_valid() -> bool:
     # 认证变量 → 是否已填入非占位值
     auth_vars: dict[str, str] = {}
     try:
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line.startswith("#") or "=" not in line:
                 continue

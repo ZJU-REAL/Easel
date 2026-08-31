@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from easel.persona import persona_prefix, profile_exists
@@ -60,7 +62,7 @@ def _resolve_input(raw_input: str) -> str:
                       ".ogg", ".webm", ".mkv", ".avi", ".pdf", ".zip",
                       ".gz", ".tar", ".7z", ".rar"):
             return f"请处理这个文件：{p.resolve()}"
-        return p.read_text()
+        return p.read_text(encoding="utf-8")
     return raw_input
 
 
@@ -78,7 +80,6 @@ def _check_profile_exists(name: str) -> bool:
 
 def _proxy_env() -> dict[str, str]:
     """返回带外网代理的环境变量（保护内网直连）。"""
-    import os
     env = os.environ.copy()
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
     env.setdefault("http_proxy", os.environ.get("EASEL_PROXY", ""))
@@ -89,7 +90,6 @@ def _proxy_env() -> dict[str, str]:
 
 def _run_via_openclaw(message: str, timeout: int = 300) -> int:
     """统一通过 OpenClaw agent 执行。"""
-    import time
     session_key = f"skill-{int(time.time() * 1000)}"
 
     cmd = [
@@ -139,7 +139,7 @@ def cmd_skill(args) -> int:
 
     if skill_full is None:
         print(f"[easel] ERROR: SKILL '{skill_name}' 不存在")
-        print(f"  可用 SKILL:")
+        print("  可用 SKILL:")
         for name in _list_all_skills():
             print(f"    {name}")
         return 1
