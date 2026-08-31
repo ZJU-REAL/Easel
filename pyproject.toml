@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easel"
-version = "0.0.1"
+version = "0.1.0"
 description = "社媒内容工作流整合层 — Easel CLI"
 requires-python = ">=3.10"
 # 核心依赖：CLI + Web 后端 + 对话流。`pip install -e .`（setup.sh 会跑）即可跑通聊天/Web/文本类 SKILL。
