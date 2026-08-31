@@ -1,7 +1,13 @@
 <p align="left">
-  <img src="assets/readme/logos/zhejiang_university_horizontal.png" width="106" align="middle" alt="Zhejiang University">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/logos/zhejiang_university_horizontal_dark.png">
+    <img src="assets/readme/logos/zhejiang_university_horizontal.png" width="106" align="middle" alt="Zhejiang University">
+  </picture>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/readme/logos/peking_university_horizontal_red.png" width="98" align="middle" alt="Peking University">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/logos/peking_university_horizontal_dark.png">
+    <img src="assets/readme/logos/peking_university_horizontal_red.png" width="98" align="middle" alt="Peking University">
+  </picture>
 </p>
 
 <p align="center">
@@ -10,7 +16,7 @@
     <img src="assets/readme/brand.png" width="640" alt="Easel">
   </picture>
   <br>
-  <img src="assets/readme/logos/real_lab_horizontal_readme.png" width="74" alt="REAL Lab">&thinsp;&thinsp;<img src="assets/readme/logos/opendcai_lab_horizontal_readme.png" width="83" alt="OpenDCAI Lab">
+  <img src="assets/readme/logos/real_lab_horizontal_readme.png" width="74" alt="REAL Lab">&thinsp;&thinsp;<picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/logos/opendcai_lab_horizontal_readme_dark.png"><img src="assets/readme/logos/opendcai_lab_horizontal_readme.png" width="83" alt="OpenDCAI Lab"></picture>
 </p>
 
 <p align="center">
