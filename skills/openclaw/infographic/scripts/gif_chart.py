@@ -30,6 +30,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared" / "scripts"))
+from output_paths import validate_output_path
+
 try:
     import numpy as np
 except ImportError:
@@ -159,7 +162,9 @@ def _n_frames(fps: int, duration: float) -> int:
 
 
 def _default_out(args, name: str) -> str:
-    return args.output or f"outputs/{name}.gif"
+    if not args.output:
+        raise SystemExit(f"请用 --output outputs/<具体主题>/{name}.gif 指定项目内输出路径")
+    return args.output
 
 
 # ── bar-race ─────────────────────────────────────────────────────────────────
@@ -478,7 +483,8 @@ def _selftest() -> int:
 # ── argparse 顶层 ────────────────────────────────────────────────────────────
 
 def _common(p) -> None:
-    p.add_argument("-o", "--output", help="输出 GIF 路径（默认 outputs/<子命令>.gif）")
+    p.add_argument("-o", "--output", required=True,
+                   help="输出 GIF 路径，必须位于 outputs/<具体主题>/")
     p.add_argument("--data", help="数据 JSON 路径（'-' 读 stdin；省略用内置示例）")
     p.add_argument("--title", help="标题（覆盖数据里的 title）")
     p.add_argument("--width", type=int, default=900, help="宽度像素（默认 900）")
@@ -527,6 +533,7 @@ def main() -> int:
     if not getattr(args, "cmd", None):
         ap.print_help()
         return 1
+    args.output = str(validate_output_path(args.output))
     return args.func(args)
 
 

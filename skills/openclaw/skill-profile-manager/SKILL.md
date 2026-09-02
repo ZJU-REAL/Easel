@@ -119,7 +119,7 @@ layer: general
 
 15. **汇总画像**：读取画像目录下所有 .md 文件
 16. **生成摘要卡片**：合并为一份结构化的画像摘要（Markdown 格式）
-17. **输出到 outputs/**：保存为 `outputs/profile-export-{profile_name}-{日期}.md`
+17. **输出到 outputs/**：保存为 `outputs/<画像名-导出日期>/profile-export.md`
 
 ### diff 流程
 

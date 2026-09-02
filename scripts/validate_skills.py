@@ -47,6 +47,11 @@ PUBLISH_SCRIPT_CONTRACTS = {
         "content_guard.guard_or_die", 'add_argument("--exec"',
     ),
 }
+OUTPUT_SCAN_SUFFIXES = {".md", ".py", ".sh"}
+GENERIC_OUTPUT_DIRS = {"xhs", "test", "tmp", "temp", "demo", "output", "outputs", "result", "results"}
+ROOT_OUTPUT_FILE_RE = re.compile(
+    r"outputs/([^/\s`\"']+\.(?:md|json|jsonl|csv|txt|html|pdf|png|jpe?g|webp|gif|mp3|wav|mp4|mov|srt|vtt))"
+)
 
 
 def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
@@ -177,6 +182,29 @@ def validate_execution_contracts() -> list[str]:
     return errors
 
 
+def validate_output_layout_references() -> list[str]:
+    """Reject examples that teach agents to create root files or generic projects."""
+    errors: list[str] = []
+    roots = (ROOT / "skills/openclaw", ROOT / "skills/shared/scripts")
+    for base in roots:
+        for path in base.rglob("*"):
+            if not path.is_file() or path.suffix not in OUTPUT_SCAN_SUFFIXES:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for match in ROOT_OUTPUT_FILE_RE.finditer(text):
+                name = match.group(1)
+                if not name.startswith("_"):
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: root-level content output {match.group(0)!r}"
+                    )
+            for name in sorted(GENERIC_OUTPUT_DIRS):
+                if re.search(rf"outputs/{re.escape(name)}/", text, re.I):
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: generic output project directory 'outputs/{name}/'"
+                    )
+    return sorted(set(errors))
+
+
 def main() -> int:
     skill_files = sorted(SKILLS_DIR.glob("*/SKILL.md"))
     failures = 0
@@ -189,6 +217,7 @@ def main() -> int:
         for error in errors:
             print(f"  - {error}")
     contract_errors = validate_execution_contracts()
+    contract_errors.extend(validate_output_layout_references())
     if contract_errors:
         failures += 1
         print("execution contracts")

@@ -116,6 +116,7 @@ outputs/<主题>/
 ```
 - **成品放项目根、中间件进 `assets/`**：前端「内容库」据此把成品与素材分区展示。
 - 项目名用人类可读主题（中文可），禁泛名（xhs/test）；测试/临时产物写 `outputs/_scratch/`。
+- 任何新脚本在创建产物前必须调用 `skills/shared/scripts/output_paths.py` 的 `validate_output_path()`；系统写入需显式传 `allow_system=True`，且只能使用已注册的 `_` 路径。
 - 系统状态一律 `_` 前缀目录（`_login/_publish/_analytics/_profile_build/_scratch`）；
   **内容库只展示项目目录**，忽略根目录散文件与系统目录。
 

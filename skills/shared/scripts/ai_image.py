@@ -38,6 +38,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from output_paths import validate_output_path
+
 
 ENV_BASE_URL = "IMG_BASE_URL"
 ENV_MODEL = "IMG_MODEL"
@@ -718,6 +720,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    if getattr(args, "output", None):
+        args.output = str(validate_output_path(args.output))
     env_file = Path(args.env_file) if getattr(args, "env_file", None) else find_default_env_file()
     load_env_file(env_file)
     args.func(args)

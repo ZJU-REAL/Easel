@@ -51,6 +51,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from output_paths import validate_output_path
 from typing import Any
 
 from model_registry import env_aliases, provider_ids, provider_required_env
@@ -496,6 +497,8 @@ def main(argv: list[str] | None = None) -> int:
     if not getattr(args, "cmd", None):
         parser.print_help()
         return 0
+    if getattr(args, "output", None):
+        args.output = str(validate_output_path(args.output))
     env_file = Path(args.env_file) if getattr(args, "env_file", None) else find_default_env_file()
     load_env_file(env_file)
     return args.func(args)

@@ -13,7 +13,7 @@
 用法：
     report.py analyze data.csv
     report.py analyze data.csv -o overview.json
-    report.py report data.csv -o outputs/report.html --title "7 月销售周报"
+    report.py report data.csv -o outputs/7月销售周报/report.html --title "7 月销售周报"
     report.py report data.xlsx -o report.html --kpi 销量 金额
     report.py --selftest
 

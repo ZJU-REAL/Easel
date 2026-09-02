@@ -38,6 +38,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+from output_paths import validate_output_path
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -844,6 +845,8 @@ def main() -> int:
     p5.set_defaults(func=cmd_probe_dialogue)
 
     args = ap.parse_args()
+    if getattr(args, "output", None):
+        args.output = str(validate_output_path(args.output))
     return args.func(args)
 
 

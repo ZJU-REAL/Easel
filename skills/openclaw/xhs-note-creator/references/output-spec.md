@@ -1,11 +1,11 @@
 # 小红书笔记输出目录规范
 
-xhs-note-creator 的产物统一保存到仓库的 `outputs/xhs/` 目录下，便于查找、归档与发布。与 SKILL.md Step 7 的落盘结构一致。
+xhs-note-creator 的产物统一保存到 `outputs/<具体主题>/` 目录下，便于查找、归档与发布。禁止使用 `xhs`、`test` 等泛化项目名。
 
 ## 目录结构
 
 ```
-outputs/xhs/{YYYY-MM-DD}/{短标题}_{YYYYMMDDHHmm}/
+outputs/{具体主题}/
 ├── {完整标题}.md          # 长文原稿（正文，供拆卡/caption 使用）
 ├── meta.json              # 元数据（卡片/分镜/caption/hashtags/合成策略）
 ├── images/                # 最终卡图 / 封面

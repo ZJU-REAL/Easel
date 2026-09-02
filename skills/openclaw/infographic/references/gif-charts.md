@@ -14,7 +14,7 @@
 
 ## 通用参数
 
-所有子命令共用：`-o/--output`（默认 `outputs/<子命令>.gif`）、`--data`（JSON 路径，`-` 读 stdin，省略用内置示例）、`--title`、`--width`（默认 900）、`--height`、`--fps`（默认 20）、`--duration`（默认 4 秒）。脚本自动设置中文字体、Agg 后端、自适应调色板控体积。
+所有子命令共用：`-o/--output`（指定 `outputs/<具体主题>/<子命令>.gif`）、`--data`（JSON 路径，`-` 读 stdin，省略用内置示例）、`--title`、`--width`（默认 900）、`--height`、`--fps`（默认 20）、`--duration`（默认 4 秒）。脚本自动设置中文字体、Agg 后端、自适应调色板控体积。
 
 ## 数据格式（JSON）
 

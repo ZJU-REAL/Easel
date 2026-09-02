@@ -38,6 +38,27 @@ export interface PublishDraft {
 const PUBLISH_KEY = 'easel_publish_draft';
 const PREVIOUS_BRAND = ['post', 'craft'].join('');
 
+// One-time reset after clearing the server-side OpenClaw session store.
+const CHAT_RESET_KEY = 'easel_chat_reset_20260902';
+if (!localStorage.getItem(CHAT_RESET_KEY)) {
+  for (const key of [
+    'easel_sessions',
+    'easel-sessions',
+    'easel_active_session',
+    `${PREVIOUS_BRAND}_sessions`,
+    `${PREVIOUS_BRAND}_active_session`,
+  ]) {
+    localStorage.removeItem(key);
+  }
+  for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+    const key = sessionStorage.key(i);
+    if (key === 'easel_tab_session' || key?.startsWith('easel_pending_turn:')) {
+      sessionStorage.removeItem(key);
+    }
+  }
+  localStorage.setItem(CHAT_RESET_KEY, '1');
+}
+
 function readMigratedLocalValue(key: string, suffix: string): string | null {
   const current = localStorage.getItem(key);
   if (current !== null) return current;

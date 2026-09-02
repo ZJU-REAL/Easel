@@ -62,7 +62,7 @@ layer: produce
   典型调用（先写数据到临时 JSON，再调脚本）：
   ```bash
   python skills/openclaw/infographic/scripts/gif_chart.py bar-race --data data.json \
-    --output outputs/城市增长.gif --width 900 --duration 5
+    --output outputs/城市增长/柱状竞速.gif --width 900 --duration 5
   ```
   脚本自动设置中文字体、Agg 后端、自适应调色板控体积。自检：`python skills/openclaw/infographic/scripts/gif_chart.py --selftest`。
 
