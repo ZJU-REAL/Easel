@@ -114,6 +114,18 @@ PLATFORMS: dict[str, dict] = {
             {"action": "waitfor", "selector": "[class*=_edit-section-btns]", "value": "60000"},
             # 等封面缩略图加载完毕（_recommend-cover-item loading 消失后才能发布，否则点击无效）
             {"action": "wait", "value": "25000"},
+            # 发布前再次清除 react-joyride 遮罩（有时在等待过程中再次出现拦截点击）
+            {"action": "js_eval",
+             "value": """() => {
+                 for (const sel of ['#react-joyride-portal','.react-joyride__overlay','.react-joyride__spotlight']) {
+                     document.querySelectorAll(sel).forEach(el => el.remove());
+                 }
+                 document.querySelectorAll('[style*=pointer-events]').forEach(el => {
+                     const cls = (el.className || '').toString();
+                     if (cls.includes('joyride')) el.remove();
+                 });
+             }"""},
+            {"action": "wait", "value": "1000"},
             # 真发布按钮：表单底部『发布』，class 含 _button-primary_<hash>，在 _edit-section-btns_ 容器内。
             # 用 js_click（scrollIntoView + JS dispatchEvent）触发——标准 click() 与 :has-text 对该按钮不可靠；
             # 选择器多候选逐一尝试：优先容器内 button-primary，回退到非导航栏（非 publish-button 容器）的 button-primary。
@@ -1224,9 +1236,14 @@ def cmd_selftest(_a) -> int:
     assert any(s.get("optional") and s["action"] == "click" for s in ks), "缺清理旧草稿的 optional 步骤"
     wf = [s for s in ks if s["action"] == "waitfor"][0]
     assert "," in wf["selector"] and int(wf["value"]) >= 120000, "描述框应多候选且等待≥120s（转码慢）"
+    joyride_steps = [i for i, s in enumerate(ks)
+                     if s["action"] == "js_eval" and "react-joyride" in s.get("value", "")]
+    assert len(joyride_steps) >= 2, "快手应在填写前和最终发布前各清理一次 joyride 遮罩"
     # 真发布按钮走 js_click（JS dispatchEvent；标准 click/:has-text 对该按钮不可靠）——
     # 断言非 optional 的 click/js_click 提交步命中 button-primary（非 <button>、非左侧导航『发布作品』）
     pub_click = [s for s in ks if s["action"] in ("click", "js_click") and not s.get("optional")][-1]
+    pub_click_index = ks.index(pub_click)
+    assert joyride_steps[-1] < pub_click_index, "最后一次 joyride 清理必须在发布点击前"
     assert "button-primary" in pub_click["selector"], \
         "快手发布按钮应为 [class*=button-primary]『发布』（走 js_click 派发；非 <button>，非导航『发布作品』）"
     # 视频流程平台的媒体类型标记（快手/视频号只收视频，给图片会晦涩超时）
