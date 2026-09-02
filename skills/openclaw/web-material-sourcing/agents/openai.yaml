@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Material Sourcing"
+  short_description: "Search, verify, and collect web materials for slides and cards"
+  default_prompt: "Find lawful web materials for this presentation or card project, record sources, and save them into the project assets folder."
