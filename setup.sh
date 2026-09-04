@@ -372,12 +372,12 @@ if [ "$STANDARD_LLM_CONFIGURED" = true ] && [ -z "${ANTHROPIC_API_KEY:-}" ] \
    && [ -z "${EASEL_LLM_API_KEY:-}" ] && [ -n "${OPENAI_API_KEY:-}" ] \
    && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
     OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
-    $OC config set models.providers.openai.api "openai-completions" 2>&1 | tail -1
-    $OC config set models.providers.openai.apiKey "$OPENAI_API_KEY" 2>&1 | tail -1
-    $OC config set models.providers.openai.baseUrl "${OPENAI_BASE_URL:-https://api.openai.com/v1}" 2>&1 | tail -1
+    $OC config set models.providers.openai.api "openai-completions" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers.openai.apiKey "$OPENAI_API_KEY" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers.openai.baseUrl "${OPENAI_BASE_URL:-https://api.openai.com/v1}" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers.openai.models \
         "[{\"id\":\"$OPENAI_MODEL\",\"name\":\"OpenAI model\",\"reasoning\":true,\"input\":[\"text\",\"image\"]}]" \
-        --strict-json 2>&1 | tail -1
+        --strict-json 2>&1 | sed '/^No change$/d'
     DEFAULT_PRIMARY_MODEL="openai/$OPENAI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "OpenAI 服务认证已同步"
@@ -422,7 +422,7 @@ print(json.dumps({
 PY
 )
     $OC config set models.providers."$OPENAI_PROVIDER" "$OPENAI_PROVIDER_CONFIG" \
-        --strict-json 2>&1 | tail -1
+        --strict-json 2>&1 | sed '/^No change$/d'
     DEFAULT_PRIMARY_MODEL="$OPENAI_PROVIDER/$OPENAI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "OpenAI-compatible 服务已通过本地适配器同步"
@@ -430,42 +430,42 @@ elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${GEMINI_MAAS_API_KEY:-}" ]
     GEMINI_PROVIDER="rednote-gemini"
     GEMINI_MODEL="${GEMINI_MAAS_MODEL:-gemini-3.1-pro-preview}"
     $OC config set models.providers."$GEMINI_PROVIDER".baseUrl \
-        "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/v1" 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".api "openai-completions" 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".apiKey "local-adapter" 2>&1 | tail -1
+        "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/v1" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".api "openai-completions" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".apiKey "local-adapter" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".models \
         "[{\"id\":\"$GEMINI_MODEL\",\"name\":\"Gemini-compatible model\",\"reasoning\":true,\"input\":[\"text\",\"image\"],\"contextWindow\":1048576,\"maxTokens\":65535}]" \
-        --strict-json 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".timeoutSeconds 600 --strict-json 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".request.allowPrivateNetwork true --strict-json 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.command "/usr/bin/python3" 2>&1 | tail -1
+        --strict-json 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".timeoutSeconds 600 --strict-json 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".request.allowPrivateNetwork true --strict-json 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".localService.command "/usr/bin/python3" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.args \
         "[\"$PROJECT_ROOT/scripts/gemini_maas_adapter.py\",\"--port\",\"${GEMINI_ADAPTER_PORT:-18790}\"]" \
-        --strict-json 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.cwd "$PROJECT_ROOT" 2>&1 | tail -1
+        --strict-json 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".localService.cwd "$PROJECT_ROOT" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.healthUrl \
-        "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/health" 2>&1 | tail -1
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.idleStopMs 0 --strict-json 2>&1 | tail -1
+        "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/health" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers."$GEMINI_PROVIDER".localService.idleStopMs 0 --strict-json 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_API_KEY \
-        "$GEMINI_MAAS_API_KEY" 2>&1 | tail -1
+        "$GEMINI_MAAS_API_KEY" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_ENDPOINT \
-        "${GEMINI_MAAS_ENDPOINT:?GEMINI_MAAS_ENDPOINT is required}" 2>&1 | tail -1
+        "${GEMINI_MAAS_ENDPOINT:?GEMINI_MAAS_ENDPOINT is required}" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_MODEL \
-        "$GEMINI_MODEL" 2>&1 | tail -1
+        "$GEMINI_MODEL" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_THINKING_LEVEL \
-        "${GEMINI_THINKING_LEVEL:-HIGH}" 2>&1 | tail -1
+        "${GEMINI_THINKING_LEVEL:-HIGH}" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_INCLUDE_THOUGHTS \
-        "${GEMINI_INCLUDE_THOUGHTS:-true}" 2>&1 | tail -1
+        "${GEMINI_INCLUDE_THOUGHTS:-true}" 2>&1 | sed '/^No change$/d'
     DEFAULT_PRIMARY_MODEL="$GEMINI_PROVIDER/$GEMINI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "Gemini-compatible 服务已通过本地适配器同步"
 elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
-    $OC config set models.providers.anthropic.apiKey "$EASEL_LLM_API_KEY" 2>&1 | tail -1
-    $OC config set models.providers.anthropic.baseUrl "$EASEL_LLM_BASE_URL" 2>&1 | tail -1
+    $OC config set models.providers.anthropic.apiKey "$EASEL_LLM_API_KEY" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers.anthropic.baseUrl "$EASEL_LLM_BASE_URL" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers.anthropic.headers."${EASEL_LLM_API_KEY_HEADER:-api-key}" \
-        "$EASEL_LLM_API_KEY" 2>&1 | tail -1
+        "$EASEL_LLM_API_KEY" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers.anthropic.headers.anthropic-version \
-        "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}" 2>&1 | tail -1
+        "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}" 2>&1 | sed '/^No change$/d'
     # Switching away from CodeWiz must remove its provider-specific headers.
     $OC config unset models.providers.anthropic.headers.Cookie >/dev/null 2>&1 || true
     $OC config unset models.providers.anthropic.headers.X-Adapter-Source >/dev/null 2>&1 || true
@@ -473,11 +473,11 @@ elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     $OC config unset models.providers.anthropic.headers.X-Adapter-Source-Version >/dev/null 2>&1 || true
     ok "自定义 Anthropic 兼容 MaaS 认证已同步"
 elif [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
-    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_AUTH_TOKEN" 2>&1 | tail -1
-    $OC config set models.providers.anthropic.baseUrl "$ANTHROPIC_BASE_URL" 2>&1 | tail -1
+    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_AUTH_TOKEN" 2>&1 | sed '/^No change$/d'
+    $OC config set models.providers.anthropic.baseUrl "$ANTHROPIC_BASE_URL" 2>&1 | sed '/^No change$/d'
     ok "Anthropic 兼容服务认证已同步"
 elif [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
-    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_API_KEY" 2>&1 | tail -1
+    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_API_KEY" 2>&1 | sed '/^No change$/d'
     ok "API key 已同步"
 else
     warn "认证未配置 — 编辑 .env 后重新运行 bash setup.sh"
@@ -486,19 +486,19 @@ fi
 # ---- 10. OpenClaw agent 模型 + 超时 ----
 # CLAUDE_MODEL 保留旧变量名以兼容现有环境，值必须是 OpenClaw 的 provider/model。
 # 不要填内部 proxy 映射名（如 claude-4.6-opus-google），否则 OpenClaw 不认识。
-$OC config set agents.defaults.model.primary "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" 2>&1 | tail -1
+$OC config set agents.defaults.model.primary "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" 2>&1 | sed '/^No change$/d'
 # 整个 agent run 的总时长上限。制作层任务（OpenClaw 自执行短剧/长稿/多镜）很久 → 给足。
-$OC config set agents.defaults.timeoutSeconds 7200 2>&1 | tail -1
+$OC config set agents.defaults.timeoutSeconds 7200 2>&1 | sed '/^No change$/d'
 # Easel 使用 profiles/<当前画像>/memory.md；关闭 OpenClaw 全局记忆索引，避免旧索引跨画像召回。
 # memorySearch was removed from the current OpenClaw schema; clear legacy values.
 $OC config unset agents.defaults.memorySearch >/dev/null 2>&1 || true
 # 单次 LLM 请求的「空闲超时」（等模型开始/继续产出 token 的最长时间）。内部网关对大上下文/带思考的
 # 请求首 token 可能较慢，不设会用默认较短值 → 报「model did not produce a response before the model
 # idle timeout」而中断整个 run。与 agents.defaults.timeoutSeconds 是两回事，provider 超时不能延长整个 run。
-$OC config set models.providers.anthropic.timeoutSeconds 600 2>&1 | tail -1
-$OC config set gateway.mode local 2>&1 | tail -1
-$OC config set gateway.bind loopback 2>&1 | tail -1
-$OC config set gateway.auth.mode none 2>&1 | tail -1
+$OC config set models.providers.anthropic.timeoutSeconds 600 2>&1 | sed '/^No change$/d'
+$OC config set gateway.mode local 2>&1 | sed '/^No change$/d'
+$OC config set gateway.bind loopback 2>&1 | sed '/^No change$/d'
+$OC config set gateway.auth.mode none 2>&1 | sed '/^No change$/d'
 
 # Refuse to start with a config rejected by the installed OpenClaw version.
 # This catches schema changes early instead of producing opaque Gateway errors.
