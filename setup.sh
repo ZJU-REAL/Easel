@@ -35,6 +35,38 @@ ask()   { if [ -t 0 ]; then printf "${CYAN}  ?${NC} %s " "$1" >&2; read -r REPLY
 ask_secret() { if [ -t 0 ]; then printf "${CYAN}  ?${NC} %s " "$1" >&2; read -r -s REPLY; printf '\n' >&2; printf '%s' "$REPLY"; else printf ''; fi; }
 step()  { echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; echo -e "${MAGENTA}  [$1]${NC} ${CYAN}$2${NC}"; echo -e "${DIM}  $3${NC}"; }
 
+run_with_progress() {
+    local label log_file pid started elapsed frame
+    label="$1"
+    shift
+    log_file="$(mktemp "${TMPDIR:-/tmp}/easel-install.XXXXXX")"
+    "$@" >"$log_file" 2>&1 &
+    pid=$!
+    started=$(date +%s)
+    frame=0
+    while kill -0 "$pid" 2>/dev/null; do
+        elapsed=$(( $(date +%s) - started ))
+        case $((frame % 4)) in
+            0) progress='[>   ]' ;;
+            1) progress='[=>  ]' ;;
+            2) progress='[==> ]' ;;
+            *) progress='[===>]' ;;
+        esac
+        printf '\r  %s 进行中 %s 已运行 %ss' "$progress" "$label" "$elapsed" >&2
+        frame=$((frame + 1))
+        sleep 1
+    done
+    if wait "$pid"; then
+        printf '\r  [====] %s 完成                         \n' "$label" >&2
+        rm -f "$log_file"
+        return 0
+    fi
+    printf '\r  [FAIL] %s 失败                         \n' "$label" >&2
+    tail -40 "$log_file" >&2 || true
+    rm -f "$log_file"
+    return 1
+}
+
 clear 2>/dev/null || true
 echo -e "\n${CYAN}╭────────────────────────────────────────────────────╮${NC}"
 echo -e "${CYAN}│${NC}  ${MAGENTA}Easel${NC} · 社媒内容工作台安装向导                 ${CYAN}│${NC}"
@@ -202,14 +234,18 @@ fi
 
 # ---- 5. 安装 easel CLI ----
 step "5/8" "安装 Easel 运行依赖" "Web · 媒体 · 浏览器发布"
-info "安装 Python 依赖与 easel CLI..."
+info "[1/2] 安装 Python 依赖与 easel CLI..."
 PIP_ARGS=(install -e "$PROJECT_ROOT" --progress-bar on)
 if [ "$(id -u)" -eq 0 ]; then
     PIP_ARGS+=(--root-user-action=ignore)
     warn "当前以 root 安装；生产服务器建议使用虚拟环境"
 fi
-python3 -m pip "${PIP_ARGS[@]}"
-ok "easel 命令可用"
+run_with_progress "Python 依赖安装" python3 -m pip "${PIP_ARGS[@]}"
+if ! command -v easel >/dev/null 2>&1; then
+    echo "easel 命令未找到；请检查 Python 环境和 PATH。" >&2
+    exit 1
+fi
+ok "[2/2] easel 命令可用"
 
 # ---- 6. 构建 Web 前端（Node 已装 → easel web 直接出真 UI，无需手动构建） ----
 step "6/8" "构建 Web 工作台" "React production bundle"
