@@ -202,10 +202,10 @@ bash setup.sh
 
 `bash setup.sh` 是可重复运行的引导式安装器，直接执行即可，不需要先手动安装 Easel 依赖。安装过程中会：
 
-1. 检查 Python、Python `venv`、Node.js、Git 和 FFmpeg。
+1. 检查 Python、Python `venv`、Node.js 和 Git；FFmpeg 缺失时会尝试通过系统包管理器安装，仍无法安装则停止并提示处理方式。
 2. 询问是否创建或复用项目虚拟环境 `.venv/`；默认选择 `Y`。如果系统缺少 `venv`，会提示安装对应系统包（例如 Debian/Ubuntu 的 `python3-venv`）。
 3. 检查或安装 OpenClaw，并创建独立的 `easel` profile，不覆盖用户已有的 `~/.openclaw/`。
-4. 安装 Python、Web、媒体和浏览器发布依赖，构建 React Web 工作台并安装 Chromium。
+4. 安装 Python、Web、媒体和浏览器发布依赖，构建 React Web 工作台并安装 Chromium；这些步骤任一失败都会停止，不会回退成不完整安装。
 5. 在终端中引导配置 Agent 模型：可选择 Anthropic、OpenAI/OpenAI-compatible、其他 Anthropic-compatible 服务，API Key 输入不会回显。
 6. 同步 skills、校验 OpenClaw 配置并启动 gateway。
 
@@ -230,7 +230,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -e .
 python3 -m playwright install chromium
-# 系统还需要 ffmpeg
+# 手动安装时仍需提前安装 ffmpeg
 ```
 
 ## ⚙️ 配置说明

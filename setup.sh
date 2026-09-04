@@ -124,7 +124,32 @@ else
     warn "当前为非交互模式且未找到 .venv，将使用系统 Python；建议先创建 Python 3.10+ 虚拟环境"
 fi
 command -v git >/dev/null 2>&1 && ok "Git $(git --version | awk '{print $3}')" || warn "未找到 git"
-command -v ffmpeg >/dev/null 2>&1 && ok "FFmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')" || warn "未找到 FFmpeg（媒体功能需要）"
+if command -v ffmpeg >/dev/null 2>&1; then
+    ok "FFmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')"
+else
+    info "安装 FFmpeg（媒体功能必需）..."
+    if [ "$(uname -s)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
+        brew install ffmpeg
+    elif command -v apt-get >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then apt-get update && apt-get install -y ffmpeg
+        elif command -v sudo >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y ffmpeg
+        fi
+    elif command -v dnf >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then dnf install -y ffmpeg
+        elif command -v sudo >/dev/null 2>&1; then sudo dnf install -y ffmpeg
+        fi
+    elif command -v yum >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then yum install -y ffmpeg
+        elif command -v sudo >/dev/null 2>&1; then sudo yum install -y ffmpeg
+        fi
+    fi
+    if command -v ffmpeg >/dev/null 2>&1; then
+        ok "FFmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')"
+    else
+        echo "FFmpeg 安装失败；请手动安装 FFmpeg 后重新运行 bash setup.sh。" >&2
+        exit 1
+    fi
+fi
 
 # ---- 2. npm 源 ----
 step "2/8" "准备 Node.js 工具链" "设置 npm registry"
@@ -190,18 +215,18 @@ ok "easel 命令可用"
 step "6/8" "构建 Web 工作台" "React production bundle"
 info "构建 Web 前端..."
 if [ -d "$PROJECT_ROOT/web/frontend" ]; then
-    (
+    if ! (
         cd "$PROJECT_ROOT/web/frontend"
-        if [ -f package-lock.json ]; then npm ci --silent || npm install --silent; else npm install --silent; fi
+        if [ -f package-lock.json ]; then npm ci --no-audit --no-fund || npm install --no-audit --no-fund; else npm install --no-audit --no-fund; fi
         npm run build
-    ) >/dev/null 2>&1 || true
-    if [ -f "$PROJECT_ROOT/web/frontend/dist/index.html" ]; then
-        ok "前端已构建 → web/frontend/dist/"
-    else
-        warn "前端构建未完成，easel web 会回退简易页；可手动：cd web/frontend && npm ci && npm run build"
+    ); then
+        echo "前端依赖安装或构建失败；请检查 Node.js/npm 网络后重新运行 bash setup.sh。" >&2
+        exit 1
     fi
+    ok "前端已构建 → web/frontend/dist/"
 else
-    warn "未找到 web/frontend，跳过前端构建"
+    echo "未找到 web/frontend，无法完成 Web 工作台安装。" >&2
+    exit 1
 fi
 
 # ---- 7. 认证配置 ----
@@ -454,9 +479,18 @@ bash "$PROJECT_ROOT/scripts/gateway.sh" start
 
 # Playwright is a runtime dependency for browser login/publishing.
 if python3 -c 'import playwright' >/dev/null 2>&1; then
-    python3 -m playwright install chromium >/dev/null 2>&1 || warn "Chromium 安装失败，请手动运行：python3 -m playwright install chromium"
+    if ! python3 -m playwright install chromium; then
+        echo "Chromium 安装失败；请手动运行 python3 -m playwright install chromium 后重试。" >&2
+        exit 1
+    fi
+    if ! python3 -c 'from pathlib import Path; from playwright.sync_api import sync_playwright; p=sync_playwright().start(); path=Path(p.chromium.executable_path); p.stop(); raise SystemExit(0 if path.is_file() else 1)'; then
+        echo "未找到已安装的 Chromium；请检查 Playwright 安装后重试。" >&2
+        exit 1
+    fi
+    ok "Playwright Chromium 已就绪"
 else
-    warn "未找到 Playwright CLI；请检查 Python 依赖安装结果"
+    echo "未找到 Playwright；Python 依赖安装不完整，无法继续。" >&2
+    exit 1
 fi
 
 echo -e "\n${GREEN}╭────────────────────────────────────────────────────╮${NC}"
