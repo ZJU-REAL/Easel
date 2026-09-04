@@ -118,7 +118,12 @@ info "初始化 Easel profile (--profile $PROFILE)..."
 if [ -f "$HOME/.openclaw-${PROFILE}/openclaw.json" ]; then
     ok "Profile 已存在"
 else
-    $OC setup --non-interactive --mode local --accept-risk 2>&1 | tail -2
+    if $OPENCLAW_BIN onboard --help 2>/dev/null | grep -q -- '--skip-health'; then
+        $OC onboard --non-interactive --mode local --accept-risk \
+            --skip-health --skip-daemon --skip-channels --skip-skills --skip-ui 2>&1 | tail -2
+    else
+        $OC setup --non-interactive --mode local --accept-risk 2>&1 | tail -2
+    fi
     ok "Profile 初始化完成 → ~/.openclaw-${PROFILE}/"
 fi
 
