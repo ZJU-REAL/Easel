@@ -118,11 +118,26 @@ info "初始化 Easel profile (--profile $PROFILE)..."
 if [ -f "$HOME/.openclaw-${PROFILE}/openclaw.json" ]; then
     ok "Profile 已存在"
 else
-    if $OPENCLAW_BIN onboard --help 2>/dev/null | grep -q -- '--skip-health'; then
-        $OC onboard --non-interactive --mode local --accept-risk \
-            --skip-health --skip-daemon --skip-channels --skip-skills --skip-ui 2>&1 | tail -2
-    else
+    ONBOARD_HELP="$($OPENCLAW_BIN onboard --help 2>/dev/null || true)"
+    if [ -n "$ONBOARD_HELP" ]; then
+        ONBOARD_ARGS=(onboard --non-interactive --mode local --accept-risk)
+        for optional_arg in --skip-health --skip-channels --skip-skills \
+            --skip-ui --skip-hooks --skip-search; do
+            if printf '%s\n' "$ONBOARD_HELP" | grep -q -- "$optional_arg"; then
+                ONBOARD_ARGS+=("$optional_arg")
+            fi
+        done
+        if printf '%s\n' "$ONBOARD_HELP" | grep -q -- '--skip-daemon'; then
+            ONBOARD_ARGS+=(--skip-daemon)
+        elif printf '%s\n' "$ONBOARD_HELP" | grep -q -- '--no-install-daemon'; then
+            ONBOARD_ARGS+=(--no-install-daemon)
+        fi
+        $OPENCLAW_BIN --profile "$PROFILE" "${ONBOARD_ARGS[@]}" 2>&1 | tail -2
+    elif $OPENCLAW_BIN setup --help >/dev/null 2>&1; then
         $OC setup --non-interactive --mode local --accept-risk 2>&1 | tail -2
+    else
+        echo "当前 OpenClaw 不支持可用的非交互初始化命令，请升级 OpenClaw 后重试。" >&2
+        exit 1
     fi
     ok "Profile 初始化完成 → ~/.openclaw-${PROFILE}/"
 fi
