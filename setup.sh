@@ -144,8 +144,13 @@ fi
 
 # ---- 5. 安装 easel CLI ----
 step "5/8" "安装 Easel 运行依赖" "Web · 媒体 · 浏览器发布"
-info "安装 easel CLI..."
-pip install -e "$PROJECT_ROOT" --quiet 2>&1 | tail -1
+info "安装 Python 依赖与 easel CLI..."
+PIP_ARGS=(install -e "$PROJECT_ROOT" --progress-bar on)
+if [ "$(id -u)" -eq 0 ]; then
+    PIP_ARGS+=(--root-user-action=ignore)
+    warn "当前以 root 安装；生产服务器建议使用虚拟环境"
+fi
+python3 -m pip "${PIP_ARGS[@]}"
 ok "easel 命令可用"
 
 # ---- 6. 构建 Web 前端（Node 已装 → easel web 直接出真 UI，无需手动构建） ----
