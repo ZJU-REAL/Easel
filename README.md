@@ -192,20 +192,33 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ## 🚀 快速开始
 
-环境要求：Linux 或 macOS、Python 3.10 及以上和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
+环境要求：Linux 或 macOS、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
 
 ```bash
-git clone git@github.com:ZJU-REAL/Easel.git
+git clone https://github.com/ZJU-REAL/Easel.git
 cd Easel
 bash setup.sh
-easel web
-# 或：easel chat
 ```
 
-`bash setup.sh` 是可重复运行的引导式安装器：会检测并复用本机已有的 OpenClaw，不覆盖用户的
-`~/.openclaw/`；Easel 自己使用隔离的 `~/.openclaw-easel/`。如果检测到已有 OpenClaw 默认模型，
-安装器会询问是否复用模型名称；没有模型配置时会现场引导输入 Anthropic API Key 和模型名。
-也可以提前复制 `.env.example` 并填写配置，安装器会直接读取。
+`bash setup.sh` 是可重复运行的引导式安装器，直接执行即可，不需要先手动安装 Easel 依赖。安装过程中会：
+
+1. 检查 Python、Python `venv`、Node.js、Git 和 FFmpeg。
+2. 询问是否创建或复用项目虚拟环境 `.venv/`；默认选择 `Y`。如果系统缺少 `venv`，会提示安装对应系统包（例如 Debian/Ubuntu 的 `python3-venv`）。
+3. 检查或安装 OpenClaw，并创建独立的 `easel` profile，不覆盖用户已有的 `~/.openclaw/`。
+4. 安装 Python、Web、媒体和浏览器发布依赖，构建 React Web 工作台并安装 Chromium。
+5. 在终端中引导配置 Agent 模型：可选择 Anthropic、OpenAI/OpenAI-compatible、其他 Anthropic-compatible 服务，API Key 输入不会回显。
+6. 同步 skills、校验 OpenClaw 配置并启动 gateway。
+
+如果已经提前配置了有效的 `.env`，安装器会复用配置，不会重复询问；如果使用重定向或 CI 等非交互模式，安装器会跳过提问并明确提示缺少的配置。
+
+安装完成后运行：
+
+```bash
+easel doctor                 # 检查运行环境
+easel ping                   # 实际测试 gateway 和 Agent
+easel web                    # 启动 Web 工作台
+# 或：easel chat              # 启动终端对话
+```
 
 启动 Web 工作台后访问 `http://localhost:7860`。安装完成后可以运行 `easel doctor` 检查环境，
 运行 `easel ping` 检查 gateway 和 Agent 连通性。
@@ -213,8 +226,10 @@ easel web
 安装器会统一安装 Web、媒体处理和浏览器发布所需的 Python 依赖：
 
 ```bash
-pip install -e .
-python -m playwright install chromium
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -e .
+python3 -m playwright install chromium
 # 系统还需要 ffmpeg
 ```
 
@@ -226,6 +241,25 @@ python -m playwright install chromium
 ANTHROPIC_API_KEY=你的_API_Key
 CLAUDE_MODEL=anthropic/claude-sonnet-4-6
 ```
+
+也可以使用 OpenAI 或 OpenAI-compatible 服务：
+
+```bash
+OPENAI_API_KEY=你的_API_Key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+```
+
+或者使用其他 Anthropic-compatible 服务：
+
+```bash
+EASEL_LLM_API_KEY=你的_API_Key
+EASEL_LLM_BASE_URL=https://你的服务地址/v1
+CLAUDE_MODEL=你的模型名
+```
+
+安装器会把这些标准配置同步到 OpenClaw。OpenClaw 支持但 Easel 没有预设环境变量映射的其他 provider，
+可以按 OpenClaw 自身的 provider/auth 配置方式配置；Easel 不会覆盖这些自定义配置。
 
 `.env.example` 还列出了视频、音乐、语音等可选模型配置。只需要配置实际使用的能力，也可以在 Web
 工作台的“技能库”中填写；没有配置的媒体 Skill 不会影响聊天、策划和文本创作。常见可选项包括：
