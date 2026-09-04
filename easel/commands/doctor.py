@@ -44,6 +44,28 @@ def _node_version_ok() -> bool:
         return False
 
 
+def _python_version_ok() -> bool:
+    import sys
+    return sys.version_info >= (3, 10)
+
+
+def _module_available(name: str) -> bool:
+    try:
+        __import__(name)
+        return True
+    except ImportError:
+        return False
+
+
+def _chromium_available() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as playwright:
+            return Path(playwright.chromium.executable_path).is_file()
+    except (ImportError, OSError, RuntimeError):
+        return False
+
+
 def _gateway_healthy() -> bool:
     """Check OpenClaw gateway is running via healthz endpoint."""
     try:
@@ -67,7 +89,7 @@ def _skills_synced() -> bool:
 def _env_key_valid() -> bool:
     """Check .env 配置了可用的认证。
 
-    两条通道任一满足即可：
+    以下任一通道满足即可：
     - 标准 API key：ANTHROPIC_API_KEY
     - Anthropic-compatible 服务：EASEL_LLM_API_KEY + EASEL_LLM_BASE_URL
 
@@ -86,7 +108,12 @@ def _env_key_valid() -> bool:
                 continue
             key, value = line.split("=", 1)
             key, value = key.strip(), value.strip().strip('"').strip("'")
-            if key in ("ANTHROPIC_API_KEY", "EASEL_LLM_API_KEY", "EASEL_LLM_BASE_URL"):
+            if key in (
+                "ANTHROPIC_API_KEY", "EASEL_LLM_API_KEY", "EASEL_LLM_BASE_URL",
+                "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                "OPENAI_API_KEY", "OPENAI_BASE_URL",
+                "OPENAI_MAAS_API_KEY", "OPENAI_MAAS_ENDPOINT",
+            ):
                 auth_vars[key] = value
     except OSError:
         return False
@@ -101,6 +128,12 @@ def _env_key_valid() -> bool:
     # Anthropic-compatible 服务：key + base_url 同时配好
     if _set("EASEL_LLM_API_KEY") and _set("EASEL_LLM_BASE_URL"):
         return True
+    if _set("ANTHROPIC_AUTH_TOKEN") and _set("ANTHROPIC_BASE_URL"):
+        return True
+    if _set("OPENAI_API_KEY"):
+        return True
+    if _set("OPENAI_MAAS_API_KEY") and _set("OPENAI_MAAS_ENDPOINT"):
+        return True
     return False
 
 
@@ -108,17 +141,31 @@ def cmd_doctor(_args) -> int:
     print("Easel — 环境检查\n")
     all_ok = True
 
-    # 1. Node.js >= 22.19
+    # 1. Runtime prerequisites
+    all_ok &= _check("Python >= 3.10", _python_version_ok(),
+                      "请安装 Python 3.10 或更高版本")
     has_node = shutil.which("node") is not None
     node_ok = _node_version_ok()
     node_detail = ("请安装 Node.js >= 22.19: https://nodejs.org/" if not has_node
                    else "Node.js 版本过低，请升级到 >= 22.19: https://nodejs.org/")
     all_ok &= _check("Node.js >= 22.19", node_ok, node_detail)
+    all_ok &= _check("FFmpeg", shutil.which("ffmpeg") is not None,
+                      "媒体处理需要 FFmpeg；请安装后重试")
 
     # 2. openclaw command
     has_openclaw = shutil.which("openclaw") is not None
     all_ok &= _check("openclaw command", has_openclaw,
                       "请安装 openclaw: npm i -g openclaw")
+
+    for module in ("fastapi", "uvicorn", "sse_starlette", "multipart"):
+        all_ok &= _check(f"Python package: {module}", _module_available(module),
+                          "运行 pip install -e . 安装 Easel 运行依赖")
+
+    frontend_ready = (PROJECT_ROOT / "web" / "frontend" / "dist" / "index.html").is_file()
+    all_ok &= _check("Web frontend build", frontend_ready,
+                      "运行 cd web/frontend && npm ci && npm run build")
+    all_ok &= _check("Playwright Chromium", _chromium_available(),
+                      "运行 python3 -m playwright install chromium")
 
     # 3. .env file with valid key
     env_ok = _env_key_valid()

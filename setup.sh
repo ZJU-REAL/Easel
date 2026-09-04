@@ -77,7 +77,19 @@ else
     fi
     ok "Node.js $(node -v)"
 fi
-command -v python3 >/dev/null 2>&1 && ok "Python $(python3 --version 2>&1 | awk '{print $2}')" || warn "未找到 python3"
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_VER=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+    PYTHON_OK=$(python3 -c 'import sys; print(int(sys.version_info >= (3, 10)))')
+    if [ "$PYTHON_OK" -eq 1 ]; then
+        ok "Python $(python3 --version 2>&1 | awk '{print $2}')"
+    else
+        echo "Python 版本过低：检测到 $PYTHON_VER，需要 Python 3.10+。" >&2
+        exit 1
+    fi
+else
+    echo "未找到 python3；Easel 需要 Python 3.10+。" >&2
+    exit 1
+fi
 command -v git >/dev/null 2>&1 && ok "Git $(git --version | awk '{print $3}')" || warn "未找到 git"
 command -v ffmpeg >/dev/null 2>&1 && ok "FFmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')" || warn "未找到 FFmpeg（媒体功能需要）"
 
@@ -168,7 +180,9 @@ fi
 
 # 首次安装时提供最小模型向导；非交互环境保留 .env.example 的默认行为。
 if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${EASEL_LLM_API_KEY:-}" ] \
-   && [ -z "${OPENAI_MAAS_API_KEY:-}" ] && [ -z "${GEMINI_MAAS_API_KEY:-}" ]; then
+   && [ -z "${EASEL_LLM_BASE_URL:-}" ] && [ -z "${OPENAI_MAAS_API_KEY:-}" ] \
+   && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GEMINI_MAAS_API_KEY:-}" ] \
+   && [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
     echo ""
     echo "  Easel 需要一个可用的模型服务才能对话。"
     MODEL_KEY="$(ask 'Anthropic API Key（直接回车可稍后配置）：')"
@@ -186,7 +200,29 @@ if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${EASEL_LLM_API_KEY:-}" 
 fi
 
 DEFAULT_PRIMARY_MODEL="anthropic/claude-sonnet-4-6"
-if [ -n "${OPENAI_MAAS_API_KEY:-}" ]; then
+STANDARD_LLM_CONFIGURED=false
+if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
+    STANDARD_LLM_CONFIGURED=true
+elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
+    STANDARD_LLM_CONFIGURED=true
+elif [ -n "${OPENAI_API_KEY:-}" ] && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
+    STANDARD_LLM_CONFIGURED=true
+fi
+
+if [ "$STANDARD_LLM_CONFIGURED" = true ] && [ -z "${ANTHROPIC_API_KEY:-}" ] \
+   && [ -z "${EASEL_LLM_API_KEY:-}" ] && [ -n "${OPENAI_API_KEY:-}" ] \
+   && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
+    OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
+    $OC config set models.providers.openai.api "openai-completions" 2>&1 | tail -1
+    $OC config set models.providers.openai.apiKey "$OPENAI_API_KEY" 2>&1 | tail -1
+    $OC config set models.providers.openai.baseUrl "${OPENAI_BASE_URL:-https://api.openai.com/v1}" 2>&1 | tail -1
+    $OC config set models.providers.openai.models \
+        "[{\"id\":\"$OPENAI_MODEL\",\"name\":\"OpenAI model\",\"reasoning\":true,\"input\":[\"text\",\"image\"]}]" \
+        --strict-json 2>&1 | tail -1
+    DEFAULT_PRIMARY_MODEL="openai/$OPENAI_MODEL"
+    CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
+    ok "OpenAI 服务认证已同步"
+elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${OPENAI_MAAS_API_KEY:-}" ]; then
     OPENAI_PROVIDER="rednote-openai"
     OPENAI_MODEL="${OPENAI_MAAS_MODEL:-gpt-5.5}"
     OPENAI_PORT="${OPENAI_MAAS_ADAPTER_PORT:-18791}"
@@ -229,8 +265,9 @@ PY
     $OC config set models.providers."$OPENAI_PROVIDER" "$OPENAI_PROVIDER_CONFIG" \
         --strict-json 2>&1 | tail -1
     DEFAULT_PRIMARY_MODEL="$OPENAI_PROVIDER/$OPENAI_MODEL"
+    CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "OpenAI-compatible 服务已通过本地适配器同步"
-elif [ -n "${GEMINI_MAAS_API_KEY:-}" ]; then
+elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${GEMINI_MAAS_API_KEY:-}" ]; then
     GEMINI_PROVIDER="rednote-gemini"
     GEMINI_MODEL="${GEMINI_MAAS_MODEL:-gemini-3.1-pro-preview}"
     $OC config set models.providers."$GEMINI_PROVIDER".baseUrl \
@@ -261,8 +298,9 @@ elif [ -n "${GEMINI_MAAS_API_KEY:-}" ]; then
     $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_INCLUDE_THOUGHTS \
         "${GEMINI_INCLUDE_THOUGHTS:-true}" 2>&1 | tail -1
     DEFAULT_PRIMARY_MODEL="$GEMINI_PROVIDER/$GEMINI_MODEL"
+    CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "Gemini-compatible 服务已通过本地适配器同步"
-elif [ -n "${EASEL_LLM_API_KEY:-}" ]; then
+elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     $OC config set models.providers.anthropic.apiKey "$EASEL_LLM_API_KEY" 2>&1 | tail -1
     $OC config set models.providers.anthropic.baseUrl "$EASEL_LLM_BASE_URL" 2>&1 | tail -1
     $OC config set models.providers.anthropic.headers."${EASEL_LLM_API_KEY_HEADER:-api-key}" \
@@ -275,6 +313,10 @@ elif [ -n "${EASEL_LLM_API_KEY:-}" ]; then
     $OC config unset models.providers.anthropic.headers.X-Adapter-Scenario >/dev/null 2>&1 || true
     $OC config unset models.providers.anthropic.headers.X-Adapter-Source-Version >/dev/null 2>&1 || true
     ok "自定义 Anthropic 兼容 MaaS 认证已同步"
+elif [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_AUTH_TOKEN" 2>&1 | tail -1
+    $OC config set models.providers.anthropic.baseUrl "$ANTHROPIC_BASE_URL" 2>&1 | tail -1
+    ok "Anthropic 兼容服务认证已同步"
 elif [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
     $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_API_KEY" 2>&1 | tail -1
     ok "API key 已同步"
@@ -297,6 +339,7 @@ $OC config unset agents.defaults.memorySearch >/dev/null 2>&1 || true
 $OC config set models.providers.anthropic.timeoutSeconds 600 2>&1 | tail -1
 $OC config set gateway.mode local 2>&1 | tail -1
 $OC config set gateway.bind loopback 2>&1 | tail -1
+$OC config set gateway.auth.mode none 2>&1 | tail -1
 
 # Refuse to start with a config rejected by the installed OpenClaw version.
 # This catches schema changes early instead of producing opaque Gateway errors.

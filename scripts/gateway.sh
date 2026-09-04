@@ -82,7 +82,7 @@ case "${1:-status}" in
             exit 0
         fi
         echo "[easel] Starting Easel gateway (profile: $PROFILE)..."
-        setsid -f openclaw --profile "$PROFILE" gateway run --force > "$LOGFILE" 2>&1
+        setsid -f openclaw --profile "$PROFILE" gateway run --force --allow-unconfigured --bind loopback > "$LOGFILE" 2>&1
         sleep 4
         if gateway_live; then
             PID="$(gateway_pid)"
