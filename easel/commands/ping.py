@@ -56,9 +56,9 @@ def cmd_ping(_args) -> int:
 
     # Step 2: OpenClaw agent
     all_ok &= _step(
-        "Step 2: openclaw agent --local (say PONG)",
+        "Step 2: OpenClaw agent via Gateway (say PONG)",
         ["openclaw", "--profile", "easel",
-         "agent", "--local", "--agent", "main",
+         "agent", "--agent", "main",
          "--timeout", "30", "--message", "say PONG"],
         timeout=60,
         env=_proxy_env(),

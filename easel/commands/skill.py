@@ -94,7 +94,7 @@ def _run_via_openclaw(message: str, timeout: int = 300) -> int:
 
     cmd = [
         "openclaw", "--profile", OPENCLAW_PROFILE,
-        "agent", "--local", "--agent", "main",
+        "agent", "--agent", "main",
         "--session-key", f"agent:main:{session_key}",
         "--timeout", str(timeout),
         "--message", message,

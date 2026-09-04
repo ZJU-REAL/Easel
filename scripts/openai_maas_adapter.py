@@ -67,7 +67,11 @@ class Handler(BaseHTTPRequestHandler):
                 os.environ.get("OPENAI_MAAS_ENDPOINT", DEFAULT_ENDPOINT),
                 data=raw_body,
                 headers={
-                    "api-key": api_key,
+                    # Standard OpenAI-compatible authentication, configurable for
+                    # gateways that require a different header (e.g. api-key).
+                    os.environ.get("OPENAI_MAAS_API_KEY_HEADER", "Authorization"): (
+                        f"Bearer {api_key}" if os.environ.get("OPENAI_MAAS_API_KEY_HEADER", "Authorization").lower() == "authorization" else api_key
+                    ),
                     "Content-Type": self.headers.get("Content-Type", "application/json"),
                     "Accept": self.headers.get("Accept", "*/*"),
                 },
@@ -101,6 +105,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         except (URLError, OSError, ValueError, RuntimeError) as exc:
+            self.log_message("upstream adapter error: %s", exc)
             self.send_json(502, {"error": {"message": str(exc)}})
 
     def log_message(self, fmt: str, *args: object) -> None:

@@ -102,7 +102,7 @@ def cmd_chat(_args) -> int:
 
     cmd = [
         "openclaw", "--profile", PROFILE,
-        "chat", "--local",
+        "chat",
         "--session", session_key,
         # chat 里可能直接发起制作层/跨层编排，给足制作层预算，避免长任务被 turn 超时掐断（O2）。
         # 超时统一走 easel/timeouts.py（三入口单一真相源），毫秒 = TIMEOUT_CHAT * 1000。

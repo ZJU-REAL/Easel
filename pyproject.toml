@@ -7,24 +7,19 @@ name = "easel"
 version = "0.1.0"
 description = "社媒内容工作流整合层 — Easel CLI"
 requires-python = ">=3.10"
-# 核心依赖：CLI + Web 后端 + 对话流。`pip install -e .`（setup.sh 会跑）即可跑通聊天/Web/文本类 SKILL。
+# 运行依赖统一安装，确保 Web、媒体处理和浏览器发布开箱可用。
 dependencies = [
-    "fastapi",        # Web 后端
-    "uvicorn",        # ASGI server（easel web）
-    "sse-starlette",  # 对话流式 SSE
-    "pydantic",       # 请求模型
-    "segno",          # B站扫码登录二维码渲染（纯 Python）
-]
-
-# 媒体 / 发布类 SKILL 才需要，默认不装以保持核心安装轻量：
-#   pip install -e ".[media]"
-# 另需系统 ffmpeg，以及浏览器发布用 `playwright install chromium`（见 README）。
-[project.optional-dependencies]
-media = [
-    "Pillow", "opencv-python", "numpy", "pandas", "matplotlib", "librosa",
-    "faster-whisper", "edge-tts",
-    "playwright", "rembg", "biliup",
-    "jieba", "snownlp", "markdown",
+    "fastapi>=0.115,<1",        # Web 后端
+    "uvicorn>=0.30,<1",         # ASGI server（easel web）
+    "sse-starlette>=2.1,<4",    # 对话流式 SSE
+    "pydantic>=2.7,<3",         # 请求模型
+    "segno>=1.6,<2",             # B站扫码登录二维码渲染（纯 Python）
+    "python-multipart>=0.0.9,<1", # FastAPI 文件上传 / Form
+    "Pillow>=10,<13", "opencv-python>=4.8,<5", "numpy>=1.26,<3",
+    "pandas>=2,<4", "matplotlib>=3.8,<4", "librosa>=0.10,<1",
+    "faster-whisper>=1,<2", "edge-tts>=6,<8", "playwright>=1.45,<2",
+    "rembg>=2.0,<3", "biliup>=1,<2", "jieba>=0.42,<1", "snownlp>=0.12,<1",
+    "markdown>=3.5,<4",
 ]
 
 [project.scripts]

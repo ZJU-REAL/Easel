@@ -84,6 +84,7 @@ SESSIONS_DIR = OUTPUTS_DIR / "_sessions"   # 每会话最近一轮的完整结�
 # 非 _ 前缀的历史系统目录（归因层数据），内容库不展示（真产物一律在项目目录内）
 SYSTEM_TOPLEVEL_DIRS = {"analytics"}
 LOGIN_TIMEOUT = 240
+LOGIN_PROCESSES: dict[str, subprocess.Popen] = {}
 
 # whoami 真校验（起 headless 浏览器，数秒）的进程内缓存：避免账号页 + 工作台重复起浏览器。
 WHOAMI_TTL = 600  # 秒
@@ -431,7 +432,7 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
     sk = session_id or f'web-{int(time.time() * 1000)}'
     _heal_openclaw_session(sk)   # 清洗历史里无签名 thinking 块，防回放失效
     # 钉死 --session-id 让 OpenClaw 每轮续同一 transcript（防跨天空闲后新起空会话丢历史，见 _openclaw_session_id）
-    cmd = ['openclaw', '--profile', OPENCLAW_PROFILE, 'agent', '--local', '--agent', 'main',
+    cmd = ['openclaw', '--profile', OPENCLAW_PROFILE, 'agent', '--agent', 'main',
            '--session-key', f'agent:main:{sk}', '--session-id', _openclaw_session_id(sk),
            '--thinking', THINKING_LEVEL,
            '--timeout', str(timeout), '--message', msg]
@@ -1060,7 +1061,7 @@ async def api_chat_stream(req: ChatRequest):
         raw_path = Path(raw_path)
 
         cmd = [
-            "openclaw", "--profile", OPENCLAW_PROFILE, "agent", "--local", "--agent", "main",
+            "openclaw", "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
             "--session-key", f"agent:main:{sk}", "--session-id", _openclaw_session_id(sk),
             "--thinking", THINKING_LEVEL,
             "--timeout", str(TIMEOUT_CHAT), "--message", message,
@@ -1605,6 +1606,13 @@ def _login_status(platform: str) -> dict:
             data = {'state': d.get('state', 'unknown'), 'message': d.get('message', '')}
         except Exception:
             pass
+    # A runner that exits before writing its status must become an actionable error,
+    # never the ambiguous ``unknown`` state shown as an endless spinner in the UI.
+    proc = LOGIN_PROCESSES.get(platform)
+    if data['state'] in ('unknown', 'starting') and proc is not None:
+        code = proc.poll()
+        if code is not None:
+            data = {'state': 'error', 'message': f'登录程序异常退出（退出码 {code}），请查看 outputs/_login/{platform}.log'}
     qr = LOGIN_DIR / f'{platform}.png'
     if qr.is_file():
         data['qr'] = f'_login/{platform}.png'
@@ -1670,14 +1678,19 @@ async def api_login_start(platform: str):
     # 新登录开始 → 清掉旧的 whoami 缓存（登录前可能缓存了「未登录」），避免登录成功后仍读到旧结果
     with _WHOAMI_LOCK:
         _WHOAMI_CACHE.pop(platform, None)
-    subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), env=_proxy_env(),
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log_path = LOGIN_DIR / f'{platform}.log'
+    log_file = log_path.open('a', encoding='utf-8')
+    proc = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), env=_proxy_env(),
+                            stdout=log_file, stderr=subprocess.STDOUT)
+    log_file.close()
+    LOGIN_PROCESSES[platform] = proc
     for _ in range(50):
         await asyncio.sleep(0.5)
         s = _login_status(platform)
         if s['qr'] or s['state'] in ('qr_ready', 'success', 'error', 'expired'):
             return {'mode': 'qr', **s}
-    return {'mode': 'qr', 'state': 'starting', 'message': '启动中，请稍候…', 'qr': ''}
+    s = _login_status(platform)
+    return {'mode': 'qr', **s}
 
 
 @app.get("/api/login/{platform}/status")

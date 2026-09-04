@@ -152,26 +152,29 @@ For faster browsing, each cover opens a lightweight preview of up to one minute.
 
 ## 🚀 Quick Start
 
-Requirements: Linux or macOS, Python 3.10+, Git, and Node.js 22.19+. On Linux x86_64, the setup script can install Node.js when it is missing. On macOS, install Node.js first using Homebrew or the official installer.
+Requirements: Linux or macOS, Python 3.10+, and Git. The installer checks Node.js 22.19+, FFmpeg, and Playwright/Chromium, and provides a platform-specific guide when Node.js is missing.
 
 ```bash
 git clone git@github.com:ZJU-REAL/Easel.git
 cd Easel
-cp .env.example .env
-vim .env
-
 bash setup.sh
 easel web
 # Or: easel chat
 ```
 
+`bash setup.sh` is a rerunnable guided installer. It detects and reuses an existing local OpenClaw
+installation without touching `~/.openclaw/`; Easel uses its isolated `~/.openclaw-easel/` profile.
+When an existing OpenClaw default model is found, the installer asks whether to reuse its model name.
+If no model is configured, it interactively asks for an Anthropic API key and model name. You may also
+copy `.env.example` and fill it in before running the installer.
+
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
 
-For image, audio/video, or browser publishing capabilities, install the optional dependencies:
+The installer installs the Python dependencies required by the Web UI, media processing, and browser publishing:
 
 ```bash
-pip install -e ".[media]"
-playwright install chromium
+pip install -e .
+python -m playwright install chromium
 # FFmpeg is also required on the system.
 ```
 
@@ -191,7 +194,7 @@ CLAUDE_MODEL=anthropic/claude-sonnet-4-6
 | AI video | `VIDEO_PROVIDER` plus the provider key, URL, and model | A supported video service |
 | AI music | `MUSIC_PROVIDER` plus provider settings | A supported music service |
 | Cloud voice | `VOICE_PROVIDER` plus provider settings | A supported voice service |
-| Local media processing | No model is required for supported local tools | Media extras and FFmpeg |
+| Local media processing | No model is required for supported local tools | FFmpeg |
 | Browser publishing | Log in from the Web workspace's Accounts page | Playwright Chromium and valid platform accounts |
 
 Never commit `.env`, cookies, or platform login state. Real publishing can be affected by verification, permissions, platform risk controls, and UI changes; use previews and checks for the first attempt.

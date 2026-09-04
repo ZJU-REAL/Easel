@@ -192,28 +192,29 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ## 🚀 快速开始
 
-环境要求：Linux 或 macOS、Python 3.10 及以上、`git`。还需要 Node.js 22.19 及以上；Linux x86_64
-缺少 Node.js 时安装脚本会自动处理，macOS 建议先通过 Homebrew 或 Node.js 官网安装。
+环境要求：Linux 或 macOS、Python 3.10 及以上和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
 
 ```bash
 git clone git@github.com:ZJU-REAL/Easel.git
 cd Easel
-cp .env.example .env
-vim .env
-
 bash setup.sh
 easel web
 # 或：easel chat
 ```
 
+`bash setup.sh` 是可重复运行的引导式安装器：会检测并复用本机已有的 OpenClaw，不覆盖用户的
+`~/.openclaw/`；Easel 自己使用隔离的 `~/.openclaw-easel/`。如果检测到已有 OpenClaw 默认模型，
+安装器会询问是否复用模型名称；没有模型配置时会现场引导输入 Anthropic API Key 和模型名。
+也可以提前复制 `.env.example` 并填写配置，安装器会直接读取。
+
 启动 Web 工作台后访问 `http://localhost:7860`。安装完成后可以运行 `easel doctor` 检查环境，
 运行 `easel ping` 检查 gateway 和 Agent 连通性。
 
-需要图片、音视频或浏览器发布能力时，安装可选依赖：
+安装器会统一安装 Web、媒体处理和浏览器发布所需的 Python 依赖：
 
 ```bash
-pip install -e ".[media]"
-playwright install chromium
+pip install -e .
+python -m playwright install chromium
 # 系统还需要 ffmpeg
 ```
 
@@ -234,7 +235,7 @@ CLAUDE_MODEL=anthropic/claude-sonnet-4-6
 | AI 视频 | `VIDEO_PROVIDER` 及对应服务的 Key、URL、模型 | 相应视频生成服务 |
 | AI 音乐 | `MUSIC_PROVIDER` 及对应服务配置 | 相应音乐生成服务 |
 | 云端配音 | `VOICE_PROVIDER` 及对应服务配置 | 相应语音生成服务 |
-| 图片与音视频处理 | 无额外模型时也可使用本地工具 | `pip install -e ".[media]"`、FFmpeg |
+| 图片与音视频处理 | 无额外模型时也可使用本地工具 | FFmpeg |
 | 浏览器发布 | 在 Web“账号”页面登录目标平台 | Playwright Chromium、有效平台账号 |
 
 ## 🧩 使用 Easel

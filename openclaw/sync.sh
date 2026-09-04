@@ -29,15 +29,10 @@ mkdir -p "$OPENCLAW_WORKSPACE_DST"
 
 # ---- 清理已删除的 SKILL ----
 # 收集源目录中存在的 SKILL 名单，删除 workspace 中多余的
-declare -A SRC_SKILLS
-for skill_dir in "$OPENCLAW_SKILL_SRC"/*/; do
-    [ -d "$skill_dir" ] || continue
-    SRC_SKILLS[$(basename "$skill_dir")]=1
-done
 for dst_dir in "$OPENCLAW_SKILL_DST"/*/; do
     [ -d "$dst_dir" ] || continue
     name=$(basename "$dst_dir")
-    if [ -z "${SRC_SKILLS[$name]+x}" ]; then
+    if [ ! -d "$OPENCLAW_SKILL_SRC/$name" ]; then
         rm -rf "$dst_dir"
         echo "  ✗ $name (removed — no longer in source)"
     fi
