@@ -31,7 +31,8 @@ NC='\033[0m'
 info()  { echo -e "${CYAN}[easel]${NC} $*"; }
 ok()    { echo -e "${GREEN}  ✓${NC} $*"; }
 warn()  { echo -e "${YELLOW}  ⚠${NC} $*"; }
-ask()   { if [ -t 0 ]; then printf "${CYAN}  ?${NC} %s " "$1"; read -r REPLY; printf '%s' "$REPLY"; else printf ''; fi; }
+ask()   { if [ -t 0 ]; then printf "${CYAN}  ?${NC} %s " "$1" >&2; read -r REPLY; printf '%s' "$REPLY"; else printf ''; fi; }
+ask_secret() { if [ -t 0 ]; then printf "${CYAN}  ?${NC} %s " "$1" >&2; read -r -s REPLY; printf '\n' >&2; printf '%s' "$REPLY"; else printf ''; fi; }
 step()  { echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; echo -e "${MAGENTA}  [$1]${NC} ${CYAN}$2${NC}"; echo -e "${DIM}  $3${NC}"; }
 
 clear 2>/dev/null || true
@@ -89,6 +90,28 @@ if command -v python3 >/dev/null 2>&1; then
 else
     echo "未找到 python3；Easel 需要 Python 3.10+。" >&2
     exit 1
+fi
+if [ -t 0 ]; then
+    USE_VENV="$(ask '使用项目虚拟环境 .venv 安装 Python 依赖？[Y/n]')"
+    case "${USE_VENV:-Y}" in
+        n|N) warn "将使用当前 Python 环境" ;;
+        *)
+            if [ ! -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+                info "创建虚拟环境 .venv..."
+                python3 -m venv "$PROJECT_ROOT/.venv"
+            fi
+            # shellcheck disable=SC1091
+            source "$PROJECT_ROOT/.venv/bin/activate"
+            ok "已使用虚拟环境：$PROJECT_ROOT/.venv"
+            ;;
+    esac
+elif [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    # Non-interactive runs reuse an existing project environment when available.
+    # shellcheck disable=SC1091
+    source "$PROJECT_ROOT/.venv/bin/activate"
+    info "检测到 .venv，非交互模式自动使用项目虚拟环境"
+else
+    warn "当前为非交互模式且未找到 .venv，将使用系统 Python；建议先创建 Python 3.10+ 虚拟环境"
 fi
 command -v git >/dev/null 2>&1 && ok "Git $(git --version | awk '{print $3}')" || warn "未找到 git"
 command -v ffmpeg >/dev/null 2>&1 && ok "FFmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')" || warn "未找到 FFmpeg（媒体功能需要）"
@@ -172,7 +195,7 @@ else
 fi
 
 # ---- 7. 认证配置 ----
-step "7/8" "配置模型服务" "复用已有模型，或现场输入 Anthropic 配置"
+step "7/8" "配置模型服务" "Agent API：Anthropic · OpenAI · 兼容接口"
 info "配置认证..."
 if [ -f "$PROJECT_ROOT/.env" ]; then
     ok ".env 已存在"
@@ -203,25 +226,65 @@ if [ -z "${CLAUDE_MODEL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; th
     fi
 fi
 
-# 首次安装时提供最小模型向导；非交互环境保留 .env.example 的默认行为。
-if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${EASEL_LLM_API_KEY:-}" ] \
-   && [ -z "${EASEL_LLM_BASE_URL:-}" ] && [ -z "${OPENAI_MAAS_API_KEY:-}" ] \
-   && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GEMINI_MAAS_API_KEY:-}" ] \
-   && [ -z "${GEMINI_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+MODEL_CONFIGURED=false
+if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
+    MODEL_CONFIGURED=true
+elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
+    MODEL_CONFIGURED=true
+elif [ -n "${OPENAI_API_KEY:-}" ] && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
+    MODEL_CONFIGURED=true
+elif [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+    MODEL_CONFIGURED=true
+elif [ -n "${OPENAI_MAAS_API_KEY:-}" ] && [ -n "${OPENAI_MAAS_ENDPOINT:-}" ]; then
+    MODEL_CONFIGURED=true
+fi
+
+# 首次安装时提供模型向导；占位值不算已配置，非交互运行则明确提示后继续。
+if [ "$MODEL_CONFIGURED" = false ] && [ -t 0 ]; then
     echo ""
-    echo "  Easel 需要一个可用的模型服务才能对话。"
-    MODEL_KEY="$(ask 'Anthropic API Key（直接回车可稍后配置）：')"
-    if [ -n "$MODEL_KEY" ]; then
-        printf '\nANTHROPIC_API_KEY=%s\n' "$MODEL_KEY" >> "$PROJECT_ROOT/.env"
-        ANTHROPIC_API_KEY="$MODEL_KEY"
-        MODEL_NAME="$(ask '模型名 [anthropic/claude-sonnet-4-6]：')"
-        MODEL_NAME="${MODEL_NAME:-anthropic/claude-sonnet-4-6}"
-        printf 'CLAUDE_MODEL=%s\n' "$MODEL_NAME" >> "$PROJECT_ROOT/.env"
-        CLAUDE_MODEL="$MODEL_NAME"
-        ok "模型配置已写入 Easel .env"
-    else
-        warn "暂未配置模型；可编辑 .env 后重新运行 bash setup.sh"
-    fi
+    echo "  Easel 需要一个可用的 Agent 模型服务才能对话。"
+    echo "    1) Anthropic API"
+    echo "    2) OpenAI / OpenAI-compatible API"
+    echo "    3) 其他 Anthropic-compatible API"
+    echo "    0) 稍后配置"
+    PROVIDER_CHOICE="$(ask '请选择模型服务 [1]：')"
+    case "${PROVIDER_CHOICE:-1}" in
+        1)
+            MODEL_KEY="$(ask_secret 'Anthropic API Key（不会回显）：')"
+            if [ -n "$MODEL_KEY" ]; then
+                MODEL_NAME="$(ask '模型名 [anthropic/claude-sonnet-4-6]：')"
+                printf '\nANTHROPIC_API_KEY=%s\nCLAUDE_MODEL=%s\n' \
+                    "$MODEL_KEY" "${MODEL_NAME:-anthropic/claude-sonnet-4-6}" >> "$PROJECT_ROOT/.env"
+                ok "Anthropic Agent 配置已写入 .env"
+            fi
+            ;;
+        2)
+            MODEL_KEY="$(ask_secret 'OpenAI API Key（不会回显）：')"
+            if [ -n "$MODEL_KEY" ]; then
+                MODEL_URL="$(ask 'Base URL [https://api.openai.com/v1]：')"
+                MODEL_NAME="$(ask '模型名 [gpt-4o]：')"
+                printf '\nOPENAI_API_KEY=%s\nOPENAI_BASE_URL=%s\nOPENAI_MODEL=%s\n' \
+                    "$MODEL_KEY" "${MODEL_URL:-https://api.openai.com/v1}" \
+                    "${MODEL_NAME:-gpt-4o}" >> "$PROJECT_ROOT/.env"
+                ok "OpenAI Agent 配置已写入 .env"
+            fi
+            ;;
+        3)
+            MODEL_KEY="$(ask_secret 'API Key（不会回显）：')"
+            MODEL_URL="$(ask 'Base URL：')"
+            MODEL_NAME="$(ask '模型名：')"
+            if [ -n "$MODEL_KEY" ] && [ -n "$MODEL_URL" ] && [ -n "$MODEL_NAME" ]; then
+                printf '\nEASEL_LLM_API_KEY=%s\nEASEL_LLM_BASE_URL=%s\nCLAUDE_MODEL=%s\n' \
+                    "$MODEL_KEY" "$MODEL_URL" "$MODEL_NAME" >> "$PROJECT_ROOT/.env"
+                ok "兼容 API 的 Agent 配置已写入 .env"
+            fi
+            ;;
+        0) ;;
+        *) warn "无法识别的选择，稍后可编辑 .env 后重新运行 bash setup.sh" ;;
+    esac
+    source "$PROJECT_ROOT/.env" 2>/dev/null || true
+elif [ "$MODEL_CONFIGURED" = false ]; then
+    warn "未检测到 Agent API 配置；请编辑 .env 后重新运行 bash setup.sh"
 fi
 
 DEFAULT_PRIMARY_MODEL="anthropic/claude-sonnet-4-6"
