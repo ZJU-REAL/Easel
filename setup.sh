@@ -97,11 +97,21 @@ if [ -t 0 ]; then
         n|N) warn "将使用当前 Python 环境" ;;
         *)
             if [ ! -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+                if ! python3 -c 'import venv' >/dev/null 2>&1; then
+                    echo "当前 Python 缺少 venv 模块，无法创建虚拟环境。" >&2
+                    echo "Debian/Ubuntu 请运行：sudo apt install python3-venv" >&2
+                    echo "RHEL/CentOS 请安装对应的 python3 virtualenv/venv 包后重试。" >&2
+                    exit 1
+                fi
                 info "创建虚拟环境 .venv..."
                 python3 -m venv "$PROJECT_ROOT/.venv"
             fi
             # shellcheck disable=SC1091
             source "$PROJECT_ROOT/.venv/bin/activate"
+            if ! python3 -m pip --version >/dev/null 2>&1; then
+                echo "虚拟环境已创建但缺少 pip，请检查系统 Python 的 ensurepip/venv 包后重试。" >&2
+                exit 1
+            fi
             ok "已使用虚拟环境：$PROJECT_ROOT/.venv"
             ;;
     esac

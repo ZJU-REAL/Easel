@@ -57,6 +57,10 @@ def _module_available(name: str) -> bool:
         return False
 
 
+def _venv_available() -> bool:
+    return _module_available("venv")
+
+
 def _chromium_available() -> bool:
     try:
         from playwright.sync_api import sync_playwright
@@ -144,6 +148,8 @@ def cmd_doctor(_args) -> int:
     # 1. Runtime prerequisites
     all_ok &= _check("Python >= 3.10", _python_version_ok(),
                       "请安装 Python 3.10 或更高版本")
+    all_ok &= _check("Python venv module", _venv_available(),
+                      "Debian/Ubuntu 请安装 python3-venv")
     has_node = shutil.which("node") is not None
     node_ok = _node_version_ok()
     node_detail = ("请安装 Node.js >= 22.19: https://nodejs.org/" if not has_node
