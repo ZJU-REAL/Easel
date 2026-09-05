@@ -51,8 +51,14 @@ Info '安装 Playwright Chromium...'
 & $Python -m playwright install chromium
 
 Info '准备 Easel OpenClaw profile...'
-& openclaw --profile easel onboard --non-interactive --mode local --accept-risk --skip-health --skip-channels --skip-skills --skip-ui --skip-hooks --skip-search --skip-daemon 2>&1 | Where-Object { $_ -notmatch '^No change$' }
-if ($LASTEXITCODE -ne 0) { & openclaw --profile easel onboard --non-interactive --mode local --accept-risk --skip-health }
+$onboardHelp = (& openclaw onboard --help 2>&1 | Out-String)
+$onboardArgs = @('--profile','easel','onboard','--non-interactive','--mode','local','--accept-risk')
+foreach ($flag in @('--skip-health','--skip-channels','--skip-skills','--skip-ui','--skip-hooks','--skip-search','--skip-daemon')) {
+    if ($onboardHelp -match [regex]::Escape($flag)) { $onboardArgs += $flag }
+}
+if ($onboardHelp -match '--no-install-daemon' -and $onboardHelp -notmatch '--skip-daemon') { $onboardArgs += '--no-install-daemon' }
+& openclaw @onboardArgs 2>&1 | Where-Object { $_ -notmatch '^No change$' }
+if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw profile 初始化失败，请检查上方输出。' }
 
 Info '同步 skills 与 workspace...'
 $workspace = Join-Path $HOME '.openclaw\workspace-easel'
@@ -73,17 +79,30 @@ $envPath = Join-Path $Root '.env'
 if (-not (Test-Path $envPath)) { Copy-Item (Join-Path $Root '.env.example') $envPath }
 $envValues = Read-EnvFile $envPath
 function Is-UsableKey($Value) { return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch 'REPLACE_ME|your[-_ ]?api[-_ ]?key' }
-if (-not (Is-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Is-UsableKey $envValues['OPENAI_API_KEY'])) {
+if (-not (Is-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Is-UsableKey $envValues['OPENAI_API_KEY']) -and -not (Is-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and -not (Is-UsableKey $envValues['EASEL_LLM_API_KEY']) -and -not (Is-UsableKey $envValues['OPENAI_MAAS_API_KEY'])) {
     $choice = Read-Host '模型服务：1 Anthropic / 2 OpenAI-compatible / 0 稍后配置 [1]'
     if ($choice -eq '2') { $key = Read-Secret 'OpenAI API Key（不会回显）'; $url = Read-Host 'Base URL [https://api.openai.com/v1]'; $model = Read-Host '模型 [gpt-4o]'; Add-Content $envPath "`nOPENAI_API_KEY=$key`nOPENAI_BASE_URL=$url`nOPENAI_MODEL=$model" }
     elseif ($choice -eq '1' -or [string]::IsNullOrWhiteSpace($choice)) { $key = Read-Secret 'Anthropic API Key（不会回显）'; $model = Read-Host '模型 [anthropic/claude-sonnet-4-6]'; Add-Content $envPath "`nANTHROPIC_API_KEY=$key`nCLAUDE_MODEL=$model" }
 }
 $envValues = Read-EnvFile $envPath
-if (Is-UsableKey $envValues['OPENAI_API_KEY']) {
+if (Is-UsableKey $envValues['OPENAI_MAAS_API_KEY'] -and $envValues.ContainsKey('OPENAI_MAAS_ENDPOINT')) {
+    $model = if ($envValues.ContainsKey('OPENAI_MAAS_MODEL')) { $envValues['OPENAI_MAAS_MODEL'] } else { 'gpt-5.5' }
+    $port = if ($envValues.ContainsKey('OPENAI_MAAS_ADAPTER_PORT')) { $envValues['OPENAI_MAAS_ADAPTER_PORT'] } else { '18791' }
+    $adapter = Join-Path $Root 'scripts\openai_maas_adapter.py'
+    $provider = @{ baseUrl = "http://127.0.0.1:$port/v1"; api = 'openai-completions'; apiKey = 'local-adapter'; timeoutSeconds = 600; request = @{ allowPrivateNetwork = $true }; models = @(@{ id = $model; name = 'OpenAI-compatible model'; reasoning = $true; input = @('text') }); localService = @{ command = $Python; args = @($adapter, '--port', $port); cwd = $Root; healthUrl = "http://127.0.0.1:$port/health"; idleStopMs = 0; env = @{ OPENAI_MAAS_API_KEY = $envValues['OPENAI_MAAS_API_KEY']; OPENAI_MAAS_ENDPOINT = $envValues['OPENAI_MAAS_ENDPOINT']; OPENAI_MAAS_MODEL = $model; OPENAI_MAAS_API_KEY_HEADER = if ($envValues.ContainsKey('OPENAI_MAAS_API_KEY_HEADER')) { $envValues['OPENAI_MAAS_API_KEY_HEADER'] } else { 'Authorization' } } } }
+    OpenClaw-Config 'models.providers.rednote-openai' ($provider | ConvertTo-Json -Compress -Depth 10) -Json
+    OpenClaw-Config 'agents.defaults.model.primary' "rednote-openai/$model"
+} elseif (Is-UsableKey $envValues['OPENAI_API_KEY']) {
     $model = if ($envValues.ContainsKey('OPENAI_MODEL')) { $envValues['OPENAI_MODEL'] } else { 'gpt-4o' }
     OpenClaw-Config 'models.providers.openai.api' 'openai-completions'; OpenClaw-Config 'models.providers.openai.apiKey' $envValues['OPENAI_API_KEY']; OpenClaw-Config 'models.providers.openai.baseUrl' $(if ($envValues.ContainsKey('OPENAI_BASE_URL')) { $envValues['OPENAI_BASE_URL'] } else { 'https://api.openai.com/v1' }); OpenClaw-Config 'models.providers.openai.models' "[{\"id\":\"$model\",\"name\":\"OpenAI model\",\"reasoning\":true,\"input\":[\"text\",\"image\"]}]" -Json; OpenClaw-Config 'agents.defaults.model.primary' "openai/$model"
+} elseif (Is-UsableKey $envValues['EASEL_LLM_API_KEY'] -and $envValues.ContainsKey('EASEL_LLM_BASE_URL')) {
+    OpenClaw-Config 'models.providers.anthropic.apiKey' $envValues['EASEL_LLM_API_KEY']; OpenClaw-Config 'models.providers.anthropic.baseUrl' $envValues['EASEL_LLM_BASE_URL']; OpenClaw-Config 'models.providers.anthropic.headers.api-key' $envValues['EASEL_LLM_API_KEY']; OpenClaw-Config 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })
+} elseif (Is-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN'] -and $envValues.ContainsKey('ANTHROPIC_BASE_URL')) {
+    OpenClaw-Config 'models.providers.anthropic.apiKey' $envValues['ANTHROPIC_AUTH_TOKEN']; OpenClaw-Config 'models.providers.anthropic.baseUrl' $envValues['ANTHROPIC_BASE_URL']; OpenClaw-Config 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })
 } elseif (Is-UsableKey $envValues['ANTHROPIC_API_KEY']) { OpenClaw-Config 'models.providers.anthropic.apiKey' $envValues['ANTHROPIC_API_KEY']; OpenClaw-Config 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' }) }
 OpenClaw-Config 'agents.defaults.timeoutSeconds' '7200'; OpenClaw-Config 'gateway.mode' 'local'; OpenClaw-Config 'gateway.bind' 'loopback'; OpenClaw-Config 'gateway.auth.mode' 'none'
+& openclaw --profile easel config validate
+if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 配置校验失败。' }
 & $Python -m playwright install chromium
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\gateway.ps1') start
 Ok 'Easel Windows 安装完成'
