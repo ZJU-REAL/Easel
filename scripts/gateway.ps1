@@ -31,9 +31,15 @@ switch ($args[0]) {
         $command = "openclaw --profile $Profile gateway run --force --allow-unconfigured --bind loopback"
         Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command', $command `
             -WorkingDirectory $Root -RedirectStandardOutput $LogFile -RedirectStandardError $ErrorLogFile -WindowStyle Hidden | Out-Null
-        Start-Sleep -Seconds 4
-        if (Test-Gateway) { Write-Host '[easel] Gateway started' }
-        else { Write-Warning "Gateway may not be ready; check $LogFile" }
+        $ready = $false
+        1..20 | ForEach-Object {
+            if (-not $ready) {
+                if (Test-Gateway) { $ready = $true }
+                else { Start-Sleep -Seconds 1 }
+            }
+        }
+        if ($ready) { Write-Host '[easel] Gateway started' }
+        else { Write-Error "Gateway 启动失败；请检查 $LogFile 和 $ErrorLogFile"; exit 1 }
     }
     'stop' { Stop-Gateway }
     'restart' { Stop-Gateway; Start-Sleep -Seconds 2; & $PSCommandPath start }

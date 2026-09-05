@@ -47,17 +47,25 @@ if (-not (Test-Path $Python)) { Fail 'Python venv 创建失败。' }
 Ok '系统环境检查完成'
 
 Info '安装 OpenClaw...'
-if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) { & npm install -g openclaw@latest --loglevel warn }
+if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) { & npm install -g openclaw@latest --loglevel warn; if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 安装失败。' } }
 Require-Command 'openclaw' '请确认 npm 全局 bin 已加入 PATH。'
 Info '安装 Easel Python 依赖...'
 & $Python -m pip install --upgrade pip --progress-bar on
+if ($LASTEXITCODE -ne 0) { Fail 'pip 升级失败。' }
 & $Python -m pip install -e $Root --progress-bar on
+if ($LASTEXITCODE -ne 0) { Fail 'Easel Python 依赖安装失败。' }
 Info '构建 Web 前端...'
 $Frontend = Join-Path $Root 'web\frontend'
 Push-Location $Frontend
-try { & npm install; & npm run build } finally { Pop-Location }
+try {
+    & npm install
+    if ($LASTEXITCODE -ne 0) { Fail 'Web 前端依赖安装失败。' }
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { Fail 'Web 前端构建失败。' }
+} finally { Pop-Location }
 Info '安装 Playwright Chromium...'
 & $Python -m playwright install chromium
+if ($LASTEXITCODE -ne 0) { Fail 'Playwright Chromium 安装失败。' }
 
 Info '准备 Easel OpenClaw profile...'
 $onboardHelp = (& openclaw onboard --help 2>&1 | Out-String)
@@ -112,8 +120,8 @@ if (Is-UsableKey $envValues['OPENAI_MAAS_API_KEY'] -and $envValues.ContainsKey('
 OpenClaw-Config 'agents.defaults.timeoutSeconds' '7200'; OpenClaw-Config 'gateway.mode' 'local'; OpenClaw-Config 'gateway.bind' 'loopback'; OpenClaw-Config 'gateway.auth.mode' 'none'
 & openclaw --profile easel config validate
 if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 配置校验失败。' }
-& $Python -m playwright install chromium
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\gateway.ps1') start
+if ($LASTEXITCODE -ne 0) { Fail 'Easel Gateway 启动失败。' }
 Ok 'Easel Windows 安装完成'
 Write-Host "启动 Web：$Venv\Scripts\easel.exe web" -ForegroundColor Cyan
 Write-Host "检查环境：$Venv\Scripts\easel.exe doctor" -ForegroundColor Cyan
