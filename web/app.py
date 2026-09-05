@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
+import os
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -453,9 +456,9 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
 
 def check_gateway() -> bool:
     try:
-        r = subprocess.run(['curl', '-sf', 'http://localhost:18789/healthz'], capture_output=True, timeout=3)
-        return r.returncode == 0
-    except Exception:
+        with urllib.request.urlopen('http://127.0.0.1:18789/healthz', timeout=3) as response:
+            return response.status == 200
+    except (OSError, urllib.error.URLError):
         return False
 
 
@@ -850,13 +853,22 @@ class _CrossProcLock:
     def acquire(self, timeout: float = 300.0, poll: float = 0.5) -> bool:
         try:
             SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-            self._fh = open(self._path, "w")
+            self._fh = open(self._path, "a+b")
+            if os.name == "nt":
+                self._fh.seek(0, os.SEEK_END)
+                if self._fh.tell() == 0:
+                    self._fh.write(b"0")
+                    self._fh.flush()
         except OSError:
             return False  # 拿不到文件句柄就不强求（退化为仅 asyncio 锁）
         deadline = time.time() + timeout
         while True:
             try:
-                fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if os.name == "nt":
+                    self._fh.seek(0)
+                    msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.acquired = True
                 return True
             except OSError:
@@ -868,7 +880,11 @@ class _CrossProcLock:
         if self._fh is not None:
             try:
                 if self.acquired:
-                    fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+                    if os.name == "nt":
+                        self._fh.seek(0)
+                        msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
             except OSError:
                 pass
             try:

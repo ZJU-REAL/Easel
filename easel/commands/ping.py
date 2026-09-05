@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import urllib.error
+import urllib.request
 
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
@@ -48,11 +50,14 @@ def cmd_ping(_args) -> int:
     all_ok = True
 
     # Step 1: Gateway healthz
-    all_ok &= _step(
-        "Step 1: Gateway healthz (localhost:18789)",
-        ["curl", "-sf", "http://localhost:18789/healthz"],
-        timeout=10,
-    )
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:18789/healthz", timeout=10) as response:
+            gateway_ok = response.status == 200
+    except (OSError, urllib.error.URLError):
+        gateway_ok = False
+    print(f"  {'Step 1: Gateway healthz (localhost:18789)':<50s} "
+          f"{GREEN if gateway_ok else RED}{'OK' if gateway_ok else 'FAIL'}{NC}")
+    all_ok &= gateway_ok
 
     # Step 2: OpenClaw agent
     all_ok &= _step(

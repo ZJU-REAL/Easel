@@ -6,6 +6,8 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 # 项目根目录（Easel/）
@@ -73,12 +75,9 @@ def _chromium_available() -> bool:
 def _gateway_healthy() -> bool:
     """Check OpenClaw gateway is running via healthz endpoint."""
     try:
-        result = subprocess.run(
-            ["curl", "-sf", "http://localhost:18789/healthz"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        with urllib.request.urlopen("http://127.0.0.1:18789/healthz", timeout=5) as response:
+            return response.status == 200
+    except (OSError, urllib.error.URLError):
         return False
 
 
