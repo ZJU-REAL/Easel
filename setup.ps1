@@ -8,6 +8,15 @@ function Info($Message) { Write-Host "[easel] $Message" -ForegroundColor Cyan }
 function Ok($Message) { Write-Host "  [OK] $Message" -ForegroundColor Green }
 function Fail($Message) { Write-Error $Message; exit 1 }
 function Require-Command($Name, $Hint) { if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) { Fail "$Name 未找到。$Hint" } }
+function Ensure-Command($Name, $PackageId, $Hint) {
+    if (Get-Command $Name -ErrorAction SilentlyContinue) { return }
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Fail "$Name 未找到。$Hint`n也可以先安装 Windows App Installer（winget）后重试。" }
+    Info "未找到 $Name，使用 winget 安装 $PackageId..."
+    & winget install --id $PackageId --exact --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) { Fail "$Name 自动安装失败。$Hint" }
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+    Require-Command $Name $Hint
+}
 function Read-EnvFile($Path) {
     $values = @{}
     if (Test-Path $Path) { Get-Content $Path | ForEach-Object { if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') { $values[$matches[1]] = $matches[2].Trim().Trim('"').Trim("'") } } }
@@ -26,11 +35,11 @@ function OpenClaw-Config($Key, $Value, [switch]$Json) {
 
 Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta
 Info '检查系统环境...'
-Require-Command 'git' '请安装 Git for Windows 后重试。'
-Require-Command 'node' '请安装 Node.js 22.19+ 后重试。'
-Require-Command 'npm' '请安装 Node.js 22.19+ 后重试。'
-Require-Command 'python' '请安装 Python 3.10+ 并勾选 Add Python to PATH。'
-Require-Command 'ffmpeg' '请安装 FFmpeg 并加入 PATH（推荐 winget install Gyan.FFmpeg）。'
+Ensure-Command 'git' 'Git.Git' '请安装 Git for Windows 并加入 PATH。'
+Ensure-Command 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 22.19+ 并加入 PATH。'
+Ensure-Command 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 22.19+ 并加入 PATH。'
+Ensure-Command 'python' 'Python.Python.3.12' '请安装 Python 3.10+ 并勾选 Add Python to PATH。'
+Ensure-Command 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH。'
 $nodeVersion = (& node -p 'process.versions.node').Split('.')[0]
 if ([int]$nodeVersion -lt 22) { Fail 'Node.js 22.19+ 是必需依赖。' }
 if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & python -m venv $Venv }
