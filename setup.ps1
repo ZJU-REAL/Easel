@@ -38,11 +38,17 @@ Info '检查系统环境...'
 Ensure-Command 'git' 'Git.Git' '请安装 Git for Windows 并加入 PATH。'
 Ensure-Command 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 22.19+ 并加入 PATH。'
 Ensure-Command 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 22.19+ 并加入 PATH。'
-Ensure-Command 'python' 'Python.Python.3.12' '请安装 Python 3.10+ 并勾选 Add Python to PATH。'
+if (-not (Get-Command python -ErrorAction SilentlyContinue) -and -not (Get-Command py -ErrorAction SilentlyContinue)) { Ensure-Command 'python' 'Python.Python.3.12' '请安装 Python 3.10+ 并勾选 Add Python to PATH。' }
 Ensure-Command 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH。'
 $nodeParts = (& node -p 'process.versions.node').Split('.') | ForEach-Object { [int]$_ }
 if ($nodeParts[0] -lt 22 -or ($nodeParts[0] -eq 22 -and $nodeParts[1] -lt 19)) { Fail 'Node.js 22.19+ 是必需依赖。' }
-if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & python -m venv $Venv }
+$pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
+if ($pythonCommand) { & $pythonCommand --version *> $null; if ($LASTEXITCODE -ne 0) { $pythonCommand = $null } }
+if (-not $pythonCommand -and (Get-Command py -ErrorAction SilentlyContinue)) { $pythonCommand = (Get-Command py).Source; $pythonArgs = @('-3') } else { $pythonArgs = @() }
+if (-not $pythonCommand) { Fail '未找到可运行的 Python 3；请安装 Python 3.10+。' }
+& $pythonCommand @pythonArgs -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'
+if ($LASTEXITCODE -ne 0) { Fail 'Python 3.10+ 是必需依赖。' }
+if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & $pythonCommand @pythonArgs -m venv $Venv }
 if (-not (Test-Path $Python)) { Fail 'Python venv 创建失败。' }
 Ok '系统环境检查完成'
 
@@ -83,14 +89,29 @@ $skills = Join-Path $workspace 'skills'
 New-Item -ItemType Directory -Force -Path $skills | Out-Null
 if (Test-Path (Join-Path $Root 'skills\openclaw')) { Copy-Item (Join-Path $Root 'skills\openclaw\*') $skills -Recurse -Force }
 Copy-Item (Join-Path $Root 'openclaw\workspace\*.md') $workspace -Force -ErrorAction SilentlyContinue
+$context = Join-Path $workspace 'CONTEXT.md'
+@"
+# Easel 项目路径
+
+项目根目录：$Root
+产物输出到：$(Join-Path $Root 'outputs')
+用户素材在：$(Join-Path $Root 'assets')
+用户画像在：$(Join-Path $Root 'profiles')
+"@ | Set-Content -Path $context -Encoding UTF8
 $shared = Join-Path $workspace 'shared'
 if (Test-Path $shared) { Remove-Item $shared -Recurse -Force }
 if (Test-Path (Join-Path $Root 'skills\shared')) { Copy-Item (Join-Path $Root 'skills\shared') $shared -Recurse -Force }
 $profilesLink = Join-Path $workspace 'easel-profiles'
-if (-not (Test-Path $profilesLink)) { New-Item -ItemType Junction -Path $profilesLink -Target (Join-Path $Root 'profiles') | Out-Null }
+if (Test-Path $profilesLink) {
+    $profileItem = Get-Item $profilesLink -Force
+    if ($profileItem.LinkType -ne 'Junction') { Fail "$profilesLink 已存在但不是项目 profiles Junction，请移走后重试。" }
+} else { New-Item -ItemType Junction -Path $profilesLink -Target (Join-Path $Root 'profiles') | Out-Null }
 $outputs = Join-Path $workspace 'outputs'
 New-Item -ItemType Directory -Force -Path (Join-Path $Root 'outputs') | Out-Null
-if (-not (Test-Path $outputs)) { New-Item -ItemType Junction -Path $outputs -Target (Join-Path $Root 'outputs') | Out-Null }
+if (Test-Path $outputs) {
+    $outputsItem = Get-Item $outputs -Force
+    if ($outputsItem.LinkType -ne 'Junction') { Fail "$outputs 已存在但不是项目 outputs Junction，请移走后重试。" }
+} else { New-Item -ItemType Junction -Path $outputs -Target (Join-Path $Root 'outputs') | Out-Null }
 
 $envPath = Join-Path $Root '.env'
 if (-not (Test-Path $envPath)) { Copy-Item (Join-Path $Root '.env.example') $envPath }
