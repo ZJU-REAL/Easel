@@ -186,13 +186,15 @@ def cmd_doctor(_args) -> int:
     # 5. Skills synced
     synced = _skills_synced()
     all_ok &= _check("Skills synced", synced,
-                      "运行 openclaw sync 或 bash openclaw/sync.sh")
+                      "重新运行 setup.ps1（Windows）或 bash openclaw/sync.sh（Linux/macOS）")
 
     # 6. Key project files
+    gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"
+    gateway_path = PROJECT_ROOT / "scripts" / ("gateway.ps1" if os.name == "nt" else "gateway.sh")
     key_files = [
         ("openclaw/openclaw.json5", PROJECT_ROOT / "openclaw" / "openclaw.json5"),
         ("skills/openclaw/", PROJECT_ROOT / "skills" / "openclaw"),
-        ("scripts/gateway.sh", PROJECT_ROOT / "scripts" / "gateway.sh"),
+        (gateway_label, gateway_path),
     ]
     for label, path in key_files:
         all_ok &= _check(label, path.exists())

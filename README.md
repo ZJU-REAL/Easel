@@ -192,13 +192,24 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ## 🚀 快速开始
 
-环境要求：Linux 或 macOS、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
+环境要求：Linux、macOS 或 Windows 10/11、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
 
 ```bash
 git clone https://github.com/ZJU-REAL/Easel.git
 cd Easel
 bash setup.sh
 ```
+
+Windows 原生安装请在 PowerShell 中执行（不需要 WSL）：
+
+```powershell
+git clone https://github.com/ZJU-REAL/Easel.git
+cd Easel
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup.ps1
+```
+
+Windows 安装器会创建项目内 `.venv`，安装 Python/Node 依赖、前端生产包和 Playwright Chromium，并使用独立的 `easel` OpenClaw profile。请先通过 `winget` 或官方安装器安装并加入 PATH：Python 3.10+、Node.js 22.19+、Git 和 FFmpeg；安装完成后可运行 `.venv\Scripts\easel.exe doctor` 检查环境。
 
 `bash setup.sh` 是可重复运行的引导式安装器，直接执行即可，不需要先手动安装 Easel 依赖。安装过程中会：
 
