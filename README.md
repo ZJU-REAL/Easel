@@ -209,7 +209,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 ```
 
-Windows 安装器会创建项目内 `.venv`，安装 Python/Node 依赖、前端生产包和 Playwright Chromium，并使用独立的 `easel` OpenClaw profile。请先通过 `winget` 或官方安装器安装并加入 PATH：Python 3.10+、Node.js 22.19+、Git 和 FFmpeg；安装完成后可运行 `.venv\Scripts\easel.exe doctor` 检查环境。
+Windows 安装器会优先通过 `winget` 自动安装缺失的 Python 3.10+、Node.js 22.19+、Git 和 FFmpeg；如果系统没有 `winget`，再使用官方安装器安装并加入 PATH。随后安装器会创建项目内 `.venv`，安装 Python/Node 依赖、前端生产包和 Playwright Chromium，并使用独立的 `easel` OpenClaw profile。安装完成后可运行 `.venv\Scripts\easel.exe doctor` 检查环境。
 
 `bash setup.sh` 是可重复运行的引导式安装器，直接执行即可，不需要先手动安装 Easel 依赖。安装过程中会：
 

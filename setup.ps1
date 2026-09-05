@@ -40,8 +40,8 @@ Ensure-Command 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 22.19+ 并加入 PA
 Ensure-Command 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 22.19+ 并加入 PATH。'
 Ensure-Command 'python' 'Python.Python.3.12' '请安装 Python 3.10+ 并勾选 Add Python to PATH。'
 Ensure-Command 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH。'
-$nodeVersion = (& node -p 'process.versions.node').Split('.')[0]
-if ([int]$nodeVersion -lt 22) { Fail 'Node.js 22.19+ 是必需依赖。' }
+$nodeParts = (& node -p 'process.versions.node').Split('.') | ForEach-Object { [int]$_ }
+if ($nodeParts[0] -lt 22 -or ($nodeParts[0] -eq 22 -and $nodeParts[1] -lt 19)) { Fail 'Node.js 22.19+ 是必需依赖。' }
 if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & python -m venv $Venv }
 if (-not (Test-Path $Python)) { Fail 'Python venv 创建失败。' }
 Ok '系统环境检查完成'
