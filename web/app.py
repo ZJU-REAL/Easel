@@ -1490,9 +1490,13 @@ async def api_question_status(req: QuestionStatusRequest):
         for qid in req.questionIds:
             try:
                 q = client.get_question(qid)
+                # QUESTION_NOT_FOUND 抛异常捕获后报 not_found；正常返回则按 status
                 out[qid] = {"status": q.get("status") if q else "not_found"}
+            except GatewayQuestionError as e:
+                # gateway 明确错：问题已清理/不存在 = 已答或已过期，一律 not_found
+                out[qid] = {"status": "not_found"}
             except Exception:
-                out[qid] = {"status": "unknown"}
+                out[qid] = {"status": "unknown"}   # 网络/连接异常：保持 unknown（前端保留显示，宁不缺题）
         return {"ok": True, "questions": out}
     except Exception as e:
         return {"ok": False, "error": str(e), "questions": {}}

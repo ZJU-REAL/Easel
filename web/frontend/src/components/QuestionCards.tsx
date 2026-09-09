@@ -127,7 +127,7 @@ function QuestionCard({ question, onAnswered }: { question: ChatQuestion; onAnsw
 }
 
 /** 流式中的 ask_user 问答题列表（一次性卡片，答完即从当前流移除）。 */
-export default function QuestionCards({ questions }: { questions: ChatQuestion[] }) {
+export default function QuestionCards({ questions, onDone }: { questions: ChatQuestion[]; onDone?: (questionId: string) => void }) {
   const [answered, setAnswered] = useState<Record<string, boolean>>({});
   const visible = useMemo(
     () => questions.filter((q) => !answered[q.id]),
@@ -137,7 +137,10 @@ export default function QuestionCards({ questions }: { questions: ChatQuestion[]
   return (
     <>
       {visible.map((q) => (
-        <QuestionCard key={q.id} question={q} onAnswered={() => setAnswered((a) => ({ ...a, [q.id]: true }))} />
+        <QuestionCard key={q.id} question={q} onAnswered={() => {
+          setAnswered((a) => ({ ...a, [q.id]: true }));
+          onDone?.(q.id);   // 通知 App：此题已答，重放/恢复不再出现
+        }} />
       ))}
     </>
   );

@@ -166,6 +166,7 @@ export default function App() {
   const [streams, setStreams] = useState<Record<string, StreamState>>({});
   const streamCtl = useRef<Record<string, AbortController>>({});
   const streamAcc = useRef<Record<string, { content: string; thinking: string; steps: string[]; questions: ChatQuestion[] }>>({});
+  const answeredRef = useRef<Set<string>>(new Set());   // 已提交答案的 question id：重放/恢复不再重现
 
   const appendAssistant = useCallback((sessionId: string, msg: ChatMessage, sessionKey?: string) => {
     setSessions((prev) => {
@@ -253,9 +254,11 @@ export default function App() {
         // 重放可能带已解决/已过期的旧问题，先查状态只留 pending（失败则保留）
         const a = streamAcc.current[sessionId]; if (!a) return;
         if (a.questions.some((x) => x.id === q.id)) return;
+        if (answeredRef.current.has(q.id)) return;   // 本会话已答过：不再重现
         void questionStatus([q.id]).then((st) => {
           const s = st[q.id]?.status;
-          if (s && s !== 'pending') return;
+          // 只显示仍 pending 的：answered/expired/cancelled/not_found/unknown 一律过滤
+          if (s && s !== 'pending' || answeredRef.current.has(q.id)) return;
           const a2 = streamAcc.current[sessionId]; if (!a2) return;
           if (a2.questions.some((x) => x.id === q.id)) return;
           a2.questions.push(q);
@@ -338,11 +341,14 @@ export default function App() {
       (q) => {
         const a = streamAcc.current[sessionId]; if (!a) return;
         if (a.questions.some((x) => x.id === q.id)) return;
+        if (answeredRef.current.has(q.id)) return;   // 本会话已答过：不再重现
         // 重放可能带已解决/已过期的旧问题（gateway 15s 后即清理）——先查状态只留 pending；
         // 查询失败时保留原样（宁显示不丢题）。
         void questionStatus([q.id]).then((st) => {
           const s = st[q.id]?.status;
-          if (s && s !== 'pending') return;   // answered/expired/cancelled/not_found：过滤
+          // 只显示仍 pending 的：answered/expired/cancelled/not_found/unknown 一律过滤
+          //（unknown 通常=问题已从 gateway 清理，即已答或已过期，重放旧事件时不该重现）
+          if (s && s !== 'pending' || answeredRef.current.has(q.id)) return;
           const a2 = streamAcc.current[sessionId]; if (!a2) return;
           if (a2.questions.some((x) => x.id === q.id)) return;
           a2.questions.push(q);
@@ -589,6 +595,23 @@ export default function App() {
             onResend={(userIndex, displayText, attachments, legacyAgentText) => handleResend(
               activeSession.id, userIndex, displayText, attachments, legacyAgentText,
             )}
+            onQuestionAnswered={(qid) => {
+              answeredRef.current.add(qid);
+              // 已答题从流式状态中移除——切走/切回会话都不再重现（组件内部 state 会在重挂时清零，只藏不移除没用）
+              const a = streamAcc.current[activeSession.id];
+              if (a) {
+                const before = a.questions.length;
+                const kept = a.questions.filter((q) => q.id !== qid);
+                if (kept.length !== before) {
+                  a.questions = kept;
+                  setStreams((p) => {
+                    const cur = p[activeSession.id];
+                    if (!cur) return p;
+                    return { ...p, [activeSession.id]: { ...cur, questions: [...kept] } };
+                  });
+                }
+              }
+            }}
           />
         ) : null;
       case 'trends':
