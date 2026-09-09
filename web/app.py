@@ -34,8 +34,14 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(PROJECT_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+from easel.openclaw_cmd import openclaw_base_cmd
 from easel.persona import load_profile_text, persona_prefix, chat_turn_message, profile_exists, _FILE_ORDER
 from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
+try:
+    from easel.gateway_questions import GatewayClient, GatewayQuestionError
+except Exception:  # 兼容缺失依赖：问答题桥接降级为关闭
+    GatewayClient = None  # type: ignore
+    GatewayQuestionError = None  # type: ignore
 
 PROFILES_DIR = PROJECT_ROOT / "profiles"
 SKILLS_DIR = PROJECT_ROOT / "skills"
@@ -436,7 +442,7 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
     sk = session_id or f'web-{int(time.time() * 1000)}'
     _heal_openclaw_session(sk)   # 清洗历史里无签名 thinking 块，防回放失效
     # 钉死 --session-id 让 OpenClaw 每轮续同一 transcript（防跨天空闲后新起空会话丢历史，见 _openclaw_session_id）
-    cmd = ['openclaw', '--profile', OPENCLAW_PROFILE, 'agent', '--agent', 'main',
+    cmd = openclaw_base_cmd() + ['--profile', OPENCLAW_PROFILE, 'agent', '--agent', 'main',
            '--session-key', f'agent:main:{sk}', '--session-id', _openclaw_session_id(sk),
            '--thinking', THINKING_LEVEL,
            '--timeout', str(timeout), '--message', msg]
@@ -1077,8 +1083,8 @@ async def api_chat_stream(req: ChatRequest):
         os.close(fd)
         raw_path = Path(raw_path)
 
-        cmd = [
-            "openclaw", "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
+        cmd = openclaw_base_cmd() + [
+            "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
             "--session-key", f"agent:main:{sk}", "--session-id", _openclaw_session_id(sk),
             "--thinking", THINKING_LEVEL,
             "--timeout", str(TIMEOUT_CHAT), "--message", message,
@@ -1131,6 +1137,7 @@ async def api_chat_stream(req: ChatRequest):
             client_q.put_nowait(CLIENT_DONE)
             return
         _RUNNING_CHAT[sk] = proc         # 注册运行中进程，供 /api/chat/stop 显式终止
+
         q = asyncio.Queue()
         SENTINEL = object()
         stdout_lines = []
@@ -1159,6 +1166,45 @@ async def api_chat_stream(req: ChatRequest):
 
         def _emit(kind: str, text: str):
             loop.call_soon_threadsafe(q.put_nowait, {"t": kind, "text": text})
+
+        # ---- ask_user 问答题桥接：轮询 gateway 的 pending question，推给前端渲染 ----
+        # 背景：OpenClaw 的 ask_user 注册到 gateway 进程内，Easel 前端不消费 question RPC → 选项不可见。
+        # 这里在 agent 运行期间每 2s 轮询一次，把新出现的 pending question 以 SSE `question` 事件推送，
+        # 前端渲染选项卡片；用户点击后经 /api/chat/question/answer 调 question.resolve 完成回答。
+        if GatewayClient is not None:
+            def _question_poll():
+                client = None
+                pushed: set[str] = set()
+                try:
+                    client = GatewayClient()
+                    client.connect()
+                except Exception:
+                    return  # gateway 不可达：不阻塞对话主流程（本轮退化为无选项，agent 会 no_answer 自行续）
+                try:
+                    while proc.poll() is None:
+                        try:
+                            items = client.list_questions(
+                                session_key=f"agent:main:{sk}", status="pending")
+                        except Exception:
+                            time.sleep(2)
+                            continue
+                        for it in items:
+                            qid = it.get("id")
+                            if qid and qid not in pushed:
+                                pushed.add(qid)
+                                _emit("question", json.dumps({
+                                    "id": qid,
+                                    "questions": it.get("questions", []),
+                                    "expiresAtMs": it.get("expiresAtMs"),
+                                }, ensure_ascii=False))
+                        time.sleep(2)
+                finally:
+                    try:
+                        if client is not None:
+                            client.close()
+                    except Exception:
+                        pass
+            loop.run_in_executor(None, _question_poll)
 
         def _handle(line: str):
             o = _raw_event_for_session(line, expected_raw_session_id)
@@ -1248,6 +1294,8 @@ async def api_chat_stream(req: ChatRequest):
                     to_client("thinking", item["text"])
                 elif item["t"] == "activity":
                     to_client("activity", item["text"])
+                elif item["t"] == "question":
+                    to_client("question", item["text"])
             rc = proc.poll()
             # 等 stdout 读完（stopReason 行在进程收尾时才打印，避免 _tail 先发 SENTINEL 时漏读）
             try:
@@ -1393,12 +1441,63 @@ async def api_chat_stream(req: ChatRequest):
                 yield {"id": str(item["id"]), "event": "thinking", "data": json.dumps(item["text"], ensure_ascii=False)}
             elif t == "activity":
                 yield {"id": str(item["id"]), "event": "activity", "data": json.dumps(item["text"], ensure_ascii=False)}
+            elif t == "question":
+                yield {"id": str(item["id"]), "event": "question", "data": item["text"]}
             elif t == "error":
                 yield {"id": str(item["id"]), "event": "error", "data": json.dumps(item["text"], ensure_ascii=False)}
             elif t == "done":
                 yield {"id": str(item["id"]), "event": "done", "data": json.dumps({"sessionKey": item.get("sessionKey")}, ensure_ascii=False)}
 
     return EventSourceResponse(forward(), headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Content-Encoding": "identity"})
+
+
+class QuestionAnswerRequest(BaseModel):
+    sessionId: str | None = None
+    questionId: str
+    answers: dict  # {questionId: [optionValues]}
+    resolvedBy: str | None = None
+
+
+@app.post("/api/chat/question/answer")
+async def api_question_answer(req: QuestionAnswerRequest):
+    """前端点击 ask_user 选项后调用：转发 gateway question.resolve，让等待的 agent 拿到答案。"""
+    if GatewayClient is None:
+        return {"ok": False, "error": "gateway question bridge unavailable"}
+    client = GatewayClient()
+    try:
+        client.connect()
+        result = client.resolve(req.questionId, req.answers or {}, req.resolvedBy)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        client.close()
+
+
+class QuestionStatusRequest(BaseModel):
+    questionIds: list[str]
+
+
+@app.post("/api/chat/question/status")
+async def api_question_status(req: QuestionStatusRequest):
+    """批量查 question 状态（重放旧事件时过滤已解决的题）。"""
+    if GatewayClient is None:
+        return {"ok": False, "questions": {}}
+    client = GatewayClient()
+    try:
+        client.connect()
+        out = {}
+        for qid in req.questionIds:
+            try:
+                q = client.get_question(qid)
+                out[qid] = {"status": q.get("status") if q else "not_found"}
+            except Exception:
+                out[qid] = {"status": "unknown"}
+        return {"ok": True, "questions": out}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "questions": {}}
+    finally:
+        client.close()
 
 
 class StopRequest(BaseModel):

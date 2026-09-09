@@ -425,6 +425,59 @@ textarea.field { resize: vertical; min-height: 90px; }
 .message-row.user { justify-content: flex-end; }
 .message-row.assistant { justify-content: flex-start; }
 
+/* ---- ask_user 问答题卡片（OpenClaw question RPC 桥接） ---- */
+.question-card {
+  background: var(--bg-elevated, #fff); border: 1px solid var(--border, rgba(0,0,0,.08));
+  border-radius: var(--radius-lg, 14px); padding: 14px 16px;
+  box-shadow: 0 3px 14px rgba(23,25,28,.06);
+  display: grid; gap: 10px; width: 100%;
+  animation: fadeIn 0.24s var(--ease);
+}
+.question-card__chip {
+  justify-self: start; padding: 3px 9px; border-radius: var(--radius-full, 999px);
+  background: var(--accent-start, #4361ee); color: #fff;
+  font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase;
+}
+.question-card__title { color: var(--text-strong, #20242c); font-size: 15px; font-weight: 650; line-height: 1.4; }
+.question-card__options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.question-card__option {
+  display: grid; gap: 3px; text-align: left; padding: 11px 12px; cursor: pointer;
+  border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: var(--radius-lg, 12px);
+  background: var(--bg, #fff); font: inherit; transition: border-color .16s var(--ease), box-shadow .16s var(--ease);
+}
+.question-card__option:hover:not(:disabled) { border-color: var(--accent-start, #4361ee); box-shadow: 0 2px 8px rgba(67,97,238,.14); }
+.question-card__option--selected { border-color: var(--accent-start, #4361ee); background: color-mix(in srgb, var(--accent-start, #4361ee) 10%, #fff); }
+.question-card__option:disabled { opacity: .55; cursor: default; }
+.question-card__option strong { color: var(--text-strong, #20242c); font-size: 14px; }
+.question-card__option span { color: var(--text-secondary, #666); font-size: 12px; line-height: 1.45; }
+.question-card__other {
+  justify-self: start; background: none; border: 0; padding: 4px 2px; cursor: pointer;
+  color: var(--accent-start, #4361ee); font-size: 12px; text-decoration: underline;
+}
+.question-card__other:disabled { opacity: .55; cursor: default; }
+.question-card__custom { display: flex; gap: 8px; }
+.question-card__custom input {
+  flex: 1; padding: 9px 12px; border-radius: var(--radius, 10px);
+  border: 1px solid var(--border, rgba(0,0,0,.12)); font: inherit; font-size: 13px;
+}
+.question-card__custom input:focus { outline: 2px solid var(--accent-start, #4361ee); outline-offset: 1px; }
+.question-card__custom button {
+  padding: 9px 16px; border-radius: var(--radius, 10px); border: 0; cursor: pointer;
+  background: var(--accent-start, #4361ee); color: #fff; font-weight: 600;
+}
+.question-card__custom button:disabled { opacity: .5; cursor: default; }
+.question-card__hint { color: var(--text-secondary, #666); font-size: 12px; }
+.question-card__error { color: #c0392b; }
+.question-card__item { display: grid; gap: 8px; }
+.question-card__divider { height: 1px; background: var(--border, rgba(0,0,0,.08)); margin: 10px 0; }
+.question-card__actions { display: flex; justify-content: flex-end; }
+.question-card__submit {
+  padding: 9px 20px; border-radius: var(--radius, 10px); border: 0; cursor: pointer;
+  background: var(--accent-start, #4361ee); color: #fff; font-weight: 600;
+}
+.question-card__submit:disabled { opacity: .5; cursor: default; }
+
+
 .message-bubble {
   max-width: 74%; padding: 12px 16px;
   border-radius: var(--radius-lg); font-size: 14px; line-height: 1.65;

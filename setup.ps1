@@ -132,7 +132,7 @@ if (Is-UsableKey $envValues['OPENAI_MAAS_API_KEY'] -and $envValues.ContainsKey('
     OpenClaw-Config 'agents.defaults.model.primary' "rednote-openai/$model"
 } elseif (Is-UsableKey $envValues['OPENAI_API_KEY']) {
     $model = if ($envValues.ContainsKey('OPENAI_MODEL')) { $envValues['OPENAI_MODEL'] } else { 'gpt-4o' }
-    $models = @(@{ id = $model; name = 'OpenAI model'; reasoning = $true; input = @('text', 'image') }) | ConvertTo-Json -Compress -Depth 5
+    $models = @(@{ id = $model; name = 'OpenAI model'; reasoning = $true; input = @('text', 'image') }) | ConvertTo-Json -Compress -Depth 5 -AsArray
     OpenClaw-Config 'models.providers.openai.api' 'openai-completions'; OpenClaw-Config 'models.providers.openai.apiKey' $envValues['OPENAI_API_KEY']; OpenClaw-Config 'models.providers.openai.baseUrl' $(if ($envValues.ContainsKey('OPENAI_BASE_URL')) { $envValues['OPENAI_BASE_URL'] } else { 'https://api.openai.com/v1' }); OpenClaw-Config 'models.providers.openai.models' $models -Json; OpenClaw-Config 'agents.defaults.model.primary' "openai/$model"
 } elseif (Is-UsableKey $envValues['EASEL_LLM_API_KEY'] -and $envValues.ContainsKey('EASEL_LLM_BASE_URL')) {
     OpenClaw-Config 'models.providers.anthropic.apiKey' $envValues['EASEL_LLM_API_KEY']; OpenClaw-Config 'models.providers.anthropic.baseUrl' $envValues['EASEL_LLM_BASE_URL']; OpenClaw-Config 'models.providers.anthropic.headers.api-key' $envValues['EASEL_LLM_API_KEY']; OpenClaw-Config 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })

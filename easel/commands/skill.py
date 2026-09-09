@@ -19,6 +19,7 @@ import sys
 import time
 from pathlib import Path
 
+from easel.openclaw_cmd import openclaw_base_cmd
 from easel.persona import persona_prefix, profile_exists
 from easel.timeouts import TIMEOUT_PRODUCE
 
@@ -92,8 +93,8 @@ def _run_via_openclaw(message: str, timeout: int = 300) -> int:
     """统一通过 OpenClaw agent 执行。"""
     session_key = f"skill-{int(time.time() * 1000)}"
 
-    cmd = [
-        "openclaw", "--profile", OPENCLAW_PROFILE,
+    cmd = openclaw_base_cmd() + [
+        "--profile", OPENCLAW_PROFILE,
         "agent", "--agent", "main",
         "--session-key", f"agent:main:{session_key}",
         "--timeout", str(timeout),

@@ -15,7 +15,8 @@ import BreakdownPage from './components/BreakdownPage';
 import SubNav from './components/SubNav';
 import OnboardingWizard from './components/OnboardingWizard';
 import { fetchStatus, fetchPersonas, streamChat, fetchLastTurn, stopChat } from './lib/api';
-import type { PersonaItem, UploadedFile } from './lib/api';
+import type { PersonaItem, UploadedFile, ChatQuestion } from './lib/api';
+import { questionStatus } from './lib/api';
 import { deleteSession as deleteRemoteSession } from './lib/api';
 import {
   loadSessions,
@@ -164,7 +165,7 @@ export default function App() {
   // ---- 流式对话：状态与生命周期都放在 App（永不卸载），切页/切 ChatPage 都不中断/丢失 ----
   const [streams, setStreams] = useState<Record<string, StreamState>>({});
   const streamCtl = useRef<Record<string, AbortController>>({});
-  const streamAcc = useRef<Record<string, { content: string; thinking: string; steps: string[] }>>({});
+  const streamAcc = useRef<Record<string, { content: string; thinking: string; steps: string[]; questions: ChatQuestion[] }>>({});
 
   const appendAssistant = useCallback((sessionId: string, msg: ChatMessage, sessionKey?: string) => {
     setSessions((prev) => {
@@ -200,8 +201,8 @@ export default function App() {
       const next = prev.map((s) => (s.id === sessionId ? { ...s, pendingTurnId: turnId } : s));
       saveSessions(next); return next;
     });
-    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [] };
-    setStreams((prev) => ({ ...prev, [sessionId]: { content: '', thinking: '', activity: '' } }));
+    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [], questions: [] };
+    setStreams((prev) => ({ ...prev, [sessionId]: { content: '', thinking: '', activity: '', questions: [] } }));
     streamCtl.current[sessionId] = streamChat(
       text, persona, sessionId,
       (chunk) => {
@@ -247,6 +248,21 @@ export default function App() {
       false,
       undefined,
       attachments,
+      (q) => {
+        // ask_user 问答题：追加进流式状态（去重），ChatPage 渲染为选项卡片
+        // 重放可能带已解决/已过期的旧问题，先查状态只留 pending（失败则保留）
+        const a = streamAcc.current[sessionId]; if (!a) return;
+        if (a.questions.some((x) => x.id === q.id)) return;
+        void questionStatus([q.id]).then((st) => {
+          const s = st[q.id]?.status;
+          if (s && s !== 'pending') return;
+          const a2 = streamAcc.current[sessionId]; if (!a2) return;
+          if (a2.questions.some((x) => x.id === q.id)) return;
+          a2.questions.push(q);
+          setStreams((p) => (p[sessionId]
+            ? { ...p, [sessionId]: { ...p[sessionId], questions: [...a2.questions] } } : p));
+        });
+      },
     );
   }, [appendAssistant, clearStream]);
 
@@ -258,8 +274,8 @@ export default function App() {
     if (!last || last.role !== 'user') return;   // 没有悬空的用户消息 = 无需恢复
     let turnId = s.pendingTurnId;
     try { turnId = sessionStorage.getItem(`easel_pending_turn:${sessionId}`) || turnId; } catch { /* use persisted id */ }
-    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [] };
-    setStreams((p) => ({ ...p, [sessionId]: { content: '', thinking: '', activity: '⏳ 正在接回上一轮结果…' } }));
+    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [], questions: [] };
+    setStreams((p) => ({ ...p, [sessionId]: { content: '', thinking: '', activity: '⏳ 正在接回上一轮结果…', questions: [] } }));
     if (!turnId) {
       void fetchLastTurn(sessionId).then((r) => {
         if (r.status === 'done') appendAssistant(sessionId, { role: 'assistant', content: r.text || '（无输出）' });
@@ -316,6 +332,22 @@ export default function App() {
             role: 'assistant', content: '上一轮任务记录已失效，请重新发送上一条消息。',
           });
           clearStream(sessionId);
+        });
+      },
+      undefined,   // attachments: 恢复轮次无新附件
+      (q) => {
+        const a = streamAcc.current[sessionId]; if (!a) return;
+        if (a.questions.some((x) => x.id === q.id)) return;
+        // 重放可能带已解决/已过期的旧问题（gateway 15s 后即清理）——先查状态只留 pending；
+        // 查询失败时保留原样（宁显示不丢题）。
+        void questionStatus([q.id]).then((st) => {
+          const s = st[q.id]?.status;
+          if (s && s !== 'pending') return;   // answered/expired/cancelled/not_found：过滤
+          const a2 = streamAcc.current[sessionId]; if (!a2) return;
+          if (a2.questions.some((x) => x.id === q.id)) return;
+          a2.questions.push(q);
+          setStreams((p) => (p[sessionId]
+            ? { ...p, [sessionId]: { ...p[sessionId], questions: [...a2.questions] } } : p));
         });
       },
     );

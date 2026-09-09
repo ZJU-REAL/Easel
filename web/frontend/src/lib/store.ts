@@ -1,4 +1,4 @@
-import type { UploadedFile } from './api';
+import type { UploadedFile, ChatQuestion } from './api';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -25,6 +25,7 @@ export interface StreamState {
   content: string;
   thinking: string;
   activity: string;
+  questions: ChatQuestion[];   // ask_user 问答题卡片（进行中）
 }
 
 /** 发布中心草稿：持久化到 localStorage，切页/刷新都不丢。 */
@@ -111,21 +112,24 @@ export function loadSessions(): ChatSession[] {
   try {
     const raw = readMigratedLocalValue(STORAGE_KEY, 'sessions');
     if (!raw) return [];
-    const sessions = JSON.parse(raw) as ChatSession[];
+    const sessions = (JSON.parse(raw) as ChatSession[]).filter((s) => s && typeof s === 'object' && s.id);
     // 兼容旧版本：附件内部指令曾被直接存进用户消息，加载时拆出并隐藏。
+    // 防御：损坏/缺字段的会话（旧版写入或写中断）恢复成可用形态，绝不让渲染期崩。
     return sessions.map((session) => ({
       ...session,
-      messages: session.messages.map((message) => {
-        if (message.role !== 'user' || message.agentContent || !message.content.includes('【附件素材】')) {
-          return message;
-        }
-        const [visible = ''] = message.content.split('【附件素材】', 1);
-        return {
-          ...message,
-          content: visible.trim(),
-          agentContent: message.content,
-        };
-      }),
+      messages: Array.isArray(session.messages)
+        ? session.messages.map((message) => {
+            if (message?.role !== 'user' || message.agentContent || !message.content?.includes('【附件素材】')) {
+              return message;
+            }
+            const [visible = ''] = message.content.split('【附件素材】', 1);
+            return {
+              ...message,
+              content: visible.trim(),
+              agentContent: message.content,
+            };
+          })
+        : [],
     }));
   } catch {
     return [];
@@ -270,7 +274,8 @@ export function generateSessionTitle(message: string, _seed = message): string {
 }
 
 export function updateSessionTitle(session: ChatSession): void {
-  if (session.messages.length > 0 && session.title === 'New Chat') {
-    session.title = generateSessionTitle(session.messages[0].content, session.id);
+  const first = Array.isArray(session.messages) ? session.messages[0] : undefined;
+  if (first && session.title === 'New Chat') {
+    session.title = generateSessionTitle(first.content || '', session.id);
   }
 }

@@ -7,6 +7,8 @@ import subprocess
 import urllib.error
 import urllib.request
 
+from easel.openclaw_cmd import openclaw_base_cmd
+
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
 NC = "\033[0m"
@@ -60,11 +62,14 @@ def cmd_ping(_args) -> int:
     all_ok &= gateway_ok
 
     # Step 2: OpenClaw agent
+    oc_cmd = openclaw_base_cmd() + [
+        "--profile", "easel",
+        "agent", "--agent", "main",
+        "--timeout", "30", "--message", "say PONG",
+    ]
     all_ok &= _step(
         "Step 2: OpenClaw agent via Gateway (say PONG)",
-        ["openclaw", "--profile", "easel",
-         "agent", "--agent", "main",
-         "--timeout", "30", "--message", "say PONG"],
+        oc_cmd,
         timeout=60,
         env=_proxy_env(),
     )

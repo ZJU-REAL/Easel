@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
+import QuestionCards from './QuestionCards';
 import type { ChatSession, ChatMessage, StreamState } from '../lib/store';
 import { uploadFiles } from '../lib/api';
 import type { UploadedFile } from '../lib/api';
@@ -214,6 +215,9 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend }: 
               />
             );
           })}
+          {isStreaming && (stream!.questions?.length ?? 0) > 0 && (
+            <QuestionCards questions={stream!.questions || []} />
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
