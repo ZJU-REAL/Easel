@@ -102,7 +102,11 @@ def cmd_chat(_args) -> int:
 
     cmd = [
         "openclaw", "--profile", PROFILE,
-        "chat",
+        # 必须用 tui，不能用 chat：`chat`/`terminal` 是 `tui` 的别名，会强制本地模式
+        # （openclaw dist/tui-cli-*.js: invokedSubcommand === "chat" → isLocal = true）。
+        # 而 --local 要求独占 state 目录，与 Easel 自己启动的 gateway 冲突，
+        # 结果只会打印 "A Gateway is running for this state directory" 后直接退出。
+        "tui",
         "--session", session_key,
         # chat 里可能直接发起制作层/跨层编排，给足制作层预算，避免长任务被 turn 超时掐断（O2）。
         # 超时统一走 easel/timeouts.py（三入口单一真相源），毫秒 = TIMEOUT_CHAT * 1000。
