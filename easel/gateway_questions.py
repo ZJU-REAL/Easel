@@ -47,13 +47,27 @@ CLIENT_ID = "cli"
 CLIENT_VERSION = "2026.9.2"
 
 
-def _client_platform() -> str:
-    """OpenClaw client platform tag derived from the actual host OS."""
+def _client_identity() -> dict:
+    """Client metadata tuple, mirroring OpenClaw's own platform mapping.
+
+    OpenClaw maps the Node platform to the *wire* identity it sends on connect
+    (src/shared/gateway-client-platform.ts):
+        darwin -> {"platform": "macos",   "deviceFamily": "Mac"}
+        win32  -> {"platform": "windows", "deviceFamily": "Windows"}
+        linux  -> {"platform": "linux",   "deviceFamily": "Linux"}
+
+    Both fields matter: the Gateway compares them against the paired device
+    record (resolvePinnedClientMetadata) and answers any mismatch with
+    requirePairing("metadata-upgrade") -> NOT_PAIRED, which kills this bridge.
+    Sending only "platform" (and using the raw "darwin" on macOS) reproduces
+    exactly that failure once the device was paired by any other OpenClaw
+    surface, which stores deviceFamily too.
+    """
     if sys.platform.startswith("win"):
-        return "windows"
+        return {"platform": "windows", "deviceFamily": "Windows"}
     if sys.platform == "darwin":
-        return "darwin"
-    return "linux"
+        return {"platform": "macos", "deviceFamily": "Mac"}
+    return {"platform": "linux", "deviceFamily": "Linux"}
 
 
 class GatewayQuestionError(RuntimeError):
@@ -162,7 +176,7 @@ class GatewayClient:
             "params": {
                 "minProtocol": GATEWAY_PROTOCOL_MIN, "maxProtocol": GATEWAY_PROTOCOL_MAX,
                 "client": {"id": CLIENT_ID, "version": CLIENT_VERSION,
-                           "platform": _client_platform(), "mode": "cli"},
+                           **_client_identity(), "mode": "cli"},
                 "role": "operator", "scopes": scopes,
                 "caps": [], "commands": [], "permissions": {},
                 "auth": {"token": dev["token"]},
