@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
@@ -26,11 +28,32 @@ from pathlib import Path
 # --- path resolution -------------------------------------------------------
 
 HOME = Path.home()
-PROFILE_STATE_DIR = HOME / ".openclaw-easel" / "state"
+# Easel runs OpenClaw under an isolated `easel` profile at ~/.openclaw-easel/;
+# allow an override for non-default setups.
+PROFILE_DIR = Path(os.environ.get("EASEL_OPENCLAW_STATE_DIR") or (HOME / ".openclaw-easel"))
+PROFILE_STATE_DIR = PROFILE_DIR / "state"
 PROFILE_DB = PROFILE_STATE_DIR / "openclaw.sqlite"
 
-GATEWAY_HOST = "127.0.0.1"
-GATEWAY_PORT = 18789
+# Gateway loopback endpoint (default port 18789; overridable when reconfigured).
+GATEWAY_HOST = os.environ.get("EASEL_GATEWAY_HOST", "127.0.0.1")
+GATEWAY_PORT = int(os.environ.get("EASEL_GATEWAY_PORT", "18789"))
+
+# Gateway WS handshake constants. Kept here as a single source of truth rather
+# than buried in the connect payload — bump these to track OpenClaw's gateway
+# protocol / client contract.
+GATEWAY_PROTOCOL_MIN = 4
+GATEWAY_PROTOCOL_MAX = 4
+CLIENT_ID = "cli"
+CLIENT_VERSION = "2026.9.2"
+
+
+def _client_platform() -> str:
+    """OpenClaw client platform tag derived from the actual host OS."""
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
 
 
 class GatewayQuestionError(RuntimeError):
@@ -137,9 +160,9 @@ class GatewayClient:
         conn = {
             "type": "req", "id": "1", "method": "connect",
             "params": {
-                "minProtocol": 4, "maxProtocol": 4,
-                "client": {"id": "cli", "version": "2026.9.2",
-                           "platform": "windows", "mode": "cli"},
+                "minProtocol": GATEWAY_PROTOCOL_MIN, "maxProtocol": GATEWAY_PROTOCOL_MAX,
+                "client": {"id": CLIENT_ID, "version": CLIENT_VERSION,
+                           "platform": _client_platform(), "mode": "cli"},
                 "role": "operator", "scopes": scopes,
                 "caps": [], "commands": [], "permissions": {},
                 "auth": {"token": dev["token"]},
