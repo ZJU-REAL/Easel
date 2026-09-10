@@ -1178,8 +1178,14 @@ async def api_chat_stream(req: ChatRequest):
                 try:
                     client = GatewayClient()
                     client.connect()
-                except Exception:
-                    return  # gateway 不可达：不阻塞对话主流程（本轮退化为无选项，agent 会 no_answer 自行续）
+                except Exception as e:
+                    # gateway 不可达：不阻塞对话主流程（本轮退化为无选项，agent 会 no_answer 自行续）。
+                    # 但要留下痕迹：设备未配对或客户端元数据不匹配时这里会持续失败，
+                    # 前端表现仅仅是「卡片不出现」，静默 return 会让人完全无从排查。
+                    print(f"[question-bridge] connect gateway failed, "
+                          f"no ask_user cards this turn: {e}",
+                          file=sys.stderr, flush=True)
+                    return
                 try:
                     while proc.poll() is None:
                         try:
