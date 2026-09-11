@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
+import QuestionCards from './QuestionCards';
 import type { ChatSession, ChatMessage, StreamState } from '../lib/store';
 import { uploadFiles } from '../lib/api';
 import type { UploadedFile } from '../lib/api';
@@ -16,6 +17,7 @@ interface ChatPageProps {
     attachments?: UploadedFile[],
     legacyAgentText?: string,
   ) => void; // 重试：仅对最后一轮
+  onQuestionAnswered?: (questionId: string) => void;   // 某道问答题提交成功（App 记录答过，重放不再出现）
 }
 
 // 空态推荐（贴合 Easel 社媒创作场景）
@@ -32,7 +34,7 @@ function greeting(): string {
   return `${g}，想创作点什么？`;
 }
 
-export default function ChatPage({ session, stream, onSend, onStop, onResend }: ChatPageProps) {
+export default function ChatPage({ session, stream, onSend, onStop, onResend, onQuestionAnswered }: ChatPageProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -214,6 +216,9 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend }: 
               />
             );
           })}
+          {isStreaming && (stream!.questions?.length ?? 0) > 0 && (
+            <QuestionCards questions={stream!.questions || []} onDone={(qid) => onQuestionAnswered?.(qid)} />
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>

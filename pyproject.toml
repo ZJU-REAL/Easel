@@ -20,6 +20,10 @@ dependencies = [
     "faster-whisper>=1,<2", "edge-tts>=6,<8", "playwright>=1.45,<2",
     "rembg>=2.0,<3", "biliup>=1,<2", "jieba>=0.42,<1", "snownlp>=0.12,<1",
     "markdown>=3.5,<4",
+    # ask_user 问答题桥接（easel/gateway_questions.py）：连本地 gateway WS RPC + Ed25519 设备签名
+    # 只用到 load_pem_private_key + Ed25519.sign（长期稳定 API），上界放宽避免与新版冲突
+    "websocket-client>=1.7,<2",
+    "cryptography>=42",
 ]
 
 [project.scripts]

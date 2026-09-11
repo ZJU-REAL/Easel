@@ -294,6 +294,48 @@ export function deleteOutput(path: string): Promise<{ ok: boolean; deleted: stri
 }
 
 export interface UploadedFile { id: string; name: string; path: string; }
+
+/** OpenClaw ask_user 问答题（SSE question 事件 payload）。 */
+export interface ChatQuestionOption { label: string; description?: string; }
+export interface ChatQuestionItem {
+  questionId: string;
+  header?: string;
+  question: string;
+  options?: ChatQuestionOption[];
+  multiSelect?: boolean;
+}
+export interface ChatQuestion {
+  id: string;              // gateway question record id (ask_...)
+  questions: ChatQuestionItem[];
+  expiresAtMs?: number;
+}
+export async function answerQuestion(
+  payload: { questionId: string; answers: Record<string, string[]>; resolvedBy?: string },
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${BASE}/api/chat/question/answer`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({})) as { ok?: boolean; error?: string };
+  return { ok: data.ok === true, error: data.error };
+}
+
+/** 批量查 question 状态：过滤重放中已解决/已过期的旧题。 */
+export async function questionStatus(
+  questionIds: string[],
+): Promise<Record<string, { status: string }>> {
+  if (!questionIds.length) return {};
+  try {
+    const res = await fetch(`${BASE}/api/chat/question/status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionIds }),
+    });
+    const data = await res.json().catch(() => ({})) as { ok?: boolean; questions?: Record<string, { status: string }> };
+    return data.questions || {};
+  } catch {
+    return {};
+  }
+}
 /** 上传素材到当前会话的隔离 inbox，返回后端可校验的附件引用。 */
 export async function uploadFiles(files: File[], sessionId: string): Promise<UploadedFile[]> {
   const fd = new FormData();
@@ -468,6 +510,7 @@ export function streamChat(
   resumeOnly = false,
   onRecoveryUnavailable?: () => void,
   attachments: UploadedFile[] = [],
+  onQuestion?: (q: ChatQuestion) => void,
 ): AbortController {
   const controller = new AbortController();
   let lastEventId = 0;
@@ -502,6 +545,8 @@ export function streamChat(
           try { onThinking(JSON.parse(data) as string); } catch { onThinking(data); }
         } else if (currentEvent === 'activity' && onActivity) {
           try { onActivity(JSON.parse(data) as string); } catch { onActivity(data); }
+        } else if (currentEvent === 'question' && onQuestion) {
+          try { onQuestion(JSON.parse(data) as ChatQuestion); } catch { /* 解析失败忽略 */ }
         } else if (currentEvent === 'error') {
           let msg = '执行失败';
           try { msg = JSON.parse(data) as string; } catch { msg = data; }

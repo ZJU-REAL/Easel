@@ -15,7 +15,8 @@ import BreakdownPage from './components/BreakdownPage';
 import SubNav from './components/SubNav';
 import OnboardingWizard from './components/OnboardingWizard';
 import { fetchStatus, fetchPersonas, streamChat, fetchLastTurn, stopChat } from './lib/api';
-import type { PersonaItem, UploadedFile } from './lib/api';
+import type { PersonaItem, UploadedFile, ChatQuestion } from './lib/api';
+import { questionStatus } from './lib/api';
 import { deleteSession as deleteRemoteSession } from './lib/api';
 import {
   loadSessions,
@@ -164,7 +165,45 @@ export default function App() {
   // ---- 流式对话：状态与生命周期都放在 App（永不卸载），切页/切 ChatPage 都不中断/丢失 ----
   const [streams, setStreams] = useState<Record<string, StreamState>>({});
   const streamCtl = useRef<Record<string, AbortController>>({});
-  const streamAcc = useRef<Record<string, { content: string; thinking: string; steps: string[] }>>({});
+  const streamAcc = useRef<Record<string, { content: string; thinking: string; steps: string[]; questions: ChatQuestion[] }>>({});
+  const answeredRef = useRef<Set<string>>(new Set());   // 已提交答案的 question id：重放/恢复不再重现
+  // ---- 打字机：分批到达的 token 按节奏吐给界面 ----
+  const typingBuf = useRef<Record<string, string>>({});
+  const typingTimer = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const TYPING_INTERVAL = 12;          // 每 tick 间隔 ms（短回复约 83 字/秒：快且有逐字感）
+
+  const pumpTyping = (sessionId: string) => {
+    const buf = typingBuf.current[sessionId] || '';
+    if (!buf) { clearTyping(sessionId); return; }
+    // 动态步长：<80 字逐字吐（83字/秒），每满 80 字每 tick 多吐 1 字，长文更快
+    const step = Math.max(1, Math.floor(buf.length / 80));
+    const take = buf.slice(0, step);
+    typingBuf.current[sessionId] = buf.slice(step);
+    const a = streamAcc.current[sessionId]; if (!a) { clearTyping(sessionId); return; }
+    a.content += take;
+    setStreams((p) => (p[sessionId] ? { ...p, [sessionId]: { ...p[sessionId], content: a.content } } : p));
+  };
+  const startTypingPump = (sessionId: string) => {
+    if (typingTimer.current[sessionId]) return;
+    typingTimer.current[sessionId] = setInterval(() => pumpTyping(sessionId), TYPING_INTERVAL);
+  };
+  const ensureTypingPump = (sessionId: string) => {
+    if (!typingTimer.current[sessionId]) startTypingPump(sessionId);
+  };
+  const clearTyping = (sessionId: string) => {
+    const t = typingTimer.current[sessionId];
+    if (t) { clearInterval(t); delete typingTimer.current[sessionId]; }
+  };
+  /** 收尾冲刷：把剩余队列立刻吐完（避免结束瞬间内容被截断）。 */
+  const flushTyping = (sessionId: string) => {
+    clearTyping(sessionId);
+    const buf = typingBuf.current[sessionId] || '';
+    if (!buf) return;
+    typingBuf.current[sessionId] = '';
+    const a = streamAcc.current[sessionId]; if (!a) return;
+    a.content += buf;
+    setStreams((p) => (p[sessionId] ? { ...p, [sessionId]: { ...p[sessionId], content: a.content } } : p));
+  };
 
   const appendAssistant = useCallback((sessionId: string, msg: ChatMessage, sessionKey?: string) => {
     setSessions((prev) => {
@@ -178,6 +217,8 @@ export default function App() {
   }, []);
 
   const clearStream = useCallback((sessionId: string) => {
+    // 打字机收尾：剩余队列立刻吐出，避免结束瞬间内容被截断
+    flushTyping(sessionId);
     delete streamCtl.current[sessionId];
     delete streamAcc.current[sessionId];
     setStreams((prev) => {
@@ -200,32 +241,53 @@ export default function App() {
       const next = prev.map((s) => (s.id === sessionId ? { ...s, pendingTurnId: turnId } : s));
       saveSessions(next); return next;
     });
-    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [] };
-    setStreams((prev) => ({ ...prev, [sessionId]: { content: '', thinking: '', activity: '' } }));
+    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [], questions: [] };
+    setStreams((prev) => ({ ...prev, [sessionId]: { content: '', thinking: '', activity: '', questions: [] } }));
+    // 打字机队列：流式事件按批到达（OpenClaw 攒批），前端按字符节奏显示，体验逐字浮现。
+    typingBuf.current[sessionId] = '';
+    startTypingPump(sessionId);
     streamCtl.current[sessionId] = streamChat(
       text, persona, sessionId,
       (chunk) => {
-        const a = streamAcc.current[sessionId]; if (!a) return; a.content += chunk;
-        setStreams((p) => (p[sessionId] ? { ...p, [sessionId]: { ...p[sessionId], content: a.content } } : p));
+        const a = streamAcc.current[sessionId]; if (!a) return;
+        // 不直接追加 content——进打字机队列，pump 按节奏吐出（切会话不中断，队列归属 sessionId）
+        typingBuf.current[sessionId] = (typingBuf.current[sessionId] || '') + chunk;
+        ensureTypingPump(sessionId);
       },
       (sessionKey) => {
-        const a = streamAcc.current[sessionId];
-        appendAssistant(sessionId, {
-          role: 'assistant', content: a?.content || '',
-          thinking: a?.thinking || undefined, activity: a?.steps.join('\n') || undefined,
-        }, sessionKey);
-        clearStream(sessionId);
-        try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
+        // done 不能立即 flush——token 和 done 几乎同时到达（OpenClaw 攒批），
+        // 立即 flush 会把整包瞬间冲出，打字机白做。等队列吐完再落盘。
+        const waitAndFinalize = () => {
+          if (typingBuf.current[sessionId]) {
+            setTimeout(waitAndFinalize, 60);
+            return;
+          }
+          const a = streamAcc.current[sessionId];
+          appendAssistant(sessionId, {
+            role: 'assistant', content: a?.content || '',
+            thinking: a?.thinking || undefined, activity: a?.steps.join('\n') || undefined,
+          }, sessionKey);
+          clearStream(sessionId);
+          try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
+        };
+        waitAndFinalize();
       },
       (err) => {
-        const a = streamAcc.current[sessionId];
-        appendAssistant(sessionId, {
-          role: 'assistant',
-          content: (a?.content ? a.content + '\n\n' : '') + `Error: ${err.message}`,
-          thinking: a?.thinking || undefined, activity: a?.steps.join('\n') || undefined,
-        });
-        clearStream(sessionId);
-        try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
+        const waitAndFinalize = () => {
+          if (typingBuf.current[sessionId]) {
+            setTimeout(waitAndFinalize, 60);
+            return;
+          }
+          const a = streamAcc.current[sessionId];
+          appendAssistant(sessionId, {
+            role: 'assistant',
+            content: (a?.content ? a.content + '\n\n' : '') + `Error: ${err.message}`,
+            thinking: a?.thinking || undefined, activity: a?.steps.join('\n') || undefined,
+          });
+          clearStream(sessionId);
+          try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
+        };
+        waitAndFinalize();
       },
       (thinkChunk) => {
         const a = streamAcc.current[sessionId]; if (!a) return;
@@ -247,6 +309,23 @@ export default function App() {
       false,
       undefined,
       attachments,
+      (q) => {
+        // ask_user 问答题：追加进流式状态（去重），ChatPage 渲染为选项卡片
+        // 重放可能带已解决/已过期的旧问题，先查状态只留 pending（失败则保留）
+        const a = streamAcc.current[sessionId]; if (!a) return;
+        if (a.questions.some((x) => x.id === q.id)) return;
+        if (answeredRef.current.has(q.id)) return;   // 本会话已答过：不再重现
+        void questionStatus([q.id]).then((st) => {
+          const s = st[q.id]?.status;
+          // 只显示仍 pending 的：answered/expired/cancelled/not_found/unknown 一律过滤
+          if (s && s !== 'pending' || answeredRef.current.has(q.id)) return;
+          const a2 = streamAcc.current[sessionId]; if (!a2) return;
+          if (a2.questions.some((x) => x.id === q.id)) return;
+          a2.questions.push(q);
+          setStreams((p) => (p[sessionId]
+            ? { ...p, [sessionId]: { ...p[sessionId], questions: [...a2.questions] } } : p));
+        });
+      },
     );
   }, [appendAssistant, clearStream]);
 
@@ -258,8 +337,10 @@ export default function App() {
     if (!last || last.role !== 'user') return;   // 没有悬空的用户消息 = 无需恢复
     let turnId = s.pendingTurnId;
     try { turnId = sessionStorage.getItem(`easel_pending_turn:${sessionId}`) || turnId; } catch { /* use persisted id */ }
-    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [] };
-    setStreams((p) => ({ ...p, [sessionId]: { content: '', thinking: '', activity: '⏳ 正在接回上一轮结果…' } }));
+    streamAcc.current[sessionId] = { content: '', thinking: '', steps: [], questions: [] };
+    setStreams((p) => ({ ...p, [sessionId]: { content: '', thinking: '', activity: '⏳ 正在接回上一轮结果…', questions: [] } }));
+    typingBuf.current[sessionId] = '';
+    startTypingPump(sessionId);
     if (!turnId) {
       void fetchLastTurn(sessionId).then((r) => {
         if (r.status === 'done') appendAssistant(sessionId, { role: 'assistant', content: r.text || '（无输出）' });
@@ -270,22 +351,37 @@ export default function App() {
     streamCtl.current[sessionId] = streamChat(
       '', undefined, sessionId,
       (chunk) => {
-        const a = streamAcc.current[sessionId]; if (!a) return; a.content += chunk;
-        setStreams((p) => (p[sessionId] ? { ...p, [sessionId]: { ...p[sessionId], content: a.content } } : p));
+        const a = streamAcc.current[sessionId]; if (!a) return;
+        typingBuf.current[sessionId] = (typingBuf.current[sessionId] || '') + chunk;
+        ensureTypingPump(sessionId);
       },
       (sessionKey) => {
-        const a = streamAcc.current[sessionId];
-        appendAssistant(sessionId, {
-          role: 'assistant', content: a?.content || '（无输出）',
-          thinking: a?.thinking || undefined, activity: a?.steps.join('\n') || undefined,
-        }, sessionKey);
-        clearStream(sessionId);
-        try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
+        const waitAndFinalize = () => {
+          if (typingBuf.current[sessionId]) {
+            setTimeout(waitAndFinalize, 60);
+            return;
+          }
+          const a = streamAcc.current[sessionId];
+          appendAssistant(sessionId, {
+            role: 'assistant', content: a?.content || '（无输出）',
+            thinking: a?.thinking || undefined, activity: a?.steps.join('\n') || undefined,
+          }, sessionKey);
+          clearStream(sessionId);
+          try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
+        };
+        waitAndFinalize();
       },
       (err) => {
-        const a = streamAcc.current[sessionId];
-        appendAssistant(sessionId, { role: 'assistant', content: (a?.content || '') + `\n\nError: ${err.message}` });
-        clearStream(sessionId);
+        const waitAndFinalize = () => {
+          if (typingBuf.current[sessionId]) {
+            setTimeout(waitAndFinalize, 60);
+            return;
+          }
+          const a = streamAcc.current[sessionId];
+          appendAssistant(sessionId, { role: 'assistant', content: (a?.content || '') + `\n\nError: ${err.message}` });
+          clearStream(sessionId);
+        };
+        waitAndFinalize();
       },
       (chunk) => { const a = streamAcc.current[sessionId]; if (a) a.thinking = (a.thinking + chunk).slice(-4000); },
       (status) => {
@@ -316,6 +412,25 @@ export default function App() {
             role: 'assistant', content: '上一轮任务记录已失效，请重新发送上一条消息。',
           });
           clearStream(sessionId);
+        });
+      },
+      undefined,   // attachments: 恢复轮次无新附件
+      (q) => {
+        const a = streamAcc.current[sessionId]; if (!a) return;
+        if (a.questions.some((x) => x.id === q.id)) return;
+        if (answeredRef.current.has(q.id)) return;   // 本会话已答过：不再重现
+        // 重放可能带已解决/已过期的旧问题（gateway 15s 后即清理）——先查状态只留 pending；
+        // 查询失败时保留原样（宁显示不丢题）。
+        void questionStatus([q.id]).then((st) => {
+          const s = st[q.id]?.status;
+          // 只显示仍 pending 的：answered/expired/cancelled/not_found/unknown 一律过滤
+          //（unknown 通常=问题已从 gateway 清理，即已答或已过期，重放旧事件时不该重现）
+          if (s && s !== 'pending' || answeredRef.current.has(q.id)) return;
+          const a2 = streamAcc.current[sessionId]; if (!a2) return;
+          if (a2.questions.some((x) => x.id === q.id)) return;
+          a2.questions.push(q);
+          setStreams((p) => (p[sessionId]
+            ? { ...p, [sessionId]: { ...p[sessionId], questions: [...a2.questions] } } : p));
         });
       },
     );
@@ -390,6 +505,7 @@ export default function App() {
     streamCtl.current[sessionId]?.abort();
     // 告诉后端**真正终止**这一轮 agent 并释放会话锁——否则后端进程还在跑、占着锁，下一句会被拦
     void stopChat(sessionId).catch(() => { /* 后端可能已结束，忽略 */ });
+    flushTyping(sessionId);   // 停止时立刻把队列余字吐完，保证已到内容不丢
     const a = streamAcc.current[sessionId];
     if (a && (a.content || a.thinking || a.steps.length)) {
       appendAssistant(sessionId, {
@@ -557,6 +673,23 @@ export default function App() {
             onResend={(userIndex, displayText, attachments, legacyAgentText) => handleResend(
               activeSession.id, userIndex, displayText, attachments, legacyAgentText,
             )}
+            onQuestionAnswered={(qid) => {
+              answeredRef.current.add(qid);
+              // 已答题从流式状态中移除——切走/切回会话都不再重现（组件内部 state 会在重挂时清零，只藏不移除没用）
+              const a = streamAcc.current[activeSession.id];
+              if (a) {
+                const before = a.questions.length;
+                const kept = a.questions.filter((q) => q.id !== qid);
+                if (kept.length !== before) {
+                  a.questions = kept;
+                  setStreams((p) => {
+                    const cur = p[activeSession.id];
+                    if (!cur) return p;
+                    return { ...p, [activeSession.id]: { ...cur, questions: [...kept] } };
+                  });
+                }
+              }
+            }}
           />
         ) : null;
       case 'trends':
