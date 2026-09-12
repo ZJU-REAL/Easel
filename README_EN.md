@@ -49,7 +49,7 @@ Easel follows five connected workflows: **Discover** relevant trends and opportu
 
 #### 📌 Usage Notes and Research Vision
 
-> - **Use the Web workspace for the complete experience:** it includes conversations, assets, accounts, profiles, a content library, and publishing management beyond the CLI entry points.
+> - **Use the Web workspace for the complete experience:** it includes conversations, assets, accounts, profiles, a content library, and publishing management beyond the CLI entry points, and it is our recommended way to use Easel; for terminal-only display quirks, see [Known Issues](docs/known-issues_EN.md).
 > - **Be cautious with automated Xiaohongshu publishing:** automation may trigger verification, reach restrictions, or account risk. Use preview and preflight checks, and prefer human-confirmed publishing.
 > - **Research applied to real life:** Easel brings our research into real social media workflows. We will continue exploring social intelligence for AI in social media, including a deeper understanding of creators, audiences, and authentic interaction.
 
@@ -256,6 +256,7 @@ Easel uses an isolated `easel` OpenClaw profile and does not overwrite an existi
 - [Capability map](docs/skill-function-mapping.md)
 - [SKILL interface specification](docs/SKILL-SPEC.md)
 - [Prompt and architecture layers](docs/prompt-stack.md)
+- [Known issues](docs/known-issues_EN.md)
 - [Full acknowledgments](docs/ACKNOWLEDGMENTS.md)
 
 ## 🙏 Acknowledgments
