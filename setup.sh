@@ -320,6 +320,25 @@ if strip_nulls(providers):
 PY
 fi
 
+# 原子写入 anthropic provider。部分 OpenClaw 版本（如 2026.3.x）的 schema 要求 provider 一次性带齐
+# baseUrl + models，逐字段 config set 会因中间态缺字段而整体校验失败（baseUrl/models: received undefined）。
+# 这里用一次 --json 原子写入建好完整 provider；整块替换也会顺带清掉旧的 Cookie/X-Adapter-* 等残留 header。
+# 用法：oc_write_anthropic <baseUrl> <apiKey> [apiKeyHeader] [anthropicVersion]
+oc_write_anthropic() {
+    local seed
+    seed="$(A_BASE_URL="$1" A_API_KEY="$2" A_HDR="${3:-}" A_VER="${4:-}" python3 -c '
+import json, os
+p = {"baseUrl": os.environ["A_BASE_URL"], "apiKey": os.environ["A_API_KEY"], "models": []}
+hdr = os.environ.get("A_HDR"); ver = os.environ.get("A_VER")
+if hdr or ver:
+    h = {}
+    if hdr: h[hdr] = os.environ["A_API_KEY"]
+    if ver: h["anthropic-version"] = ver
+    p["headers"] = h
+print(json.dumps(p))')"
+    $OC config set models.providers.anthropic "$seed" --json 2>&1 | sed '/^No change$/d'
+}
+
 # 若用户已有默认 OpenClaw 配置，复用其模型名称；密钥不会从别的 profile 复制。
 if [ -z "${CLAUDE_MODEL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; then
     EXISTING_MODEL="$($OPENCLAW_BIN config get agents.defaults.model.primary 2>/dev/null || true)"
@@ -396,6 +415,9 @@ fi
 
 DEFAULT_PRIMARY_MODEL="anthropic/claude-sonnet-4-6"
 STANDARD_LLM_CONFIGURED=false
+# 仅当真正写了 anthropic provider 时，才补设它的 provider 级超时（见下方 timeoutSeconds）；
+# 否则会给 OpenAI/MAAS 用户凭空造出一个只有 timeoutSeconds、缺 baseUrl/models 的残缺 anthropic provider。
+ANTHROPIC_PROVIDER_SYNCED=false
 if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
     STANDARD_LLM_CONFIGURED=true
 elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
@@ -496,35 +518,23 @@ elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${GEMINI_MAAS_API_KEY:-}" ]
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "Gemini-compatible 服务已通过本地适配器同步"
 elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
-    $OC config set models.providers.anthropic.apiKey "$EASEL_LLM_API_KEY" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.anthropic.baseUrl "$EASEL_LLM_BASE_URL" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.anthropic.headers."${EASEL_LLM_API_KEY_HEADER:-api-key}" \
-        "$EASEL_LLM_API_KEY" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.anthropic.headers.anthropic-version \
-        "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}" 2>&1 | sed '/^No change$/d'
-    # Switching away from CodeWiz must remove its provider-specific headers.
-    $OC config unset models.providers.anthropic.headers.Cookie >/dev/null 2>&1 || true
-    $OC config unset models.providers.anthropic.headers.X-Adapter-Source >/dev/null 2>&1 || true
-    $OC config unset models.providers.anthropic.headers.X-Adapter-Scenario >/dev/null 2>&1 || true
-    $OC config unset models.providers.anthropic.headers.X-Adapter-Source-Version >/dev/null 2>&1 || true
+    # 原子写入整块 provider（含 header 与 anthropic-version）；整块替换会顺带清掉旧的 CodeWiz 专用 header。
+    oc_write_anthropic "$EASEL_LLM_BASE_URL" "$EASEL_LLM_API_KEY" \
+        "${EASEL_LLM_API_KEY_HEADER:-api-key}" "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}"
+    ANTHROPIC_PROVIDER_SYNCED=true
     ok "自定义 Anthropic 兼容 MaaS 认证已同步"
 elif [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
-    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_AUTH_TOKEN" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.anthropic.baseUrl "$ANTHROPIC_BASE_URL" 2>&1 | sed '/^No change$/d'
+    oc_write_anthropic "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN"
+    ANTHROPIC_PROVIDER_SYNCED=true
     ok "Anthropic 兼容服务认证已同步"
 elif [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
-    $OC config set models.providers.anthropic.apiKey "$ANTHROPIC_API_KEY" 2>&1 | sed '/^No change$/d'
-    # 官方 ANTHROPIC_API_KEY 也可搭配 ANTHROPIC_BASE_URL 指向自定义代理/网关；
-    # 否则请求会发往默认的 api.anthropic.com，代理网络下会直接超时。
+    # 官方 ANTHROPIC_API_KEY 可搭配 ANTHROPIC_BASE_URL 指向自定义代理/网关；未指定时显式指向官方端点，
+    # 否则请求会发往默认的 api.anthropic.com，代理网络下会直接超时。provider 由 oc_write_anthropic 原子写入。
+    oc_write_anthropic "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}" "$ANTHROPIC_API_KEY"
+    ANTHROPIC_PROVIDER_SYNCED=true
     if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
-        $OC config set models.providers.anthropic.baseUrl "$ANTHROPIC_BASE_URL" 2>&1 | sed '/^No change$/d'
         ok "API key + 自定义 Anthropic Base URL 已同步"
     else
-        # 未指定 Base URL：显式指向官方端点。不用 config unset ——
-        # 部分 OpenClaw 版本执行 unset 后把该字段留成 null 而非真正删除，
-        # 导致后续任意 config 操作都因 schema 类型不匹配而报错；
-        # 也不能设为空字符串，OpenClaw 会以“长度需 >=1”拒绝该写入。
-        $OC config set models.providers.anthropic.baseUrl "https://api.anthropic.com" 2>&1 | sed '/^No change$/d'
         ok "API key 已同步"
     fi
 else
@@ -561,7 +571,13 @@ fi
 # 单次 LLM 请求的「空闲超时」（等模型开始/继续产出 token 的最长时间）。内部网关对大上下文/带思考的
 # 请求首 token 可能较慢，不设会用默认较短值 → 报「model did not produce a response before the model
 # idle timeout」而中断整个 run。与 agents.defaults.timeoutSeconds 是两回事，provider 超时不能延长整个 run。
-$OC config set models.providers.anthropic.timeoutSeconds 600 2>&1 | sed '/^No change$/d'
+# 尽力而为：老版本 OpenClaw（如 2026.3.x）的 provider schema 不认识 timeoutSeconds，会报 Unrecognized key
+# 并拒绝该次写入。这里吞掉这条噪音、绝不让它中断安装（|| true）；新版本 OpenClaw 才会真正把它调到 600s。
+# 想彻底拿到更长的 provider 超时，请 npm i -g openclaw@latest 升级到支持该字段的版本。
+if [ "$ANTHROPIC_PROVIDER_SYNCED" = true ]; then
+    $OC config set models.providers.anthropic.timeoutSeconds 600 2>&1 \
+        | sed -e '/^No change$/d' -e '/[Uu]nrecognized key/d' -e '/timeoutSeconds/d' || true
+fi
 $OC config set gateway.mode local 2>&1 | sed '/^No change$/d'
 $OC config set gateway.bind loopback 2>&1 | sed '/^No change$/d'
 $OC config set gateway.auth.mode none 2>&1 | sed '/^No change$/d'
