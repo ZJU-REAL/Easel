@@ -2118,6 +2118,20 @@ def _mp_login_status() -> dict:
     return data
 
 
+@app.on_event("shutdown")
+def _stop_mp_login_on_shutdown() -> None:
+    """正常重启 Web 时回收扫码进程，避免它继续写入下一次登录的状态。"""
+    proc = LOGIN_PROCESSES.pop("wechat-oa-mp", None)
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        _write_login_marker("wechat-oa-mp", "expired", "服务已重启，请重新扫码登录")
+
+
 @app.post("/api/accounts/{platform}/mp-login")
 async def api_mp_login_start(platform: str):
     """启动「公众号后台」扫码登录（数据中心取数用，管理员级会话，独立于 AppID 凭证）。
@@ -2125,6 +2139,10 @@ async def api_mp_login_start(platform: str):
     cfg = LOGIN_RUNNERS.get(platform)
     if not cfg or cfg.get("backend") != "wechat-oa":
         raise HTTPException(404, "该平台不使用公众号后台登录")
+    # 重复点击复用正在进行的登录，不能删除其二维码或启动第二个 Chromium。
+    proc = LOGIN_PROCESSES.get("wechat-oa-mp")
+    if proc is not None and proc.poll() is None:
+        return {"mode": "qr", **_mp_login_status()}
     LOGIN_DIR.mkdir(parents=True, exist_ok=True)
     for f in (LOGIN_DIR / "wechat-oa-mp.png", LOGIN_DIR / "wechat-oa-mp.json"):
         try:

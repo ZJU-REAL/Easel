@@ -111,6 +111,17 @@ def _capture_qr(page, qr_out):
 
 
 def cmd_login(a):
+    try:
+        return _run_login(a)
+    except Exception as exc:
+        # 异常类型对用户可见；不把可能包含会话令牌的浏览器异常全文写进状态。
+        login_state.write_status(a.status_file, "error",
+                                 f"公众号登录失败（{type(exc).__name__}），请检查浏览器、网络及会话占用")
+        print(f"login failed: {type(exc).__name__}", file=sys.stderr, flush=True)
+        return 1
+
+
+def _run_login(a):
     from playwright.sync_api import sync_playwright
     status = a.status_file
     qr_out = a.qr_out or str(LOGIN_DIR / "wechat-oa-mp.png")
@@ -126,7 +137,8 @@ def cmd_login(a):
                 login_state.write_status(status, "success", "已登录（复用会话）")
                 print("already logged in, token acquired")
                 return 0
-            _capture_qr(page, qr_out)
+            if not _capture_qr(page, qr_out):
+                raise RuntimeError("二维码截图失败")
             login_state.write_status(status, "qr_ready", "请用公众号管理员微信扫码", qr=str(qr_out))
             deadline = time.time() + a.timeout
             while time.time() < deadline:
