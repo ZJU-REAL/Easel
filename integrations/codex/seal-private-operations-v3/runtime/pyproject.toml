@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seal-private-operations-v3"
+version = "3.0.0"
+description = "Seal 私人运营顾问 V3，面向 Codex 的跨平台多平台运营工作台"
+requires-python = ">=3.10"
+# 运行依赖统一安装，确保 Web、媒体处理和浏览器发布开箱可用。
+dependencies = [
+    "fastapi>=0.115,<1",        # Web 后端
+    "uvicorn>=0.30,<1",         # ASGI server（easel web）
+    "sse-starlette>=2.1,<4",    # 对话流式 SSE
+    "pydantic>=2.7,<3",         # 请求模型
+    "segno>=1.6,<2",             # B站扫码登录二维码渲染（纯 Python）
+    "python-multipart>=0.0.9,<1", # FastAPI 文件上传 / Form
+    "Pillow>=10,<13", "opencv-python>=4.8,<5", "numpy>=1.26,<3",
+    "pandas>=2,<4", "matplotlib>=3.8,<4", "librosa>=0.10,<1",
+    "faster-whisper>=1,<2", "edge-tts>=6,<8", "playwright>=1.45,<2",
+    "rembg>=2.0,<3", "biliup>=1,<2", "jieba>=0.42,<1", "snownlp>=0.12,<1",
+    "markdown>=3.5,<4",
+    "PyYAML>=6.0,<7",
+    "pdfplumber>=0.11,<1",
+    "requests>=2.32,<3", "beautifulsoup4>=4.12,<5", "openpyxl>=3.1,<4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+seal = "easel.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["easel*", "seal_core*"]

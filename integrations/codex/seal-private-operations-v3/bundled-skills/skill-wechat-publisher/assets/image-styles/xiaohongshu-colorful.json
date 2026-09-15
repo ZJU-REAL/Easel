@@ -1,0 +1,41 @@
+{
+  "style_name": "xiaohongshu-colorful",
+  "display_name": "小红书彩色卡",
+  "description": "暖色渐变背景 + 大字号 emoji + 活泼排版,小红书/Instagram 式信息卡。适合生活提示、产品清单、上手指南、盘点类话题。",
+  "suitable_for": [
+    "lifestyle-tips",
+    "product-roundup",
+    "getting-started-guide",
+    "listicle",
+    "tutorial-friendly",
+    "consumer-topics"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background_gradient": ["#ffecd2", "#fcb69f"],
+    "primary": "#ff6b6b",
+    "accent": "#ffd93d",
+    "secondary": "#6bcf7f",
+    "text": "#2d1e1e",
+    "highlight": "#ff8e53"
+  },
+  "typography": {
+    "heading": "粗圆体中文(类似站酷酷黑 / 阿里巴巴普惠体 Heavy)",
+    "body": "PingFang SC Medium",
+    "weight_contrast": "标题超粗 + 正文中粗"
+  },
+  "mood": ["warm", "playful", "inviting", "energetic", "friendly", "girly-or-neutral"],
+  "prompt_template": {
+    "newspic_card": "Generate a vibrant Xiaohongshu-style Chinese card, 3:4 portrait. Warm gradient background (from peach #ffecd2 to coral #fcb69f). Main title '{card_main}' in a big bold rounded Chinese font (站酷酷黑 style), positioned top-third, in dark warm brown (#2d1e1e) with a yellow (#ffd93d) brush highlight behind key words. Below it, smaller supporting text '{card_sub}'. Include 2-3 playful emoji or cute flat icons (no 3D). Optional: a small dashed border, decorative sparkles, or a highlighted tag badge. Feel: warm, friendly, Instagram-ready, slightly girly but not cheesy. No photos, no realistic people, no dark backgrounds.",
+    "article_inline": "Generate a vibrant Xiaohongshu-style Chinese illustration, 16:9. Warm peach-to-coral gradient background. Topic: '{image_subject}'. Use big rounded Chinese text, playful emoji or flat icons, yellow brush highlights, dashed borders. Friendly, approachable feel. No photos, no 3D, no realistic people."
+  },
+  "example_reference": "(参考小红书爆款笔记封面)",
+  "notes": "不建议用于技术号(tech 账号)—— 葱哥的冷吐槽风格和这个视觉完全不搭。main 号做生活向 / 入门指南 / 清单类内容适合。"
+}

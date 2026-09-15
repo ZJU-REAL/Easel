@@ -1,0 +1,44 @@
+{
+  "style_name": "flat-editorial",
+  "display_name": "扁平编辑",
+  "description": "细黑线手绘 + 米白/白卡 + 克制柔彩高亮的手账式结构信息图。细而利落的黑线、手写体标题、实心黑发连帽衫小人、黑色数字圆圈分步、白卡描边、(可带螺旋本/便签的手账质感);代码窗口 mock、对勾、扁平小图标。柔彩只当高亮:桃=报错、绿=成功、黄=结论、紫=便签。比 illustrated-warm 更克制、信息密度高,又带手账的亲切手写感。适合步骤讲解、工具/功能对比、概念拆解、调试/工作流复盘。",
+  "suitable_for": [
+    "step-by-step-guide",
+    "tool-comparison",
+    "concept-explainer",
+    "process-flow",
+    "debugging-workflow",
+    "tutorial"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#f6f4ef",
+    "card": "#ffffff",
+    "ink": "#1f1f1f",
+    "peach": "#f4a261",
+    "green": "#a8d3a6",
+    "yellow": "#fbe7a2",
+    "lavender": "#d3c5ea",
+    "red_error": "#e0533d",
+    "text": "#1f1f1f"
+  },
+  "typography": {
+    "heading": "黑色手写体,粗而有手感(站酷快乐体 / 手写马克笔),非印刷黑体",
+    "body": "手写风中文(江城律动黑 / 站酷文艺体)",
+    "code": "等宽字体(JetBrains Mono),放进代码窗口 mock"
+  },
+  "mood": ["手账", "hand-lettered", "clean", "structured", "friendly", "editorial", "tidy"],
+  "prompt_template": {
+    "newspic_card": "Generate a clean hand-drawn editorial infographic card in Chinese with a 手账 / handwritten-notebook feel, 3:4 portrait. Light warm off-white / cream background (#f6f4ef) with white rounded cards outlined in thin black. THIN, confident hand-drawn BLACK ink line-art (a clean hand-drawn line drawing, slightly imperfect, NOT thick); any cartoon people have SOLID BLACK hair, simple dot-eye faces and light hoodies. Mostly black + white/cream, with only a FEW MUTED PASTEL accent fills used sparingly as highlights: soft peach (#f4a261) for errors/warnings, soft green (#a8d3a6) for success/correct, soft yellow (#fbe7a2) for tips/conclusions, soft lavender (#d3c5ea) for notes — muted, never bright. At the top a big BLACK HAND-LETTERED title '{card_main}' (hand-written, not printed sans-serif) with a hand-drawn underline scribble. Below, present the point '{card_sub}' inside white rounded cards with thin black borders and hand-lettered headings; use solid black numbered circle badges (1, 2, 3) for steps. Decorate with hand-drawn black-line props that fit the topic: a code-editor window mock (traffic-light dots, monospace code, a soft-green highlight on good lines, a soft-peach highlight and red squiggle on error lines, a small X badge), spiral notepad, folder, sticky note, checkmark badges, small hand-drawn line icons. Keep the 手账 notebook feel — hand-lettered, airy and friendly, still structured and uncluttered. No photos, no 3D, no heavy gradients, no dark background.",
+    "article_inline": "Generate a clean hand-drawn editorial infographic illustration in Chinese with a 手账 / handwritten-notebook feel, 16:9 landscape. Topic: '{image_subject}'. Light warm off-white / cream background (#f6f4ef) with white rounded cards outlined in thin black. THIN, confident hand-drawn BLACK ink line-art (a clean hand-drawn line drawing, slightly imperfect, NOT thick); cartoon people have SOLID BLACK hair, simple dot-eye faces and light hoodies. Mostly black + white/cream, with only a FEW MUTED PASTEL accent fills used sparingly as highlights: soft peach (#f4a261) for errors/warnings, soft green (#a8d3a6) for success/correct, soft yellow (#fbe7a2) for tips/conclusions, soft lavender (#d3c5ea) for notes — muted, never bright. Bold BLACK HAND-LETTERED headings (hand-written, not printed sans-serif); solid black numbered circle badges for steps; white rounded cards with thin black borders. Decorate with hand-drawn black-line props fitting the topic (code-editor window mock with green/peach/red highlights and an X badge, notepad, folder, sticky note, checkmark badges, small hand-drawn line icons). Keep the 手账 notebook feel — hand-lettered, airy and friendly, still structured and uncluttered. No photos, no 3D, no heavy gradients, no dark background."
+  },
+  "example_reference": "(细黑线 + 米白 + 克制柔彩的手账步骤信息图:手写标题 + 实心黑发连帽衫小人 + 数字圆圈 + 白卡 + 代码窗口 mock)",
+  "notes": "视觉指纹是'细黑线 + 手写体 + 手账感 + 白卡数字步骤 + 克制柔彩高亮'。和 warm-handdrawn(粉黄手账)同样走手账+手写,但配色是黑+米白为主、柔彩多色只做语义高亮(桃/绿/黄/紫),信息密度更高、更适合讲流程/步骤/对比/调试。需要暖甜氛围用 warm-handdrawn;需要人物讲故事用 illustrated-warm;纯数据用 data-chart。与 x-publisher skill 的 flat-editorial 同名同风格,跨 skill 复用。"
+}

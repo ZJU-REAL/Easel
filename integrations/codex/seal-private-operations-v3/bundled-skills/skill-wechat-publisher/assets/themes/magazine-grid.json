@@ -1,0 +1,58 @@
+{
+  "theme_name": "magazine-grid",
+  "description": "杂志衬线 - 衬线大标题 + 大留白,杂志内页感,适合专题报道 / 长篇深度 / 艺术人文",
+  "styles": {
+    "body": "font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, serif; font-size: 15.5px; color: #1f1a14; line-height: 1.9; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #fbfaf6;",
+    "h1": "font-size: 28px; font-weight: 800; color: #1f1a14; text-align: left; margin: 40px 0 18px; padding: 0; line-height: 1.25; letter-spacing: -0.2px;",
+    "h2": "font-size: 12px; font-weight: 700; color: #a0330f; margin: 44px 0 18px; padding: 0 0 12px 0; border-bottom: 1px solid #a0330f; letter-spacing: 4px; text-transform: uppercase; line-height: 1.4;",
+    "h3": "font-size: 17px; font-weight: 700; color: #1f1a14; margin: 30px 0 12px; padding: 0; letter-spacing: 0.2px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #1f1a14; line-height: 1.95;",
+    "blockquote": "margin: 36px 0; padding: 0 8px; background: transparent; border-left: none; color: #1f1a14; font-size: 19px; border-radius: 0; line-height: 1.6; letter-spacing: 0.3px; font-style: italic; text-align: center; font-weight: 600;",
+    "img": "max-width: 100%; height: auto; border-radius: 0; margin: 28px auto; display: block; border: none;",
+    "strong": "color: #1f1a14; font-weight: 800;",
+    "em": "font-style: italic; color: #4a3f33;",
+    "code_inline": "background: #f1ede3; color: #a0330f; padding: 2px 7px; border-radius: 0; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;",
+    "code_block": "background: #1f1a14; color: #f1ede3; padding: 16px 18px; border-radius: 0; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 26px 0; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 20px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 20px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.9; color: #1f1a14; font-weight: 400;",
+    "li_bullet": "color: #a0330f; font-weight: 700; font-size: 11px; font-family: Georgia, serif; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "❖",
+    "li_number": "color: #a0330f; font-weight: 700; font-size: 14px; min-width: 22px; font-family: Georgia, serif; font-style: italic; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: #1f1a14; margin: 48px 0; opacity: 0.2;",
+    "a": "color: #a0330f; text-decoration: none; border-bottom: 1px solid rgba(160,51,15,0.5);",
+    "table": "width: 100%; border-collapse: collapse; margin: 26px 0; font-size: 14px; border-top: 1px solid #1f1a14; border-bottom: 1px solid #1f1a14; table-layout: fixed; word-break: break-word;",
+    "th": "background: transparent; color: #1f1a14; padding: 10px 8px; text-align: left; font-weight: 700; font-size: 12.5px; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #1f1a14; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e8e1cf; color: #1f1a14; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12px; color: #8a7e6a; text-align: center; margin-top: 12px; letter-spacing: 1.5px; text-transform: uppercase; font-style: normal;",
+    "section_divider": "text-align: center; color: #a0330f; letter-spacing: 8px; font-size: 18px; margin: 46px 0; user-select: none; font-style: italic; font-family: Georgia, serif;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 60%, #f4e6a8 60%); color: #1f1a14; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #dde4ef; color: #2a3854; padding: 2px 7px; border-radius: 0; font-weight: 500;",
+    "hl_pink": "background: #f5dcd4; color: #8a2a1a; padding: 2px 7px; border-radius: 0; font-weight: 500;",
+    "hl_green": "background: #dde4cf; color: #3e4d22; padding: 2px 7px; border-radius: 0; font-weight: 500;",
+    "em_red": "color: #a0330f; font-weight: 700;",
+    "em_blue": "color: #2a4a6a; font-weight: 700;",
+    "em_orange": "color: #c76a1e; font-weight: 700;"
+  },
+  "section_divider_text": "·  ·  ·",
+  "code_colors": {
+    "kw": "color: #d68760; font-weight: 600;",
+    "str": "color: #c9b27a;",
+    "num": "color: #e8a060;",
+    "fn": "color: #b8a5d4;",
+    "cls": "color: #d4a5a5;",
+    "comm": "color: #8a7a66; font-style: italic;",
+    "punct": "color: #c9bca8;"
+  },
+  "list_style": {
+    "label": "A · 衬线罗马",
+    "num_container": "display: inline-block; color: #a0330f; font-family: 'Georgia','Times New Roman',serif; font-weight: 700; font-style: italic; font-size: 17px; margin-right: 10px; min-width: 26px;",
+    "num_prefix": "",
+    "num_suffix": ".",
+    "num_formatter": "roman_upper",
+    "bullet_container": "display: inline-block; color: #a0330f; font-size: 14px; margin-right: 12px; font-weight: 700;",
+    "bullet_char": "✦"
+  }
+}

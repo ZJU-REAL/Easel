@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "title": "Beyond Literal Translation",
+  "style": "editorial",
+  "size": "1920x1080",
+  "source": "Paper explainer · example",
+  "slides": [
+    {
+      "type": "cover",
+      "kicker": "PAPER EXPLAINED · 01",
+      "title": "字都翻对了，为什么梗还是没了？",
+      "claim": "机器翻译真正困难的，不只是语义准确，而是让另一种文化里的读者也能接住情绪。",
+      "points": ["字面正确只是底线", "文化有效性决定内容能不能传播"]
+    },
+    {
+      "type": "statement",
+      "kicker": "THE PROBLEM · 02",
+      "title": "旧指标只检查“像不像”",
+      "claim": "BLEU、ChrF 更擅长发现句面偏差，却很难判断梗、语气和社交距离有没有被带过去。",
+      "points": ["俚语可能被翻成正确但生硬的句子", "同一个梗在不同文化里需要不同表达"]
+    },
+    {
+      "type": "process",
+      "kicker": "METHOD · 03",
+      "title": "文化有效性怎么测？",
+      "steps": [
+        {"title": "收集", "body": "从真实社媒场景提取带文化语境的原始内容。"},
+        {"title": "翻译", "body": "让不同模型生成候选，并保留语气和场景信息。"},
+        {"title": "评估", "body": "由目标文化读者判断表达是否自然、是否接得住。"},
+        {"title": "对照", "body": "把文化有效性与传统句面指标放在一起比较。"}
+      ]
+    },
+    {
+      "type": "metrics",
+      "kicker": "RESULTS · 04",
+      "title": "模型越小，文化信息掉得越快",
+      "claim": "传统指标波动有限时，文化有效性已经显著下降；它揭示了旧指标看不见的退化。",
+      "metrics": [
+        {"value": "1,002", "label": "真实语境样本", "note": "覆盖多类社媒主题与表达方式"},
+        {"value": "4", "label": "文化表达类型", "note": "直白、隐喻、符号与混合表达"},
+        {"value": "↓", "label": "文化有效性", "note": "随模型规模缩小更快下降"}
+      ]
+    },
+    {
+      "type": "comparison",
+      "kicker": "READ THE RESULT · 05",
+      "title": "两种评估回答的不是同一个问题",
+      "columns": [
+        {"title": "传统指标", "body": "问译文和参考答案在词句层面有多相似，适合检查基础准确性。"},
+        {"title": "文化有效性", "body": "问目标读者是否真正接收到梗、语气、关系和情绪，适合检查传播效果。"}
+      ],
+      "claim": "两者应该互补，而不是用一个分数替代另一个。"
+    },
+    {
+      "type": "takeaway",
+      "kicker": "TAKEAWAY · 06",
+      "title": "社媒出海，不是把中文换成英文",
+      "claim": "真正要搬过去的是梗、语气、场景和情绪。",
+      "points": ["给创作者：检查外国读者是否真的看懂", "给平台：优化文化有效性而非只追求传统分数", "给研究者：把目标读者纳入评测"]
+    }
+  ]
+}

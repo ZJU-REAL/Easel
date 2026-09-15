@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>Seal</title>
+  <defs><linearGradient id="r" x1="8" y1="6" x2="56" y2="60"><stop stop-color="#FF5A70"/><stop offset=".48" stop-color="#FF2442"/><stop offset="1" stop-color="#D91535"/></linearGradient></defs>
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="url(#r)"/>
+  <path d="M17 15.5h30" stroke="#fff" stroke-opacity=".22" stroke-width="2" stroke-linecap="round"/>
+  <path d="M43 19H27a8 8 0 1 0 0 16h9a5 5 0 1 1 0 10H20" stroke="#fff" stroke-width="4.2" stroke-linecap="round"/>
+  <path d="m39 17 6 2-2 6" stroke="#fff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="49" r="2.2" fill="#fff" fill-opacity=".72"/>
+</svg>
