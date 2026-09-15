@@ -1,3 +1,4 @@
+﻿# 注意：本文件为 UTF-8 with BOM。Windows PowerShell 5.1 需 BOM 才能正确解析中文字符串（否则报「语法错误」）；请勿移除。
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Split-Path -Parent $MyInvocation.MyCommand.Path)).Path
 $Venv = Join-Path $Root '.venv'
