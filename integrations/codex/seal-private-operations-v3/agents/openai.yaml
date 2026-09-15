@@ -1,0 +1,4 @@
+interface:
+  display_name: "Seal 私人运营顾问 V3"
+  short_description: "跨 macOS 与 Windows 的 Codex 原生多平台运营工作台"
+  default_prompt: "启动 Seal 私人运营顾问 V3 工作台。"

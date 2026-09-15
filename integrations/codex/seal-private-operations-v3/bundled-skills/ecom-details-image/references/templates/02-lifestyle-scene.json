@@ -1,0 +1,53 @@
+{
+  "id": "lifestyle-scene",
+  "name": "场景化生活图",
+  "keywords": ["场景图", "生活图", "lifestyle", "使用场景", "生活场景", "场景化", "lifestyle photography"],
+  "trigger_phrases": ["场景图", "生活图", "使用场景图", "lifestyle photo", "产品场景", "生活化展示"],
+  "prompt_template": {
+    "type": "lifestyle product photography",
+    "subject": "{product_description}",
+    "setting": "{scene_description}",
+    "lighting": "natural {time_of_day} light",
+    "composition": "{composition_style}",
+    "mood": "{mood_description}",
+    "quality": "8K, editorial lifestyle photography"
+  },
+  "defaults": {
+    "setting": "modern living space, clean and organized",
+    "lighting": "natural morning light through window",
+    "composition": "rule of thirds, product as focal point",
+    "mood": "warm and inviting"
+  },
+  "variants": {
+    "morning": {
+      "description": "早晨清新氛围",
+      "overrides": { "setting": "bright room with sunlight streaming through window", "lighting": "soft morning golden light, visible dust particles", "mood": "fresh, clean, new beginning" }
+    },
+    "cozy": {
+      "description": "温馨舒适氛围",
+      "overrides": { "setting": "warm cozy interior, soft textiles, candles", "lighting": "warm ambient lighting, soft golden tones", "mood": "comfortable, intimate" }
+    },
+    "outdoor": {
+      "description": "户外自然场景",
+      "overrides": { "setting": "outdoor natural setting, organic elements", "lighting": "golden hour natural sunlight", "mood": "natural, free, adventurous" }
+    },
+    "luxury": {
+      "description": "奢华高端场景",
+      "overrides": { "setting": "luxury spa/hotel, marble and gold fixtures", "lighting": "cinematic lighting, warm color grading", "mood": "premium, sophisticated" }
+    }
+  },
+  "category_tips": {
+    "beauty": "bathroom vanity with botanical elements, skincare ritual feel",
+    "electronics": "modern desk setup, minimal aesthetic, tech-forward",
+    "food": "kitchen counter or dining table, fresh ingredients, warm tones",
+    "fashion": "urban street or boutique fitting room, model wearing the item",
+    "home": "styled room interior, product naturally placed"
+  },
+  "examples": [
+    "{product} naturally placed in {scene}, morning sunlight through window, botanical touches, warm atmosphere, professional lifestyle photography, 8K",
+    "Cinematic luxury interior with marble walls and gold fixtures. {product} prominently displayed. Morning sunlight through frosted glass. Fresh flowers. Cinematic depth of field, warm color grading, 8K",
+    "{product} in cozy setting, warm ambient lighting, soft textiles, golden hour tones, lifestyle photography, authentic atmosphere"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

@@ -1,0 +1,41 @@
+{
+  "style_name": "knowledge-card",
+  "display_name": "知识卡片",
+  "description": "结构化学习卡:顶部标题栏 + 2-5 个带编号的要点 + 底部小结 CTA。整体像学习 App 的复习卡。适合教程、要点提炼、方法论总结。",
+  "suitable_for": [
+    "learning-summary",
+    "method-framework",
+    "how-to-guide",
+    "checklist",
+    "study-notes",
+    "concept-breakdown"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#ffffff",
+    "primary": "#2563eb",
+    "accent": "#f59e0b",
+    "text": "#111827",
+    "secondary_text": "#6b7280",
+    "grid": "#e5e7eb"
+  },
+  "typography": {
+    "heading": "思源黑体 Bold / PingFang SC Semibold",
+    "body": "思源黑体 Regular",
+    "weight_contrast": "标题粗 + 要点中粗 + 说明 Regular"
+  },
+  "mood": ["organized", "educational", "clear", "professional", "calm", "reliable"],
+  "prompt_template": {
+    "newspic_card": "Generate a structured 'knowledge card' style Chinese card, 3:4 portrait. Clean white background with subtle light-gray (#e5e7eb) grid lines or divider rules. Top section: a bold Chinese title '{card_main}' in blue (#2563eb) with a small category tag ('知识卡 / 方法 / 技巧'). Middle section: 2 to 4 numbered points with round blue number badges, each point is a short Chinese sentence from '{card_sub}'. Bottom: a small highlighted conclusion line in amber (#f59e0b). Sans-serif fonts throughout (思源黑体 / PingFang SC). Feel: organized, reference-card, Anki / Notion aesthetic. No illustrations of people, no photos, no playful emoji.",
+    "article_inline": "Generate a structured Chinese knowledge-card illustration, 16:9. Clean white background with faint grid. Topic: '{image_subject}'. Use numbered points with blue (#2563eb) circular badges, clear Chinese sans-serif labels, amber (#f59e0b) for key highlights. Organized, reference-card feel. No photos, no people illustrations."
+  },
+  "example_reference": "(参考 Notion / Anki 闪卡 / 腾讯课堂专栏配图)",
+  "notes": "教程类、方法论类、清单类最好用这个。视觉识别度高,用户看一眼就知道是'要记的东西'。"
+}

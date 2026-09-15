@@ -1,0 +1,56 @@
+{
+  "style_name": "infographic-blue",
+  "display_name": "手绘信息图·冷蓝水彩",
+  "description": "冷蓝技术氛围的高密度中文手绘信息图。核心要求是信息密度高、中文层级清楚、手绘水彩和墨线质感明显。配色、布局、角色、图标、图表、终端元素和装饰都按内容自适应,不固定为同一套版式。适合 SDK 拆解、协议对比、基础设施、产品评测。",
+  "suitable_for": [
+    "tech-explainer",
+    "sdk-breakdown",
+    "product-comparison",
+    "infra-overview",
+    "protocol-spec",
+    "data-storytelling"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "9:16",
+    "newspic_size": "1080x1920",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#eaf2fb",
+    "paper": "#f7fbff",
+    "surface": "#d5e4f5",
+    "primary": "#2a62a8",
+    "primary_dark": "#13365e",
+    "accent": "#f58a3a",
+    "secondary": "#4fb1a8",
+    "secondary_alt": "#9b6bc4",
+    "secondary_warm": "#e8a24a",
+    "text": "#102a44",
+    "secondary_text": "#3e5876",
+    "divider": "#b7cce4",
+    "terminal_bg": "#0f1d30",
+    "terminal_text": "#d9e7ff"
+  },
+  "typography": {
+    "headline": "手写粗体 / 方正喵呜体 / ZCool KuaiLe / 可变粗宋体,带厚重描边",
+    "subtitle": "思源黑体 Heavy / PingFang SC Bold",
+    "body": "思源黑体 Regular / PingFang SC Regular",
+    "numbers": "圆润粗体数字(1-9 手写感)",
+    "terminal": "JetBrains Mono / Menlo"
+  },
+  "mood": ["technical", "analytical", "structured", "illustrated", "trustworthy", "information-dense"],
+  "visual_elements": {
+    "information_design": "每张卡都要根据要点选择合适的信息结构:架构图、协议栈、流程、对比、2x2 网格、数据小图表、终端片段、API 节点等。",
+    "illustration": "插画元素按内容选择,可以是人物、机器人、服务器、设备、网络节点、抽象图形或纯图表,不强制固定主角。",
+    "usage": "理性、技术可信和可读性优先,不要为了统一视觉而重复同一套角色和版式。"
+  },
+  "prompt_template": {
+    "newspic_card": "Generate a highly-detailed, information-dense Chinese infographic card in hand-drawn watercolor + ink illustration style. Aspect 9:16 portrait (1080x1920). Use a cool blue technical mood as the starting point, but adapt the exact palette, layout, composition, visual metaphors, characters, props, charts, icons, terminal elements, and decorations to the content. Do NOT use a fixed template.\n\nCONTENT:\n- Topic context: '{topic}'\n- Main card title: '{card_main}'\n- Supporting text: '{card_sub}'\n- Source bullet: '{point_full}'\n- Card {card_index} of {card_total}\n\nDESIGN REQUIREMENTS:\n- The card must be a high-density information graphic, not a simple poster or generic illustration.\n- Use hand-drawn watercolor washes, ink outlines, subtle paper texture, technical annotation marks, and clear Chinese typography.\n- Build a custom composition for this bullet. Choose only the components that fit: architecture diagram, protocol stack, flow path, comparison table, 2x2 insight grid, API node map, mini chart, command strip, sticky notes, tags, footer watermark, scene illustration.\n- Extract 3-6 concrete sub-points from the source bullet and render them as readable Chinese labels or small information blocks. Use real terms from the bullet; do not invent fake data unless the bullet clearly implies it.\n- Illustration elements are optional and content-driven: people, robot, servers, devices, network nodes, architecture diagrams, charts, or abstract icons may be used only if they help explain the idea. No mandatory recurring boy/robot.\n- Prioritize technical credibility, hierarchy, readability, and information density over decorative symmetry.\n\nSTYLE STARTING POINT:\n- Soft blue paper, navy headline, orange highlight, teal/purple secondary marks, dark terminal accents if useful. Adjust colors if the topic needs another cool technical variant.\n- Feel like a technical magazine rendered as a watercolor storybook page. Information density 9/10, technical credibility 9/10.\n\nSTRICT BANS: no stock photos, no 3D render, no flat corporate vector look, no large empty whitespace, no unreadable tiny text, no repeating the same layout on every card, no rendering instruction labels such as 'headline zone' or 'insight grid' as visible text.",
+    "article_inline": "Generate a hand-drawn watercolor + ink Chinese infographic illustration, 16:9 landscape. Topic: '{image_subject}'. Make it high-density but readable: clear Chinese title, 3-5 structured information blocks, architecture/flow/comparison/mini chart as needed, and content-specific technical elements. Cool blue editorial palette is a starting point, but adapt colors and layout to the topic. Characters are optional; use people, robot, servers, device, chart, protocol stack, or abstract icons only when useful. No fixed template, no flat vector, no 3D, no photos."
+  },
+  "example_reference": "https://mp.weixin.qq.com/s/nSlGjh9hjM63jxz_jgUCwA",
+  "notes": "冷调技术变体。适合需要展现理性/技术/商务气质的话题。要点里有具体数字、API 名字、版本号、架构名词时效果最好。共享的是高密度手绘信息图原则,不是固定角色或固定版式。"
+}

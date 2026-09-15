@@ -1,0 +1,45 @@
+{
+  "style_name": "slice-of-life",
+  "display_name": "生活手绘小漫画",
+  "description": "细钢笔线描 + 低饱和淡彩平涂 + 大量纸白留白,全图仅一处砖红点睛。顶部手写体旁白直译笑点,下方手绘场景配对话气泡与情绪小符号。治愈系生活手绘,warm、relatable、冷幽默。适合生活观察、打工人共鸣、段子文案、轻科普。区别于 meme-illustration(黄底粗描边夸张)和 illustrated-warm(暖橙渐变):本风格是中性留白 + 细墨线 + 克制淡彩。",
+  "suitable_for": [
+    "slice-of-life",
+    "relatable-observation",
+    "everyday-humor",
+    "gentle-commentary",
+    "story-cards",
+    "light-科普"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "4:3",
+    "article_size": "1200x900"
+  },
+  "palette": {
+    "background": "#fcfbf7",
+    "ink": "#2b2b2b",
+    "blue_grey": "#b9c9ce",
+    "cream": "#efe3bf",
+    "mid_grey": "#8a8d90",
+    "charcoal": "#3a3d42",
+    "accent_red": "#b83a2e",
+    "text": "#2b2b2b",
+    "outline": "#2b2b2b"
+  },
+  "typography": {
+    "heading": "中粗圆头马克笔手写体(站酷快乐体 / 庞门正道轻松体)",
+    "dialogue": "细手写体(小赖字体 / Muyao-Softbrush),气泡内用",
+    "sign": "规整黑体(思源黑体),仅用于画面里的招牌/路牌,制造真实感对比",
+    "weight_contrast": "旁白中粗手写 + 气泡细手写 + 招牌印刷黑体,三档对比"
+  },
+  "mood": ["warm", "relatable", "wry", "gentle", "humorous", "quiet", "slice-of-life"],
+  "prompt_template": {
+    "newspic_card": "Generate a hand-drawn slice-of-life cartoon card in Chinese, 3:4 portrait, on a warm off-white paper background (#fcfbf7) with generous empty white space. TOP third: a large narration line of Chinese text '{card_main}' in a bold rounded hand-written marker font (站酷快乐体 style), soft black ink (#2b2b2b), left-aligned on the white space. BOTTOM two-thirds: a loose casual hand-drawn scene that literally illustrates the narration. Drawing style: fine even black ink pen linework, slightly wobbly imperfect hand-drawn lines (NOT vector-clean, NOT thick bold outlines), short parallel pen-hatching for small shadows instead of solid shadow fills. Flat muted low-saturation coloring filled only inside objects, no background fill, no gradients. Color palette strictly muted and neutral: soft black ink #2b2b2b lines, muted blue-grey #b9c9ce, butter-cream #efe3bf, mid grey #8a8d90, charcoal #3a3d42 — and EXACTLY ONE tiny brick-red (#b83a2e) accent as the only saturated pop in the whole image. Gentle comic language: small radiating stroke marks near a character's head to show talking or surprise, thin speed lines behind anything moving, and a hand-drawn rounded speech bubble containing the short Chinese line '{card_sub}' in a thinner casual handwriting. Mood: relatable, warm, wry everyday-life humor, 治愈系生活小漫画. Absolutely NO saturated vivid colors, NO gradients, NO digital vector clean lines, NO thick bold outlines, NO photorealism, NO 3D render, NO glossy highlights, NO heavy drop shadows, NO busy background, NO anime shiny eyes, NO Corporate Memphis flat minimalism.",
+    "article_inline": "Generate a hand-drawn slice-of-life cartoon scene in Chinese, 4:3 landscape, on a warm off-white paper background (#fcfbf7) with lots of white negative space. Topic: '{image_subject}'. Fine even black ink pen linework, slightly wobbly imperfect hand-drawn lines (not vector, not thick outlines), short parallel pen-hatching for shadows. Flat muted low-saturation coloring inside objects only, no background fill, no gradients. Muted neutral palette (blue-grey #b9c9ce, butter-cream #efe3bf, mid grey #8a8d90, charcoal #3a3d42) with EXACTLY ONE tiny brick-red (#b83a2e) accent as the only saturated pop. Include a small hand-drawn rounded speech bubble with short Chinese text, small radiating emotion marks and thin speed lines where fitting. Warm, wry, relatable everyday-life feel. No saturated colors, no gradients, no 3D, no photorealism, no thick outlines, no anime, no Corporate Memphis."
+  },
+  "example_reference": "参考:小红书/公众号治愈系生活手绘小漫画(电动车'前面查头盔'同款语言)",
+  "notes": "视觉指纹 = '细墨线 + 中性淡彩 + 单点红 + 大留白 + 手写旁白直译笑点'。三条铁律:(1)全图饱和度压低,只允许一个砖红小色点,多加就俗;(2)线条要细、要有手抖感,画太干净就丢了治愈感;(3)背景纯白留白,不要铺底色。⚠️ 中文字体一致性:生图模型渲染中文长句每张字形都会飘,要真正字体一致就走'无字插画 + 后期叠字'——旁白用固定手写体(站酷快乐体)、招牌用思源黑体,用 HTML/canvas 或 PIL 叠。若一步到位出中文,把文案压到 ≤12 字、放纯白区可降低出错率。文案笑点公式:拿一个共同经历的小尴尬/小团结,用一句反差冷幽默说出来,再让画面直译那句话。"
+}

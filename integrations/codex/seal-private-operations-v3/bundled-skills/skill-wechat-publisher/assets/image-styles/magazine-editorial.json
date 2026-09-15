@@ -1,0 +1,40 @@
+{
+  "style_name": "magazine-editorial",
+  "display_name": "杂志编辑风",
+  "description": "米色暖底 + 衬线大标题 + 栏位感排版,像杂志内页。带点栗色和墨绿点缀。适合深度评论、行业观察、专栏观点。",
+  "suitable_for": [
+    "opinion-essay",
+    "industry-commentary",
+    "column-series",
+    "long-form-review",
+    "cultural-reflection",
+    "thoughtful-analysis"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "4:5",
+    "newspic_size": "1080x1350",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#f5efe6",
+    "primary": "#7a2e2e",
+    "accent": "#4a5d3a",
+    "text": "#2a2520",
+    "secondary_text": "#7d746b"
+  },
+  "typography": {
+    "heading": "衬线中文 Heavy(思源宋体 Heavy / 方正雅宋)",
+    "body": "衬线中文 Regular(思源宋体)",
+    "weight_contrast": "大标题粗衬线 + 小字 Regular 衬线"
+  },
+  "mood": ["sophisticated", "editorial", "warm", "literary", "analog", "thoughtful"],
+  "prompt_template": {
+    "newspic_card": "Generate a magazine-editorial style Chinese card, 4:5 portrait. Warm cream paper background (#f5efe6) with faint paper texture. Layout: a tiny column-number or issue-number in top-left corner (e.g. 'VOL. 03 / 2026'), then a large Chinese serif headline '{card_main}' (思源宋体 Heavy, deep warm brown #2a2520), then a horizontal hairline rule, then a short supporting text '{card_sub}' in smaller serif. Accent color: maroon (#7a2e2e) or forest green (#4a5d3a) applied to a single small decorative mark only. Generous margins. Feel: print magazine interior, The Monocle / The New York Times Magazine aesthetic. No photos, no illustrations, no bright colors.",
+    "article_inline": "Generate a magazine-editorial Chinese illustration, 16:9. Warm cream background (#f5efe6). Topic: '{image_subject}'. Use serif Chinese typography for any labels. Add a small grid or a minimal diagram with hairline rules. Maroon (#7a2e2e) or forest green (#4a5d3a) accents in moderation. Sophisticated, print-era aesthetic. No photos, no 3D."
+  },
+  "example_reference": "(参考 The Monocle / The New York Times Magazine 内页)",
+  "notes": "适合给一篇长篇深度稿做视觉统一。和 sage-premium / warm-editorial 主题搭配效果最好。"
+}

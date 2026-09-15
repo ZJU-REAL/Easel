@@ -1,0 +1,45 @@
+{
+  "style_name": "illustrated-warm",
+  "display_name": "暖色插画叙事",
+  "description": "暖橙/桃色渐变底 + 卡通人物场景 + 对话气泡 + 手绘装饰。每张卡像一页小漫画,讲一个小故事。适合体验讲解、使用指南、亲切感强的技巧分享。视觉有温度、带情绪、有人物。",
+  "suitable_for": [
+    "experience-sharing",
+    "usage-guide-friendly",
+    "story-cards",
+    "tips-with-scenario",
+    "editorial-illustration",
+    "tool-recommendation"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "4:3",
+    "article_size": "1200x900"
+  },
+  "palette": {
+    "background_gradient": ["#ffd9b3", "#ffb38a", "#ffa07a"],
+    "primary": "#d97706",
+    "character_skin": "#fbcea0",
+    "character_hair": "#3d2817",
+    "accent_teal": "#4ecdc4",
+    "accent_purple": "#a78bfa",
+    "accent_yellow": "#fde047",
+    "text": "#2a1810",
+    "outline": "#2d1810"
+  },
+  "typography": {
+    "heading": "粗圆体中文(庞门正道 / 站酷酷黑)",
+    "body": "手写风中文(江城律动黑 / 楷体)",
+    "bubble": "圆润手写体,粗而亲切",
+    "weight_contrast": "标题超粗 + 气泡文字中粗"
+  },
+  "mood": ["warm", "playful", "inviting", "narrative", "human", "editorial", "approachable"],
+  "prompt_template": {
+    "newspic_card": "Generate a warm illustrated narrative card in Chinese, 3:4 portrait. Warm peach-to-orange gradient background (#ffd9b3 → #ffa07a). A cute cartoon character (a young person with clear simple facial features, expressive eyes, a friendly smile, messy casual hair, wearing casual clothes like a sweater; flat-color editorial illustration style similar to The New Yorker magazine illustrations — NOT anime, NOT Corporate Memphis minimalism) positioned to one side, interacting with a laptop or notebook. A large rounded speech bubble contains the Chinese title '{card_main}' in a bold rounded hand-written font (站酷酷黑 style), in deep warm brown (#2a1810). Below or beside: smaller supporting sentence '{card_sub}' also in a smaller speech bubble or caption. Sprinkle small decorative elements: hand-drawn yellow sparkles, tiny purple (#a78bfa) or teal (#4ecdc4) stars, a small code-snippet sticker, maybe a coffee cup or a lightbulb. All outlined with a thin dark brown line. Feel: warm, narrative, like a page from an illustrated how-to guide. No photos, no 3D, no realistic people, no gradients that are too slick.",
+    "article_inline": "Generate a warm illustrated scene in Chinese, 4:3 landscape. Warm peach-to-orange gradient background. Topic: '{image_subject}'. A cute cartoon character illustration in editorial illustration style (not anime, not Corporate Memphis) in a scene relevant to the topic. Include speech bubbles with Chinese text, small hand-drawn decorations (sparkles, stars, stickers), thin dark brown outlines. Warm, narrative, approachable feel. No photos, no 3D, no realistic people."
+  },
+  "example_reference": "https://mp.weixin.qq.com/s/erEF74HRGkrBPxTGsKDsSQ",
+  "notes": "视觉指纹是'人物 + 场景 + 气泡 + 温度'。如果话题本身是冷的(数据 / 架构 / 协议),换成 hand-drawn-blue 或 data-chart。这个风格的卖点是'有人讲给你听'的感觉 —— 别用在不讲故事的内容上。"
+}
