@@ -5,6 +5,9 @@
 每个平台是一份「步骤配置」（登录页 / 发布页 / 选择器步骤），共用同一套 Playwright 引擎。
 登录态用持久化 user-data-dir 保存，扫码/登录一次后复用。
 
+发布结果判定：界面信号（URL/toast）只作旁证——已接入读回对账的平台（快手），发布后回作品
+管理页读本人作品列表对账（标题+时间窗），`verified` 才算成功，其余档位绝不冒报（先别重发）。
+
 ⚠️ 环境依赖（真实发布需具备，缺则不可用——同 skill-xhs-publisher 定位）：
     - playwright（`pip install playwright`）+ 浏览器内核（`playwright install chromium`）
     - 目标平台已登录（首次 `login` 打开有头浏览器扫码/登录，持久化到 profile 目录）
@@ -33,6 +36,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import login_state  # noqa: E402
 import content_guard  # noqa: E402  出站内容安全闸门
+import platform_readback  # noqa: E402  发布读回对账（快手已接入，注册表见 _READBACK_VERIFIERS）
+import human_pace  # noqa: E402  人类节奏（提交前双停顿；EASEL_PACE_SKIP=1 跳过）
 
 # ── 平台配置注册表 ────────────────────────────────────────────────────
 # 每个步骤：{"action": goto|upload|fill|click|wait|press|waitfor, "selector"?, "value"?}
@@ -131,7 +136,8 @@ PLATFORMS: dict[str, dict] = {
             # 选择器多候选逐一尝试：优先容器内 button-primary，回退到非导航栏（非 publish-button 容器）的 button-primary。
             # 勿点右上角『发布作品』（class=publish-button，是下拉菜单不是提交按钮）。
             # 另：快手话题标签最多 4 个，超限报错 '话题标签数量超过上限：4'。
-            {"action": "js_click",
+            # commit=True：读回对账的时间窗基准——执行到本步时记录「提交动作」时间戳
+            {"action": "js_click", "commit": True,
              "selector": "[class*=_edit-section-btns] [class*=button-primary], [class*=button-primary]:not([class*=publish-button] *)"},
             {"action": "wait", "value": "8000"},
             # 点发布后可能弹二次确认弹窗——optional
@@ -177,6 +183,8 @@ PLATFORMS: dict[str, dict] = {
         ],
         # 发布成功校验：成功后离开发布页 / 出现成功 toast（避免"点了发布=成功"的假阳性）
         "publish_success": {"url_not_contains": "publish/video", "selector": "text=发布成功"},
+        # 读回对账（权威判定）：发布后回作品管理页读本人作品列表，标题+时间窗对上才算成功
+        "readback": True,
         "selector_caveat": "快手创作者中心发布页；上传后转码才出编辑表单（描述框 DIV，占位『作品描述…』）；"
                            "真发布按钮在表单底部：div[class*=button-primary]『发布』（品牌红，非 <button>；"
                            "注意别点左侧导航的『发布作品』菜单）。点发布后可能弹二次确认（已加 optional）。"
@@ -480,6 +488,66 @@ def _publish_weixin_channels(page, ctx: dict) -> None:
     page.wait_for_timeout(3000)
 
 
+# ── 发布读回对账（platform_readback）──────────────────────────────────
+# 配 readback 的平台：发布后回创作者后台读本人作品列表对账（标题+时间窗）——
+# 平台侧证据才是权威成功判定，界面判定（URL/toast）只作旁证。
+# 新增平台：实现 platform_readback 的 capture_<平台>_snapshot / verify_<平台>_publish 后在此登记。
+_READBACK_VERIFIERS: dict[str, tuple[str, str]] = {
+    "kuaishou": ("capture_kuaishou_snapshot", "verify_kuaishou_publish"),
+}
+
+_READBACK_FAIL_HINTS = {
+    "unverified": "读回未核实（多轮读作品列表未见本次作品，可能索引延迟/审核队列）——先别重发，"
+                  "到创作者中心确认是否已发出",
+    "login_required": "读回时登录态已失效——发布结果未知，请重新登录后到创作者中心核对（先别重发）",
+    "readback_error": "读回通道失败——发布结果未确认，请到创作者中心人工核对（先别重发）",
+}
+
+
+def _readback_fn(platform: str, which: int):  # noqa: ANN001
+    """取平台读回函数：which=0 发前快照 / 1 发布后核验；未登记返回 None。"""
+    entry = _READBACK_VERIFIERS.get(platform)
+    if not entry:
+        return None
+    return getattr(platform_readback, entry[which], None)
+
+
+def _readback_capture(platform: str, page) -> set[str]:  # noqa: ANN001
+    """发前快照：读当前作品 id 集（读回时排除旧作品）。失败返回空集（退化为标题+时间窗）。"""
+    fn = _readback_fn(platform, 0)
+    if fn is None:
+        return set()
+    try:
+        return set(fn(page) or set())
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ 发前快照失败（读回将只用标题+时间窗）：{e}", file=sys.stderr)
+        return set()
+
+
+def _readback_verify(platform: str, page, *, title: str, since_ms: int | None,  # noqa: ANN001
+                     snapshot_ids: set[str] | None):
+    """发布后读回核验（权威判定）。返回 platform_readback.ReadbackResult；不抛异常。"""
+    fn = _readback_fn(platform, 1)
+    if fn is None:
+        return platform_readback.ReadbackResult(
+            outcome="readback_error", error=f"{platform} 未登记读回核验函数")
+    try:
+        return fn(page, title=title, since_ms=since_ms, limit=20,
+                  attempts=3, delay_s=10, snapshot_ids=snapshot_ids)
+    except Exception as e:  # noqa: BLE001
+        return platform_readback.ReadbackResult(outcome="readback_error", error=str(e))
+
+
+def _readback_evidence_summary(verdict) -> str:  # noqa: ANN001
+    ev = getattr(verdict, "evidence", None) or {}
+    parts = []
+    if ev.get("attempts"):
+        parts.append(f"轮数 {ev.get('attempts')}")
+    if ev.get("count") is not None:
+        parts.append(f"最近列表 {ev.get('count')} 条")
+    return f"（读回证据：{'，'.join(parts)}）" if parts else ""
+
+
 def _run_browser(a, headed: bool, do_publish: bool) -> int:
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -511,15 +579,36 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
         # 发布前登录预检：未登录时发布页会被重定向到落地页，后续 upload 找不到 input 会晦涩超时——提前明确报错
         try:
             page.goto(cfg["publish_url"], wait_until="domcontentloaded")
-            _settle_login(page, cfg)  # 等客户端跳转落定，避免 SPA 未跳转期误判已登录（否则后续 upload 撞登录页超时）
         except Exception:
             pass
-        if not _is_logged_in(page, cfg):
+        # 快手等 SPA 发布页外壳（login_check 选择器）渲染偏慢，实测 5–10s+- 不等；
+        # 单次 _settle_login(7s) 输给渲染会误判未登录（strict 模式下选择器不命中即未登录）→
+        # 重复 settle + 判定数轮，给慢渲染的登录外壳足够时间，绝不因竞态把有效会话判成未登录。
+        logged = False
+        for _i in range(4):
+            try:
+                _settle_login(page, cfg)  # 等客户端跳转/登录外壳渲染落定
+            except Exception:
+                pass
+            if _is_logged_in(page, cfg):
+                logged = True
+                break
+            try:
+                page.wait_for_timeout(1500)
+            except Exception:
+                break
+        if not logged:
             _die(f"{cfg['name']}未登录：发布页被重定向到登录/落地页。请先在账号页扫码登录后重试。", 6)
         # 外壳已登录但发布子系统鉴权可能已失效（快手 onvideo token 短命）→ 提前明确报错，
         # 避免后续 upload 因发布态失效而晦涩超时。仅明确失效才拦，瞬时错误放行。
         if cfg.get("login_probe") and _probe_publish_auth(page, cfg) == "expired":
             _die(f"{cfg['name']}登录态已失效（发布子系统未授权）：外壳虽显示已登录，但发布上传鉴权已过期。请在账号页重新扫码登录后重试。", 6)
+        # 读回平台：发前快照（读回时排除旧作品的硬证据；失败不影响发布）
+        snapshot_ids: set[str] = set()
+        if cfg.get("readback"):
+            snapshot_ids = _readback_capture(a.platform, page)
+        submitted_at_ms: int | None = None   # 「提交动作」时间戳（commit 标记步记录，读回时间窗基准）
+        flow_started_ms = int(time.time() * 1000)
         try:
             if a.platform == "weixin-channels":
                 # 视频号走专用流程（SPA 导航 + iframe 创作器），通用 steps 不适用 → 跳过
@@ -531,6 +620,12 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                 val = s.get("value", "")
                 opt = s.get("optional", False)  # 可选步骤失败不中断（如清理旧草稿弹窗）
                 print(f"  步骤 {i}/{len(steps)}: {act} {sel}", file=sys.stderr)
+                if s.get("commit") and submitted_at_ms is None:
+                    submitted_at_ms = int(time.time() * 1000)
+                    print("  ⏱ 提交步（读回时间窗基准已记录）", file=sys.stderr)
+                    # 单次提交契约 × 人类节奏：提交前「复核 + 反应」双停顿（human_pace）
+                    human_pace.pause_before_commit(
+                        len(str(ctx.get("title") or "")) + len(str(ctx.get("desc") or "")))
                 try:
                     if act == "goto":
                         page.goto(val)
@@ -625,23 +720,46 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                         print(f"    (可选步骤跳过：{e})", file=sys.stderr)
                         continue
                     raise
-            # 发布结果校验（配置了 publish_success 才验；未配的平台沿用"跑完即报"）
+            # 发布结果校验（界面层，旁证）：配置了 publish_success 才验；未配的平台沿用"跑完即报"
             chk = cfg.get("publish_success")
+            ui_ok = False
             if chk:
-                ok = False
                 deadline = time.time() + 30
                 while time.time() < deadline:
                     url = (page.url or "").lower()
                     uc, unc = chk.get("url_contains"), chk.get("url_not_contains")
                     if uc or unc:  # 支持纯 url_not_contains（发布成功后离开发布页）
                         if (uc in url if uc else True) and (unc not in url if unc else True):
-                            ok = True
+                            ui_ok = True
                             break
                     if chk.get("selector") and page.query_selector(chk["selector"]):
-                        ok = True
+                        ui_ok = True
                         break
                     page.wait_for_timeout(500)
-                if not ok:
+            # 读回对账（权威判定）：回到作品管理页读本人作品列表，标题+时间窗对上才算成功。
+            # 界面判定只作旁证；四档结算（verified 才成功），未核实绝不冒报成功、不许盲目重发。
+            if cfg.get("readback") and a.platform in _READBACK_VERIFIERS:
+                verdict = _readback_verify(a.platform, page, title=ctx.get("title") or "",
+                                           since_ms=submitted_at_ms or flow_started_ms,
+                                           snapshot_ids=snapshot_ids)
+                if verdict.outcome != "verified":
+                    try:  # 失败留现场，供排错
+                        fp = Path(__file__).resolve().parents[3] / "outputs" / "_login" / f"{a.platform}-publish-fail.png"
+                        fp.parent.mkdir(parents=True, exist_ok=True)
+                        page.screenshot(path=str(fp))
+                    except Exception:
+                        pass
+                    _ui = "界面判定通过" if ui_ok else "界面判定未通过"
+                    _ev = _readback_evidence_summary(verdict)
+                    _die(f"{cfg['name']}：{_ui}；{_READBACK_FAIL_HINTS.get(verdict.outcome, '读回未通过——发布结果未确认')}"
+                         f"{_ev}（{verdict.error or ''}）",
+                         6 if verdict.outcome == "login_required" else 5)
+                m = verdict.matched
+                _acct = (verdict.evidence or {}).get("account") or {}
+                _who = f"；账号：{_acct.get('display_name')}" if _acct.get("display_name") else ""
+                print(f"✅ {cfg['name']}发布成功（读回核验：作品 {m.platform_content_id}，{m.status or 'published'}{_who}）")
+            elif chk:
+                if not ui_ok:
                     try:  # 仅失败时截图，供排错（正常成功不截）
                         fp = Path(__file__).resolve().parents[3] / "outputs" / "_login" / f"{a.platform}-publish-fail.png"
                         fp.parent.mkdir(parents=True, exist_ok=True)
@@ -1246,6 +1364,38 @@ def cmd_selftest(_a) -> int:
     assert joyride_steps[-1] < pub_click_index, "最后一次 joyride 清理必须在发布点击前"
     assert "button-primary" in pub_click["selector"], \
         "快手发布按钮应为 [class*=button-primary]『发布』（走 js_click 派发；非 <button>，非导航『发布作品』）"
+    # 读回对账（platform_readback）接入：配置标记 + 注册表 + 提交步时间戳 + 离线解析冒烟
+    assert PLATFORMS["kuaishou"].get("readback") is True, "快手应标记 readback=True（发布后读回对账）"
+    assert callable(_readback_fn("kuaishou", 0)) and callable(_readback_fn("kuaishou", 1)), \
+        "kuaishou 读回函数应在 platform_readback 中存在并登记"
+    for _fn in ("capture_kuaishou_snapshot", "verify_kuaishou_publish",
+                "read_kuaishou_works", "read_kuaishou_account"):
+        assert callable(getattr(platform_readback, _fn, None)), f"platform_readback 缺 {_fn}"
+    commit_steps = [s for s in ks if s.get("commit")]
+    assert len(commit_steps) == 1 and commit_steps[0] is pub_click, \
+        "应有且仅有一个 commit 标记步（且为真发布按钮步）——读回时间窗基准"
+    # 单次提交契约 × 人类节奏：commit 步触发提交前双停顿（human_pace，静态检查）
+    import inspect as _ins
+    assert "pause_before_commit" in _ins.getsource(_run_browser), \
+        "提交步应触发 human_pace.pause_before_commit（复核+反应双停顿）"
+    assert callable(getattr(human_pace, "pause_before_commit", None))
+    _rb_now = int(time.time() * 1000)
+    _rb_fake = [{"url": "https://cp.kuaishou.com/rest/cp/works/v2/video/pc/photo/list", "data": {
+        "data": {"list": [
+            {"photo_id": "3xrb001", "caption": "读回对账自检标题十二字附言",
+             "create_time": _rb_now // 1000, "status_name": "已发布", "play_count": 12, "like_count": 3},
+            {"photo_id": "3xrb002", "caption": "无关旧作品",
+             "create_time": (_rb_now - 86_400_000) // 1000},
+        ], "total": 2}}}]
+    _rb_arr = platform_readback._find_content_array(_rb_fake, platform_readback.KUAISHOU_ID_KEYS)
+    assert len(_rb_arr) == 2 and _rb_arr[0]["photo_id"] == "3xrb001", "快手作品数组解析失败"
+    _rb_item = platform_readback._map_kuaishou_item(_rb_arr[0])
+    assert _rb_item and _rb_item.platform_content_id == "3xrb001"
+    assert "读回对账自检" in _rb_item.title and _rb_item.status == "已发布"
+    assert _rb_item.published_at_ms == (_rb_now // 1000) * 1000
+    assert platform_readback.find_published_work([_rb_item], "读回对账自检", since_ms=_rb_now - 300_000) is _rb_item
+    assert platform_readback.find_published_work(
+        [_rb_item], "读回对账自检", since_ms=None, exclude_ids={"3xrb001"}) is None, "发前快照排除应生效"
     # 视频流程平台的媒体类型标记（快手/视频号只收视频，给图片会晦涩超时）
     assert PLATFORMS["kuaishou"].get("media_kind") == "video", "快手应标记 media_kind=video"
     assert ".mp4" in VIDEO_EXTS and ".png" not in VIDEO_EXTS
@@ -1265,7 +1415,7 @@ def cmd_selftest(_a) -> int:
     # SPA 客户端跳转落定后再判登录态（修视频号未跳转期 URL 启发式误报已登录的假阳性）
     assert callable(_settle_login), "缺 _settle_login（判登录态前等客户端跳转落定）"
     print(f"✅ selftest 通过（{len(PLATFORMS)} 平台配置完整 + 步骤/占位符解析 + 路由 + 登录轮询/深探 "
-          "+ 二维码打分/iframe 截取 + 多候选/快手健壮化）")
+          "+ 二维码打分/iframe 截取 + 多候选/快手健壮化 + 读回对账（快手））")
     return 0
 
 

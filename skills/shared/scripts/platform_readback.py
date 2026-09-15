@@ -3,7 +3,8 @@
 
 发布后回到创作者中心**读本人作品列表**，与本次发布对账（标题 + 时间窗），
 对上才算「已发布」。协议取自生产级发布引擎的读回对账实践：
-抖音 = 页面内 fetch work_list 接口（同域、登录态随 cookie 走），小红书 = 捕获
+抖音 = 页面内 fetch work_list 接口（同域、登录态随 cookie 走），快手 = 捕获
+作品管理页自身发出的 XHR（借页面生成参数/签名，不复刻请求），小红书 = 捕获
 页面自身签名响应（待补）。原则：没有平台侧证据时保留「未核实」，
 不凭脚本结束声明已提交。
 
@@ -367,6 +368,341 @@ def verify_douyin_publish(page, *, title: str, since_ms: int | None = None,
             return ReadbackResult(outcome="verified", matched=matched,
                                   candidates=works[:5], evidence=evidence)
         print(f"… 读回第 {i + 1}/{attempts} 轮：列表 {len(works)} 条未见本次作品", file=sys.stderr)
+        if i + 1 < attempts:
+            time.sleep(delay_s)
+    if last_error is not None and not last_candidates:
+        return ReadbackResult(outcome="readback_error", evidence=evidence, error=str(last_error))
+    return ReadbackResult(outcome="unverified", candidates=last_candidates[:5], evidence=evidence)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 快手读回（创作者中心）
+#
+# 快手接口参数带构建签名，不复刻请求：导航到作品管理页，捕获页面自身发出的
+# JSON 响应（借页面的手——参数/签名随页面自然生成），从响应里找「作品列表
+# 数组」（按 id 键计分选最优）映射为统一 WorkItem。
+# ═══════════════════════════════════════════════════════════════════════
+
+KUAISHOU_MANAGE_URL = "https://cp.kuaishou.com/article/manage/video"
+KUAISHOU_CAPTURE_PATTERNS = ("article", "video", "photo", "creator", "account", "user", "rest", "works")
+KUAISHOU_ID_KEYS = ("photo_id", "photoId", "video_id", "videoId", "work_id", "workId", "id")
+KUAISHOU_TITLE_KEYS = ("title", "caption", "description", "desc", "name")
+KUAISHOU_TIME_KEYS = ("publish_time", "publishTime", "create_time", "createTime",
+                      "created_at", "upload_time", "time")
+KUAISHOU_ACCOUNT_ID_KEYS = ("user_id", "userId", "author_id", "authorId", "kwai_id", "kwaiId", "uid")
+KUAISHOU_ACCOUNT_NAME_KEYS = ("nickname", "user_name", "userName", "display_name", "name")
+# 已知「登录态失效」result 码（外壳 token 活着但模块未授权时返回）
+KUAISHOU_LOGOUT_RESULTS = (109, 100110000)
+
+
+def _capture_json_responses(page, navigate_url: str, url_includes_any: tuple[str, ...],  # noqa: ANN001
+                            *, wait_ms: int = 12000,
+                            wait_urls_any: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """导航到目标页并捕获页面自身发出的 JSON 响应（借页面的手：参数/签名随页面生成）。
+
+    等待策略：最多等 wait_ms；给了 wait_urls_any 时，一旦捕获到命中该子串的响应即提前
+    结束（+800ms 让同批响应落地）——目标接口出现即走，不等满窗口。
+    监听器只收集响应对象、遍历时再读 body——单条读不到就跳过（捕获而非构造，容忍缺失）。
+    返回 [{"url", "data"}]（仅 200 且能解析 JSON 的响应）。
+    """
+    collected: list[Any] = []
+
+    def _on_response(resp) -> None:  # noqa: ANN001
+        try:
+            url = resp.url or ""
+        except Exception:  # noqa: BLE001
+            return
+        if any(p in url for p in url_includes_any):
+            collected.append(resp)
+
+    def _hit_target() -> bool:
+        if not wait_urls_any:
+            return False
+        for r in collected:
+            try:
+                u = r.url or ""
+            except Exception:  # noqa: BLE001
+                continue
+            if any(w in u for w in wait_urls_any):
+                return True
+        return False
+
+    page.on("response", _on_response)
+    try:
+        page.goto(navigate_url, wait_until="domcontentloaded")
+        deadline = time.time() + max(0.5, wait_ms / 1000)
+        while time.time() < deadline:
+            if _hit_target():
+                page.wait_for_timeout(800)
+                break
+            page.wait_for_timeout(300)
+    finally:
+        try:
+            page.remove_listener("response", _on_response)
+        except Exception:  # noqa: BLE001
+            pass
+    out: list[dict[str, Any]] = []
+    for resp in collected:
+        try:
+            if int(resp.status) != 200:
+                continue
+            out.append({"url": resp.url, "data": resp.json()})
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def _record_values(root: Any, depth: int = 0) -> list[dict[str, Any]]:
+    """深度优先收集 JSON 里的全部 dict 记录（限深防环）。"""
+    if depth > 7 or not isinstance(root, (dict, list)):
+        return []
+    if isinstance(root, list):
+        out: list[dict[str, Any]] = []
+        for item in root:
+            out.extend(_record_values(item, depth + 1))
+        return out
+    out = [root]
+    for value in root.values():
+        out.extend(_record_values(value, depth + 1))
+    return out
+
+
+def _first_value(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = record.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _find_content_array(responses: list[dict[str, Any]],
+                        id_keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    """在捕获响应里找「作品记录数组」：按含 id 键的记录数计分，取最优数组。"""
+    arrays: list[tuple[int, int, list[dict[str, Any]]]] = []
+
+    def _visit(value: Any, depth: int = 0) -> None:
+        if depth > 7 or not isinstance(value, (dict, list)):
+            return
+        if isinstance(value, list):
+            records = [r for r in value if isinstance(r, dict)]
+            score = sum(1 for r in records if _first_value(r, id_keys) is not None)
+            if records and score > 0:
+                arrays.append((score, len(records), records))
+            for item in value:
+                _visit(item, depth + 1)
+            return
+        for item in value.values():
+            _visit(item, depth + 1)
+
+    for resp in responses:
+        _visit(resp.get("data"))
+    if not arrays:
+        return []
+    arrays.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return arrays[0][2]
+
+
+def _map_kuaishou_item(raw: dict[str, Any]) -> WorkItem | None:
+    """作品记录 → WorkItem（缺 id 的记录跳过）。"""
+    pid = _first_value(raw, KUAISHOU_ID_KEYS)
+    if pid is None:
+        return None
+    raw_status = _first_value(raw, ("status_name", "publish_status", "status"))
+    if isinstance(raw_status, dict):
+        raw_status = (raw_status.get("name") or raw_status.get("text")
+                      or raw_status.get("desc") or raw_status)
+    stats_in = raw.get("statistics") if isinstance(raw.get("statistics"), dict) else raw
+    return WorkItem(
+        platform_content_id=str(pid).strip(),
+        title=str(_first_value(raw, KUAISHOU_TITLE_KEYS) or "").strip(),
+        status=(str(raw_status).strip() if raw_status is not None else ""),
+        published_at_ms=_epoch_ms(_first_value(raw, KUAISHOU_TIME_KEYS)),
+        stats={
+            "play_count": _int_or_none(_first_value(
+                stats_in, ("play_count", "playCount", "view_count", "viewCount", "go_detail_count"))),
+            "like_count": _int_or_none(_first_value(
+                stats_in, ("like_count", "likeCount", "digg_count", "real_like_count", "realLikeCount"))),
+            "comment_count": _int_or_none(_first_value(
+                stats_in, ("comment_count", "commentCount"))),
+        },
+    )
+
+
+def _find_kuaishou_identity(responses: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """从捕获响应里找本人账号身份（同时有 id 与昵称的记录；同账号多来源按字段补全）。"""
+    base: dict[str, Any] | None = None
+    for resp in responses:
+        for record in _record_values(resp.get("data")):
+            rid = _first_value(record, KUAISHOU_ACCOUNT_ID_KEYS)
+            name = _first_value(record, KUAISHOU_ACCOUNT_NAME_KEYS)
+            if rid is None or not name:
+                continue
+            cand = {
+                "platform_account_id": str(rid),
+                "display_name": str(name).strip(),
+                "username": (str(_first_value(record, ("username", "user_name", "unique_id", "short_id",
+                                                       "kwai_id", "kwaiId")) or "").strip() or None),
+                "fans_count": _int_or_none(_first_value(
+                    record, ("fans_count", "fansCount", "fansNum", "follower_count", "followers_count", "fans"))),
+                "following_count": _int_or_none(_first_value(
+                    record, ("following_count", "follow_count", "followingCount"))),
+                "work_count": _int_or_none(_first_value(
+                    record, ("work_count", "works_count", "post_count", "content_count"))),
+            }
+            if base is None:
+                base = cand
+                continue
+            # 同一账号的多来源记录 → 补齐缺失字段（如作品页 userInfo 里的粉丝数）
+            if str(cand["platform_account_id"]) == str(base["platform_account_id"]):
+                for k, v in cand.items():
+                    if base.get(k) is None and v is not None:
+                        base[k] = v
+    return base
+
+
+def _kuaishou_assert_logged_in(page) -> None:  # noqa: ANN001
+    try:
+        landed = (page.url or "").lower()
+    except Exception:  # noqa: BLE001
+        landed = ""
+    if "passport" in landed or "login" in landed:
+        raise LoginRequiredError(f"会话已失效（跳转登录页：{landed[:120]}）")
+
+
+def _extract_kuaishou_photo_list(responses: list[dict[str, Any]]) -> tuple[list[Any] | None, int | None]:
+    """从 photo/list 响应直取作品数组（快手作品管理页实锤口径：data.list + data.total）。"""
+    for resp in responses:
+        if "photo/list" not in (resp.get("url") or ""):
+            continue
+        d = resp.get("data")
+        if not isinstance(d, dict):
+            continue
+        data = d.get("data") if isinstance(d.get("data"), dict) else {}
+        lst = data.get("list")
+        if isinstance(lst, list):
+            return lst, _int_or_none(data.get("total"))
+    return None, None
+
+
+def read_kuaishou_works(page, *, limit: int = 20, wait_ms: int = 25000) -> list[WorkItem]:
+    """读快手创作者中心作品列表（捕获页面自身 XHR——参数/签名随页面生成，不复刻请求）。
+
+    优先直取作品管理页的 photo/list 响应（data.list/data.total 实锤口径，接口出现即提前结束
+    等待）；该响应缺席时才退回通用「作品数组计分」扫描（页面改版兜底）。
+    登录失效 → raise LoginRequiredError；通道故障/页面改版 → RuntimeError（不把失败伪装成空列表）。
+    显式 total=0 / 空数组 → 返回空列表（合法的「暂无作品」）。
+    """
+    limit = max(1, min(50, int(limit or 20)))
+    url = f"{KUAISHOU_MANAGE_URL}?page=1&currentPage=1&pageSize={limit}"
+    responses = _capture_json_responses(page, url, KUAISHOU_CAPTURE_PATTERNS,
+                                        wait_ms=wait_ms, wait_urls_any=("photo/list",))
+    _kuaishou_assert_logged_in(page)
+    if not responses:
+        raise RuntimeError("创作者后台没有返回可识别的 JSON 数据；可能未登录、页面改版或账号暂无读取权限")
+    for resp in responses:   # 接口层明确「未登录」信号
+        d = resp.get("data")
+        if isinstance(d, dict) and d.get("result") in KUAISHOU_LOGOUT_RESULTS:
+            raise LoginRequiredError(
+                f"读回被拒：result={d.get('result')} {d.get('message') or d.get('msg') or ''}")
+    lst, _total = _extract_kuaishou_photo_list(responses)
+    if lst is not None:
+        works: list[WorkItem] = []
+        for raw in lst[:limit]:
+            if isinstance(raw, dict):
+                item = _map_kuaishou_item(raw)
+                if item is not None:
+                    works.append(item)
+        if lst and not works:
+            raise RuntimeError("photo/list 有记录但无一条带 id——页面结构可能改版，未把失败伪装为空数据")
+        return works
+    # photo/list 缺席（页面改版等）→ 通用计分扫描兜底（排除已知非作品接口）
+    records = _find_content_array(
+        [r for r in responses if not any(x in (r.get("url") or "")
+                                         for x in ("emotion", "kconf", "config", "tips", "radar", "/log/"))],
+        KUAISHOU_ID_KEYS)
+    if not records:
+        total = None
+        for resp in responses:
+            for record in _record_values(resp.get("data")):
+                if "total" in record or "total_count" in record or "totalCount" in record:
+                    total = _int_or_none(_first_value(record, ("total", "total_count", "totalCount")))
+                    break
+            if total is not None:
+                break
+        if total == 0:
+            return []
+        raise RuntimeError("快手作品响应无法识别，未把失败伪装为空数据")
+    works = []
+    for raw in records[:limit]:
+        item = _map_kuaishou_item(raw)
+        if item is not None:
+            works.append(item)
+    return works
+
+
+def read_kuaishou_account(page) -> dict[str, Any]:
+    """读快手创作者中心当前登录账号（id/昵称/粉丝）——读回回执的账号身份快照。"""
+    responses = _capture_json_responses(page, KUAISHOU_MANAGE_URL, KUAISHOU_CAPTURE_PATTERNS,
+                                        wait_ms=15000,
+                                        wait_urls_any=("home/userInfo",))
+    _kuaishou_assert_logged_in(page)
+    if not responses:
+        raise RuntimeError("账号读取：创作者后台没有返回可识别的 JSON 数据")
+    identity = _find_kuaishou_identity(responses)
+    if not identity:
+        raise RuntimeError("账号信息缺少稳定 ID（页面结构可能改版或未登录）")
+    return identity
+
+
+def capture_kuaishou_snapshot(page) -> set[str]:
+    """发前快照：读当前作品列表的全部作品 id。
+    失败（未登录/通道异常）返回空集合——对账自动退化为标题+时间窗，不影响主流程。"""
+    try:
+        works = read_kuaishou_works(page, limit=30)
+        return {w.platform_content_id for w in works}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def verify_kuaishou_publish(page, *, title: str, since_ms: int | None = None,
+                            limit: int = 20, attempts: int = 4,
+                            delay_s: float = 12.0,
+                            snapshot_ids: set[str] | None = None) -> ReadbackResult:
+    """快手发布后对账入口：多轮读回（列表异步更新/审核队列，给平台索引时间）。四档同抖音。"""
+    last_error: Exception | None = None
+    last_candidates: list[WorkItem] = []
+    evidence: dict[str, Any] = {"attempts": 0}
+    for i in range(max(1, attempts)):
+        evidence = {"attempts": i + 1, "checked_at": int(time.time())}
+        try:
+            works = read_kuaishou_works(page, limit=limit)
+        except LoginRequiredError as e:
+            return ReadbackResult(outcome="login_required", evidence=evidence, error=str(e))
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            print(f"⚠️ 快手读回第 {i + 1}/{attempts} 轮失败：{e}", file=sys.stderr)
+            if i + 1 < attempts:
+                time.sleep(delay_s)
+            continue
+        last_candidates = works
+        evidence["count"] = len(works)
+        matched = find_published_work(works, title, since_ms=since_ms, exclude_ids=snapshot_ids)
+        if matched:
+            try:
+                evidence["account"] = read_kuaishou_account(page)
+            except Exception as e:  # noqa: BLE001
+                evidence["account_error"] = str(e)
+            print(f"✅ 快手读回对账通过：{matched.platform_content_id}（{matched.status}）", file=sys.stderr)
+            return ReadbackResult(outcome="verified", matched=matched,
+                                  candidates=works[:5], evidence=evidence)
+        print(f"… 快手读回第 {i + 1}/{attempts} 轮：列表 {len(works)} 条未见本次作品", file=sys.stderr)
         if i + 1 < attempts:
             time.sleep(delay_s)
     if last_error is not None and not last_candidates:

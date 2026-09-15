@@ -21,6 +21,9 @@ layer: publish
 
 无浏览器环境可用 `platforms` / `plan` / `check`。
 
+发布成功输出形如 `✅ 快手发布成功（读回核验：作品 <id>，<状态>；账号：<昵称>）`——
+该判定来自**平台作品列表对账**（不是「点完就算」）；未核实的档位会在输出里明确写出原因与「先别重发」提示。
+
 ## 执行
 
 脚本：`../../shared/scripts/web_publisher.py`（各子命令 `-h`）。
@@ -57,20 +60,27 @@ python <ROOT>/skills/shared/scripts/web_publisher.py publish --platform kuaishou
    `_button-primary_xxx`）、每次改版都变，纯 CSS `:has-text('发布')` 在 headless 下命中不稳；
    脚本改为定位「可见 + `innerText=='发布'` + class 含 `button-primary`」的元素派发点击。
    注意别误点右上角下拉菜单里的「发布作品」（那不是提交按钮）。
-5. **成功判定**：点击后 URL 离开 `publish/video`（跳内容管理页）即视为成功
-   （`publish_success: url_not_contains publish/video`）；视频初始「审核中」，稍后过审公开。
+5. **成功判定 = 读回对账（权威）**：点击「发布」后的界面信号（URL 离开 `publish/video`）只作旁证——
+   脚本随后回到作品管理页**读本人作品列表对账**（标题前缀 + 时间窗，发前快照排除旧作品），
+   输出 `✅ 快手发布成功（读回核验：作品 <id>…）` 才算真成功。另外三档绝不冒报成功，也**不许盲目重发**：
+   `unverified`（多轮未见新作品，可能索引延迟——先人工确认再决定）、
+   `login_required`（读回时登录态失效——重登后核对，先别重发）、
+   `readback_error`（读回通道失败——人工核对，先别重发）。
+   **读回未核实 ≠ 没发出去**；视频初始「审核中」，稍后过审公开。
 6. 选择器/流程失效不要硬跑——先看截图定位阶段，再更新配置或提示用户平台已改版。
 7. 登录态与 Cookie 属敏感信息，妥善保存、不外泄。
 
 ## 发布失败排错顺序
 
-① 看 `outputs/_login/kuaishou-publish-fail.png` 截图确认停在哪一步 → ② `whoami` +
-实际打开发布页看 `input[type=file]` 在不在（不在＝没真正登录、停在营销介绍页）→ ③ 截图核对
-标题/话题填写、有无标签超限提示 → ④ dump `innerText=='发布'` 的元素确认 class 仍含
-`button-primary` → ⑤ 确认 JS 点击后 URL 跳转离开 `publish/video`。据此更新 `web_publisher.py` 配置。
+① 先看报错档位与读回证据（发布输出/`outputs/_publish.log`）：`unverified`/`login_required`/`readback_error`
+先到创作者中心**人工核对是否已发出**（先别重发）→ ② 看 `outputs/_login/kuaishou-publish-fail.png`
+截图确认停在哪一步 → ③ `whoami` + 实际打开发布页看 `input[type=file]` 在不在（不在＝没真正登录、
+停在营销介绍页）→ ④ 截图核对标题/话题填写、有无标签超限提示 → ⑤ dump `innerText=='发布'` 的元素
+确认 class 仍含 `button-primary` → ⑥ 确认 JS 点击后 URL 跳转离开 `publish/video`。据此更新
+`web_publisher.py` 配置。
 
 ## 参考来源
 
 网页发布思路同 social-auto-upload 的快手模块；本 SKILL 复用统一 Playwright 框架，配置驱动、
 登录态持久化。选择器需按平台现状维护；2026-08-19 真机调试校准（登录态发布子系统探针、JS 派发
-发布按钮、话题上限 4、URL 成功判定）。
+发布按钮、话题上限 4）；2026-09 起成功判定升级为**读回对账**（作品列表比对，界面 URL 信号仅作旁证）。
