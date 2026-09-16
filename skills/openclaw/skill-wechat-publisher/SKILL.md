@@ -16,32 +16,50 @@ layer: publish
 
 | 能力 | 状态 | 依赖 |
 |------|------|------|
-| 公众号发草稿（`publish.py` → **默认后台会话**） | ✅ 可跑 | 先扫码登录公众号后台（`../../shared/scripts/weixin_mp_stats.py login`，或 Web 账号页「登录公众号后台」）。**免 app_secret、免 IP 白名单**，还能群发 |
+| 公众号发草稿（`publish.py` → **默认后台会话**） | ✅ 可跑 | 先扫码登录公众号后台（`skills/shared/scripts/weixin_mp_stats.py login`，或 Web 账号页「登录公众号后台」）。**免 app_id/app_secret、免 IP 白名单**，只创建草稿，不自动群发 |
 | 公众号发草稿（`publish.py --official-api` → 官方 HTTP API，回退） | ✅ 可跑 | `wechat-publisher.yaml` 的 `app_id`/`app_secret` + 出口 IP 加进公众号 IP 白名单 |
 | 反 AI 检测（`ai_score.py`） | ✅ 可跑 | 纯本地，无外部依赖 |
 | MD→公众号排版（`html_converter.py`） | ✅ 可跑 | 纯本地 |
 | 生成配图（`generate_image.py`） | ❌ 当前不可用 | 需图像 API key（OpenAI Images / Gemini 代理） |
 | 多平台同步（`multi_publish.py`，阶段七） | ❌ 当前不可用 | 需浏览器 + Wechatsync Chrome 扩展 |
 
-核心链路（写作→排版→反 AI 检测→发草稿）在配好 `app_id`/`app_secret` 后可跑；配图缺 key 时改用外部生图或跳过，多平台同步默认不启用。
+核心链路（写作→排版→反 AI 检测→发草稿）的 Markdown / HTML 入口默认复用已扫码的公众号后台会话，不要求 `wechat-publisher.yaml` 或 `app_id`/`app_secret`；仅显式选择 `--official-api` 时需要官方 API 凭证。配图缺 key 时改用外部生图或跳过，多平台同步默认不启用。
 
 ## 账号与人格
 
-默认 2 个账号（见 `wechat-publisher.yaml`）：`main`（刷屏AI / 飞哥 / `refined-blue`，热情北京口语，面向 AI 产品）与 `tech`（蒜是哪根葱 / 葱哥 / `minimal-mono`，冷幽默技术直男，面向工程实践）。不指定 `--account` 用 `main`。
+YAML 示例提供 2 个账号配置：`main`（刷屏AI / 飞哥 / `refined-blue`，热情北京口语，面向 AI 产品）与 `tech`（蒜是哪根葱 / 葱哥 / `minimal-mono`，冷幽默技术直男，面向工程实践）。官方 API 模式按 `--account` 或 YAML 的 `default` 选择账号。后台会话模式的实际发布账号以当前扫码登录的公众号为准，`--account` 不会切换浏览器登录态；没有 YAML 时，可用 `--author` / `--theme` 指定署名和主题，并优先使用当前 Easel Profile 的语气。
 
 **必须按当前账号的 voice 改写语气** —— 两个号写出明显风格差异，这本身就是反 AI 检测的关键（平台对每个号建历史文风基线）。
 
 ## 前置条件
 
+以下命令均从 Easel 项目根目录运行。
+
+### 默认：公众号后台会话（Markdown / HTML）
+
+先检查已有登录态，不要因缺少 YAML 或官方 API 凭证而停止发布：
+
 ```bash
-cp wechat-publisher.yaml.example wechat-publisher.yaml   # 填 app_id / app_secret / author / theme
-python3 skills/openclaw/skill-wechat-publisher/scripts/wechat_api.py list-accounts
-# 验证 API 连接
-cd skills/openclaw/skill-wechat-publisher/scripts && python3 -c "from wechat_api import get_access_token; print('OK:', get_access_token()[:10])"
-pip install requests pyyaml --break-system-packages 2>/dev/null || pip install requests pyyaml
+python3 skills/shared/scripts/weixin_mp_stats.py whoami
+# 仅在确认未登录或会话过期时执行，也可在 Web 账号页扫码登录
+python3 skills/shared/scripts/weixin_mp_stats.py login
 ```
 
-配置文件固定放 skill 根目录（`config.py::_find_unified_yaml()` 只查此处），账号下必须有 `app_id` 和 `app_secret`。API 参数细节见 [references/api_reference.md](references/api_reference.md)，错误码见 [references/errors.md](references/errors.md)。
+`loggedIn: true` 时继续使用默认的 `publish.py --input` / `--html` 流程；检查报错时先排查具体异常，不把网络或浏览器错误当成缺少 API 凭证。会话模式无需创建 `wechat-publisher.yaml`、调用 `wechat_api.py` 验证 token 或配置 IP 白名单。
+
+### 可选回退：官方 API（`--official-api`）
+
+只有显式选择官方 API 发布时，才执行以下凭证配置与连接检查：
+
+```bash
+cp skills/openclaw/skill-wechat-publisher/wechat-publisher.yaml.example skills/openclaw/skill-wechat-publisher/wechat-publisher.yaml
+# 编辑该文件，填写 app_id / app_secret / author / theme，并在公众号后台配置出口 IP 白名单
+python3 skills/openclaw/skill-wechat-publisher/scripts/wechat_api.py list-accounts
+# 验证 API 连接，仅输出状态，不输出 token
+(cd skills/openclaw/skill-wechat-publisher/scripts && python3 -c "from wechat_api import get_access_token; get_access_token(); print('OK')")
+```
+
+官方 API 配置文件固定放 skill 根目录（`config.py::_find_unified_yaml()` 只查此处），所选账号必须有 `app_id` 和 `app_secret`。API 参数细节见 [references/api_reference.md](references/api_reference.md)，错误码见 [references/errors.md](references/errors.md)。这些要求不适用于默认的后台会话发布。
 
 ## 完整工作流程（7 阶段，第 7 为可选 opt-in）
 
@@ -81,9 +99,9 @@ python3 skills/openclaw/skill-wechat-publisher/scripts/publish.py --account main
   --cover .../cover.jpg --title "标题" --digest "120 字以内摘要" --exec
 ```
 **默认走公众号后台会话发布**（免 app_secret、免 IP 白名单）——前提是已扫码登录后台
-（`../../shared/scripts/weixin_mp_stats.py login`，或 Web 账号页「登录公众号后台」）；封面与正文内嵌图会自动传 mp CDN。
+（`skills/shared/scripts/weixin_mp_stats.py login`，或 Web 账号页「登录公众号后台」）；封面与正文内嵌图会自动传 mp CDN。
 若后台未登录会报错提示先登录。加 `--official-api` 可回退到官方 HTTP API（需 app_secret + IP 白名单）。
-先省略 `--exec` 预览账号、模式和输入，向用户展示标题/摘要并取得确认后再执行。成功后调用 `skill-publish-log` 记录草稿；再告知用户登录 mp.weixin.qq.com 查看/群发。
+先省略 `--exec` 预览账号、模式和输入；dry-run 只打印参数，不验证登录态、上传或建草稿，不能据此宣称发布成功。向用户展示标题/摘要并取得确认后再执行。成功后调用 `skill-publish-log` 记录草稿；再告知用户登录 mp.weixin.qq.com 查看/群发。
 
 ### 阶段七：多平台同步（可选，默认不启用，当前环境不可用）
 一键同步到知乎/掘金/CSDN/头条（均存草稿）。基于 Wechatsync Chrome 扩展 + `@wechatsync/cli`，需浏览器。触发方式与失败处理见 [references/multi-platform-sync.md](references/multi-platform-sync.md)。
@@ -114,7 +132,7 @@ python3 skills/openclaw/skill-wechat-publisher/scripts/publish.py --account main
 有 Easel Profile 时，用 Profile 的账号定位/受众/语气凝练覆盖账号 voice；无 Profile 时退到 yaml 内置 `main`/`tech` 双账号 voice。
 
 ## 注意事项
-- 文章始终发**草稿箱**，不自动群发；默认 `main`，`--account tech` 切换。
+- 文章始终发**草稿箱**，不自动群发；后台会话发布到当前扫码账号，官方 API 模式才用 `--account` 选择发布账号。
 - 默认 dry-run；没有用户对当前标题、摘要、账号和素材的明确确认，不得添加 `--exec`。
 - Markdown、HTML 与贴图三条入口都会在上传前扫描密钥、内部地址和路径，命中时必须改稿，不得绕过。
 - 两账号 voice/theme 差异是反 AI 检测策略的一部分，不要趋同。
