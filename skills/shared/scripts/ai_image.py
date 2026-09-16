@@ -173,7 +173,9 @@ def load_and_require() -> tuple[str, str, str, argparse.Namespace | None]:
 def detect_mode(base_url: str, explicit_mode: str | None) -> str:
     if explicit_mode in ("sync", "async"):
         return explicit_mode
-    if "apimart" in base_url.lower():
+    if urllib.parse.urlsplit(base_url).hostname in {
+        "api.apimart.ai", "api.apib.ai", "api.aiuxu.com", "api.aishuch.com",
+    }:
         return "async"
     return "sync"
 
