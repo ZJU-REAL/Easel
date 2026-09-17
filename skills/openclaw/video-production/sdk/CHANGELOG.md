@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.4 — 2026-09-17（焊进必经路径 · 二轮实录反哺）
+
+**来源：《试车台》二轮真机实录暴露的问题，全部补上：**
+
+- **空间融合焊进工序**（治「fx-usage 只躺资料区、整轮无人读」）：RUNBOOK Step 5 必读引用 + 设计表必含《空间融合裁决》节；Step 6 拷件/抠像链步骤；Step 7 两条抽帧自查；design-baseline 增「空间融合」节；fx-usage 标注读位与前置
+- **无人应答 ≠ 通过**：RUNBOOK Step 8 / 技能层明确——确认卡过期=停下报告，严禁 best-judgment 渲全片；卡传长超时
+- **字体渲染坑**（打包渲染 `delayRender('fx-fonts')` 超时）：标准做法改 `@font-face` CSS 注入；PITFALLS §2 收录
+- **宿主媒体语法清洗**：清掉快照文档里 `MEDIA:` / 本机盘符残留；预览与交付一律走宿主媒体语法（Easel `/api/media/`）
+- PITFALLS §6 增补：规则不进工序单=没人读；卡无人应答越权；贴图语法
+
 ## v0.3.3 — 2026-09-17（可移植性）
 
 - 去本机化：`gates/` `tools/` 的默认路径不再指向作者机器——`--project` / `--root` / `--clipsdir` 默认读 `REMOTION_PROJECT` 环境变量（未设=当前目录）；抽帧字体回退 `C:/Windows/Fonts/simhei.ttf`（可用 `CJK_FONT` 覆盖）；模型目录默认 `~/models/...`；临时产物走系统临时目录

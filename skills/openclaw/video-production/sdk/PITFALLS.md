@@ -25,6 +25,7 @@ python tools/check_sync.py --ref ref.wav --test out.mp4 --windows 8-14,30-36,60-
 | 渲染/静帧突然 ENOSPC、C 盘爆满 | 每次 `remotion render/still` 都会把整个 `public/` 拷进系统 Temp（素材多的工程单次 ~1GB） | ① `npx remotion bundle` 一次到项目内 `build/`，之后 `npx remotion render build <Comp>` 复用（每次省一遍全量拷贝）；② `TEMP`/`TMP` 重定向到大盘；③ 定期清 `Temp/remotion-v4.0.503-assets*`（`tools/clean_remotion_temp.ps1`） |
 | 静帧检查"全绿"但其实是旧帧 | 渲染失败时旧文件仍在，只查"文件存在"会把失败伪装成 OK | 渲染前先 `rm` 目标文件，再渲、再查存在性 |
 | Studio 假死 / 热更新通知风暴 | Studio 长时间挂着 + 高频改动 | 渲染前重启 Studio；预览端口固定 3002（3000/3001 留给宿主） |
+| 打包渲染 `delayRender('fx-fonts')` 超时（并发/多 tab 下偶发） | 字体用 `FontFace.load()` + `delayRender` 等字体就绪，偶发不 resolve | 字体改 **`@font-face` CSS 注入**（`<FontStyle/>` + `font-display:block`），弃手动 load+delayRender |
 
 ## 3. 素材与 OffthreadVideo
 
@@ -63,3 +64,6 @@ python tools/check_sync.py --ref ref.wav --test out.mp4 --windows 8-14,30-36,60-
 | 大任务干到一半静默停住，心跳只回 NO_REPLY | 执行者单次写超大文件被**模型输出上限截断**；回合结束在半途，不自动续写 | ① 开工叮嘱"大文件分块写（2-4 段）"；② 卡住时发一句"继续"即原样接上 |
 | 分场时间轴重叠 2s+，画面 A/B 状态打架闪切 | scenes.json 转写时边界敲错；旧门不查时间轴 | 门⑧ `check_timeline.py` 进 verify（实测抓出该片 4 处问题） |
 | 弹药件（如 FX-15）复制进工程、import 后当"未使用"删除，交付成平面降级 | 执行者拿不准用法 + 看不见效果，删掉保编译 | `references/fx-usage.md` 照抄级用法 + 语义强制规则；人审包抽帧核验 |
+- **规则只躺在 references、工序单不指路 = 没人读**：fx-usage 立好后真机一轮里执行者从未打开过正文（记录实证）——每条规则都要有进工序单的引用点（步骤或红线），否则等于没写。
+- **卡无人应答 ≠ 通过**：确认门过期后执行者以「no_answer → best judgment」越过人工门直接开渲——门没答=停下报告，「用户想要整片」不构成越权理由。
+- **贴图用宿主不认的语法 = 用户眼前空白**：记录中出现 `MEDIA:D:\...` 直贴（外来工作流写法），宿主聊天不渲染。贴图/贴片只认宿主媒体语法（Easel：`/api/media/`）。

@@ -2,6 +2,7 @@
 
 > 2026-09-17 立。背景：真机实录发现执行者"把 FX 件复制进工程、import 了，最后当未使用删掉"——法宝在手不用，交付就成了平面拼装。
 > 本文件 = 照抄级用法 + 硬规则。**内容有对应语义时，禁用平面降级。**
+> **读位（必读）**：写设计表前 + 写码前各过一遍（工序引用点：技能 SKILL.md 红线 / RUNBOOK Step 5·6·7）。
 
 ## 零、语义 → 必须用的件（硬规则）
 
@@ -46,6 +47,8 @@
 ## 二、FX-16 人物蒙版分层（完整配方，5 步）
 
 原理：层栈自下而上——**原片(z10) → 背后元素群(z15) → 同源片+逐帧蒙版(z16)**。蒙版把"人"从画面里切出来压在最上层，背后元素经过人体时被真裁切。
+
+**前置（缺一不可）**：解释器需含 `torch / torchvision / numpy / opencv-python`；RVM 模型目录默认 `~/models/rvm`（含 `model/` 与 `rvm_mobilenetv3.pth`）；缺件先装齐再跑，**禁止静默跳过或平面降级**。
 
 1. **抠像**：`python tools/rvm_matte.py --src public/<film>/proxy.mp4 --out <rgba_dir>`（RVM；1020 帧约 4-5 分钟 GPU）
 2. **蒙版集**：`python tools/make_masks.py --in <rgba_dir> --out public/<film>/masks/`（产出 `pa_0000.png…`）

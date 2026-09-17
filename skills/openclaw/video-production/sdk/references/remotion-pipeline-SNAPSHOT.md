@@ -129,7 +129,7 @@ metadata:
 ### Step 9 全片渲染 + 交付
 - **需要**：用户点头；**先杀 Studio**（内存不足 compositor 崩）；端口残留：`netstat -ano | grep :3002` 找 PID → `taskkill /F /PID`（git-bash 单斜杠）
 - **做**：**必须走 .ps1**：`$env:TEMP="E:\rtmp"` + `npx remotion render <Comp> out/final.mp4 --gl=angle --concurrency=4`，`powershell -File` 执行（内联 `$env:` 被 bash 吞）；渲染前 `df -h /c` <2G 先 `npm cache clean --force`+清 `Temp/remotion-*`；渲染前后各 `Get-Process node | Stop-Process -Force`；禁 `--chromium-options`（静默挂起）；音频后处理：concat 后整段一次 `loudnorm=I=-16:TP=-1.5:LRA=11`
-- **得到**：final.mp4 → 拷 E 盘项目目录 → `MEDIA:` 交付
+- **得到**：final.mp4 → 拷到交付目录 → 用宿主媒体通道贴进对话交付（Easel 用 `/api/media/` 语法；禁 `MEDIA:` 前缀）
 - **验收**：成片时长=设计时长；抽 3 帧与 Studio 预览一致
 
 ## 2.5 智能粗剪（Step 0.5，用户 2026.9.8 立：粗剪先行再包装）
@@ -175,7 +175,7 @@ FogCluster 散点聚拢（模糊→清晰）/ PageStack 叠页（书/学习）/ 
 | 默认暖铜 | 见需求 #9 |
 | BOverlay >0.3 | 画面漆黑，上限 0.3 |
 | 卡半透暗底叠暗背景 | 透明/脏 → 底色增韧>0.85 或亮边框/光晕 |
-| 渲染 C 盘 ENOSPC/EPIPE | TEMP 指 E 盘 + 渲染前清 C 盘 |
+| 渲染 ENOSPC/EPIPE（系统盘爆） | TEMP/TMP 指向其他大盘 + 渲染前清系统盘残留 |
 | OffthreadVideo seek 超时 | 源片 -g 30 关键帧 |
 | ffprobe/ffmpeg 中文路径 | Python subprocess 传原生路径 |
 | 模板 props 不生效 | 先 read_file 源码确认接口，不猜 |
@@ -183,7 +183,7 @@ FogCluster 散点聚拢（模糊→清晰）/ PageStack 叠页（书/学习）/ 
 | pipAmount interpolate 报错 | `[transitionStart, sc.start]` 两值相等（transitionTime=0）→ `if (transitionTime === 0) return target;` 先短路；所有 mode 变化才插值 |
 | B 态素材大屏盖住 PiP | 素材大屏 zIndex 必须 < 视频层 z10（用 z3），卡片层 z20；一个组件渲染多 zIndex 层用 Fragment 拆 |
 | base.mp4 转码漏 -g 30 | OffthreadVideo 按帧 seek 500/解码失败（"Could not extract frame"）→ 转码必带 `-g 30 -keyint_min 30 -sc_threshold 0` |
-| C 盘 ENOSPC bundle | public 全拷 Temp：清 `Temp/remotion-*`（每次 90M+，可行清 1.4G）；仍不够→TEMP/TMP 指 E 盘（`$env:TEMP='E:\rtmp'` 必须走 .ps1 文件，内联被 bash 吞） |
+| 系统盘 ENOSPC bundle | public 全拷 Temp：清 `Temp/remotion-*`（每次 90M+）；仍不够→TEMP/TMP 指向其他大盘（写进 .ps1 文件执行，内联易被 shell 吞） |
 | 大改多处 replace 偏移 | execute_code 用 Python 原生 open().read() 改（hermes_tools.read_file 带行号会污染文件） |
 | remotion 命令 pipe | SIGPIPE 杀进程 → 裸命令后台跑 |
 | studio 默认 3000 | 显式 --port=3002 |
@@ -192,14 +192,14 @@ FogCluster 散点聚拢（模糊→清晰）/ PageStack 叠页（书/学习）/ 
 | 声音层组件未挂载=音轨全空 | SFXLayer/Audio 组件定义了但没写进主组件 return → render 输出 ffmpeg 混音为空的静音轨（volumedetect: -91dB mean/max），Studio 里也没有任何声音（2026.9.8 血亏：连续 3 版静音切片）。**写完声音层必须检查主组件是否渲染它**；交付前 `ffmpeg -i out.mp4 -af volumedetect -f null -` 验证 mean>-60dB |
 | 调色转码 -an 无音轨 | ffmpeg 调色链常带 `-an`（视频层不需要音轨）→ Remotion 的 Audio 源**必须单独从 proxy 提取**：`ffmpeg -i proxy.mp4 -vn -c:a aac -b:a 192k public/voice.m4a`（或转 wav 保底）。先 ffprobe 源确认音轨存在，防"原片就静音"的误判 |
 | 素材大屏暗罩压死素材 | B 态素材大屏整体罩 rgba(6,12,22,0.78)+重渐变=素材暗成黑底（用户"有点暗了"）→ 整体罩 ≤0.40（0.38 已验），渐变只留顶部 0.34/底部 0.46 保字幕可读 |
-| 预览=Remotion Studio 网页 | 用户要"预览/打开预览"= **localhost:3002 Studio 网页**（可拖时间轴）不是文件播放器（2026.9.8 吃了两个“不是这个预览”）。Studio 死后走 `npx remotion studio --gl=angle --port=3002` + desktop_preview open；video 文件直接放 MEDIA: 给 |
+| 预览=Studio 网页 | 用户要「预览/打开预览」= **Remotion Studio 网页**（可拖时间轴），不是文件播放器。起法：工作目录内 `npx remotion studio --gl=angle --port=3002`（避让 3000/3001），把访问地址发给用户；静态帧照贴 |
 | 像素验证亮度阈值漏检暗色 | bright>480 对 ember(#c95a3a,sum=349) 永远为 0 → 暗色 accent 必须用颜色距离检测（dist<80），禁只用亮度阈值 |
 | 调色 LUT 反推复刻成品帧 | 用"成品调色帧→输入帧"逐点映射生成3D LUT时，**输入帧必须是未调色原帧且两帧同源**。若用已调色中间帧当输入，LUT 含双重变换→肤色青灰/白衬衫死白（鬼脸，2026.9.8 实测翻车）。反向 LUT 只有帧间一对一时可靠，跨光照迁移必偏色 |
 | ffmpeg lut3d Windows 路径 | 滤镜参数里 `C:/` 冒号被吃（No option name）→ cwd 进目标目录用相对裸文件名：`-vf "lut3d=file='x.cube'"`；ffmpeg 8.1 lut3d 选项名是 `file` 不是 `filename`（报 Option not found）。G'MIC 导出 cube 带 DOMAIN_MIN/MAX 裸行 ffmpeg 不认，清洗成 # 注释 |
 
 ## 5. 渲染后
 
-- 交付成片：拷到 E 盘项目目录，`MEDIA:` 给用户
+- 交付成片：拷到交付目录，贴进对话（Easel 用 `/api/media/` 的视频语法）
 - 字幕错字被用户纠正 → 同步改 transcript.json + SCENES + 卡片文案三处
 - 新踩的坑补进本技能（操作纪律优先于规范）
 

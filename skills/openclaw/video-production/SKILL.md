@@ -28,13 +28,13 @@ layer: produce
 
 对话消息**直接支持图片与视频**（站内媒体通道 `/api/media/`，零上传、零改前端）。产物落盘后，把它们贴进消息、再配卡片：
 
-- 图片：Markdown 图片语法（`!` + 方括号说明文字 + 圆括号地址），地址写 `/api/media/<outputs 相对路径，逐段 URL 编码>`（示例文件名：`视频产线/<时间戳>/run/preview/f60.png`）
+- 图片：Markdown 图片语法（`!` + 方括号说明文字 + 圆括号地址），地址写 `/api/media/<outputs 相对路径，逐段 URL 编码>`（示例文件名：`视频产线/<时间戳>/run/preview/f60.png`）；**禁用 `MEDIA:` 前缀与本机绝对路径**（写了聊天里不渲染、用户眼前空白），贴完自查一遍语法
 - 视频：`<video src="/api/media/<outputs 相对路径>" controls style="max-width:420px">` 标签
 - 文件：Markdown 链接语法（方括号文字 + 圆括号地址）指向 `/api/media/<outputs 相对路径>`，或把要点直接摘进消息
 
 三处必用：
 1. **设计表确认卡之前**：先在本轮对话**贴出**设计表要点摘要 + 全文（用户"看得见才审得动"；别的会话/别处的表用户看不见，必须贴在这里）——贴完**紧接着**出确认卡；卡只用标准选项（通过 / 带意见修改 / 打回重做）。表先于卡，就不会出现"想看表 → 再被问一次"的来回
-2. **预览确认卡之前**：把 `run/preview/*.png` 逐张贴成图片，再出预览卡
+2. **预览确认卡之前**：把 `run/preview/*.png` 逐张贴成图片（语法自查过），再出预览卡；用户说「预览 / 开预览 / 看动态」→ 就在工作目录起 Remotion Studio（`npx remotion studio --gl=angle --port=3002`，避开 3000/3001）并把 `http://localhost:<端口>` 发给他拖时间轴
 3. **交付时**：成片贴成 video 标签（`视频产线/<时间戳>/out/final.mp4`），附门报告链接
 
 ### 素材怎么给（用户问"怎么把视频给你"时这样答）
@@ -54,6 +54,7 @@ python skills/shared/scripts/see.py describe --image run/preview/f200.png --ques
 - 有明确问题（素/糊/字幕不可读/穿帮）→ **先改再重渲复查**，全过才进预览门
 - 素材入场前抽帧核语义：`--question "画面内容是什么？是否对应台词『…』"`；不符就换，不许硬凑
 - 它用来发现明显问题；最终审美以用户拍板为准
+- **fx 两条必答**（照 `sdk/references/fx-usage.md`）：① 3D 卡场——帧里看得到侧厚/透视吗 ② 背后场——元素被人体裁切吗；不过先改再进预览门
 
 ## 快速开始
 
@@ -84,6 +85,7 @@ python <ROOT>/skills/video-production/scripts/video_pipeline.py start --source "
 |---------|--------------------|
 | checkpoint-1（设计表确认） | 通过，按设计表开工→`approve` ｜ 带意见修改→`revise` ｜ 打回重做→`reject` |
 | checkpoint-2（预览确认） | 通过，渲全片→`approve` ｜ 有场次要改→`revise` |
+- **两道门无人应答 ≠ 通过**：卡没人答 / 过期时，唯一动作 = 停下、把现状报告用户、等指令；严禁以 best judgment 继续（尤其严禁未经确认渲全片）。checkpoint 卡传长超时（如 86400 秒）
 
 - 写回答并续跑：
 
@@ -124,6 +126,8 @@ python <ROOT>/skills/video-production/scripts/video_pipeline.py resume
 - 写长代码/大文件务必**分块写**（单次输出有上限，被截断会中断任务；分 2-4 段续写）
 - 交付自动带**人审包**（`review-pack/`：每场定格帧 + 核对表）；把它贴给用户，照单核对（交付前已用 `see.py` 自检；终审仍是人眼）
 - 设计表是创作步：与用户确认后产出，机器只校验在档
+- **空间融合必读**：写设计表与写码前必读 `sdk/references/fx-usage.md`；设计表必含《空间融合裁决》节（3D/立体/背后/穿过 语义 → FX-15/FX-16；禁平面降级；做不到就改设计表措辞）
+- 抠像前置：解释器需含 torch / numpy / opencv-python；RVM 模型目录默认 `~/models/rvm`
 
 ## 退出码（机器语义）
 
