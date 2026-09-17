@@ -51,7 +51,7 @@
 **前置（缺一不可）**：解释器需含 `torch / torchvision / numpy / opencv-python`；RVM 模型目录默认 `~/models/rvm`（含 `model/` 与 `rvm_mobilenetv3.pth`）；缺件先装齐再跑，**禁止静默跳过或平面降级**。
 
 1. **抠像**：`python tools/rvm_matte.py --src public/<film>/proxy.mp4 --out <rgba_dir>`（RVM；1020 帧约 4-5 分钟 GPU）
-2. **蒙版集**：`python tools/make_masks.py --in <rgba_dir> --out public/<film>/masks/`（产出 `pa_0000.png…`）
+2. **蒙版集**：`python tools/make_masks.py --src <rgba_dir> --out public/<film>/masks/`（产出 `pa_0000.png…`）
 3. **层栈**（三段，全部显式 `position:'absolute', inset:0`；zIndex 10/15/16）：
    ```tsx
    <OffthreadVideo src={staticFile(`${dir}/proxy.mp4`)} style={{ position:'absolute', inset:0, width:'100%', height:'100%', zIndex:10 }} />

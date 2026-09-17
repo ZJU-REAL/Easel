@@ -51,7 +51,7 @@ with torch.no_grad():
         fgr, pha, *rec = m(src, *rec, downsample_ratio=a.dsr)
         alpha = (pha[0, 0].float().cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
         rgba = np.dstack([frame, alpha])
-        cv2.imwrite(f'{a.out}/rgba_{i:04d}.png', rgba)
+        cv2.imencode('.png', rgba)[1].tofile(f'{a.out}/rgba_{i:04d}.png')  # Unicode 路径安全：cv2.imwrite 遇非 ASCII 路径会静默失败
         i += 1
         if i % 60 == 0:
             el = time.time() - t0

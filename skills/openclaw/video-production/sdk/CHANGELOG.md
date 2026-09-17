@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.5 — 2026-09-17（抠像链 Unicode 修复）
+
+- **修 `tools/rvm_matte.py` 写帧静默失败**：`cv2.imwrite` 在 Windows 遇非 ASCII 路径（如中文 run 目录）不报错、返回 False、零产出——改用 `cv2.imencode().tofile()`（失败即抛）。实录：模型输出「DONE 2043 frames」但目录为空即此坑
+- **修 `references/fx-usage.md` 命令参数**：make_masks 用法 `--in` → `--src`（与 argparse 一致）
+- PITFALLS §5 收录（cv2 Windows 非 ASCII 路径静默失败）
+
 ## v0.3.4 — 2026-09-17（焊进必经路径 · 二轮实录反哺）
 
 **来源：《试车台》二轮真机实录暴露的问题，全部补上：**

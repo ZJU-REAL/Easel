@@ -67,3 +67,4 @@ python tools/check_sync.py --ref ref.wav --test out.mp4 --windows 8-14,30-36,60-
 - **规则只躺在 references、工序单不指路 = 没人读**：fx-usage 立好后真机一轮里执行者从未打开过正文（记录实证）——每条规则都要有进工序单的引用点（步骤或红线），否则等于没写。
 - **卡无人应答 ≠ 通过**：确认门过期后执行者以「no_answer → best judgment」越过人工门直接开渲——门没答=停下报告，「用户想要整片」不构成越权理由。
 - **贴图用宿主不认的语法 = 用户眼前空白**：记录中出现 `MEDIA:D:\...` 直贴（外来工作流写法），宿主聊天不渲染。贴图/贴片只认宿主媒体语法（Easel：`/api/media/`）。
+- **cv2.imwrite/imread 遇非 ASCII 路径在 Windows 静默失败**：不抛错、只返回 False——run 目录含中文（如「视频产线」）会踩中（实录：打印 DONE 2043 frames 但零文件）。写图用 `cv2.imencode('.png', img)[1].tofile(path)`；读图用 `cv2.imdecode(np.fromfile(path, np.uint8), cv2.IMREAD_UNCHANGED)`。
