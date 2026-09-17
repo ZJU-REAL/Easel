@@ -86,6 +86,7 @@ python <ROOT>/skills/video-production/scripts/video_pipeline.py start --source "
 | checkpoint-1（设计表确认） | 通过，按设计表开工→`approve` ｜ 带意见修改→`revise` ｜ 打回重做→`reject` |
 | checkpoint-2（预览确认） | 通过，渲全片→`approve` ｜ 有场次要改→`revise` |
 - **两道门无人应答 ≠ 通过**：卡没人答 / 过期时，唯一动作 = 停下、把现状报告用户、等指令；严禁以 best judgment 继续（尤其严禁未经确认渲全片）。checkpoint 卡传长超时（如 86400 秒）
+- **卡超时与停机汇报**：所有 ask_user 卡一律传**长超时**（≥3600 秒，绝不短档）；任何卡超时/无人应答后 = 停下 + **短汇报**（≤5 行：停在哪、为什么、给用户 1–2 个下一步选项）；用中文说人话，禁「Understood — I will stop…」类译文腔开头与长篇状态清单
 
 - 写回答并续跑：
 
