@@ -12,7 +12,7 @@ layer: produce
 > 把一支原片（口播 / 独白）做成**包装级成片**：摸底 → 转录 → 分场 → 设计表 → 脚手架 → 写码
 > → 验证 → 预览 → 渲染 → 交付。质量不靠自觉，靠可执行的门。
 >
-> 本技能是**薄壳**：只调用独立接口（视频产线 SDK 的 `run.py`），不在本仓库实现任何产线逻辑。
+> 本技能是**薄壳**：只调用独立接口（视频产线 SDK 的 `run.py`），壳里不含产线逻辑；SDK 以**内置快照**随包分发（`sdk/`，来源与同步策略见 `VENDOR.md`）。
 
 ## 什么时候用
 
@@ -107,7 +107,7 @@ python <ROOT>/skills/video-production/scripts/video_pipeline.py resume
 | `resume` | 从停点续跑 |
 | `status` | 进度 / 待作答 / 路径 |
 
-所有命令支持 `--run-dir`（默认最近一次 start）、`--base`（运行态根）、`--sdk`（SDK 路径；或环境变量 `VIDEO_PIPELINE_SDK`）。
+所有命令支持 `--run-dir`（默认最近一次 start）、`--base`（运行态根）、`--sdk`（SDK 路径；默认用技能内置 `sdk/`，可用环境变量 `VIDEO_PIPELINE_SDK` 覆盖）。
 `--gates` 可带质量门清单 JSON（内部支持 `{run_dir}` / `{out_dir}` 占位符自动替换）。
 
 ## 产物
