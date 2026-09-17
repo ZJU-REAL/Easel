@@ -70,9 +70,16 @@ run_with_progress() {
 clear 2>/dev/null || true
 echo -e "\n${CYAN}╭────────────────────────────────────────────────────╮${NC}"
 echo -e "${CYAN}│${NC}  ${MAGENTA}Easel${NC} · 社媒内容工作台安装向导                 ${CYAN}│${NC}"
-echo -e "${CYAN}│${NC}  ${DIM}OpenClaw-powered · Linux / macOS${NC}                 ${CYAN}│${NC}"
+echo -e "${CYAN}│${NC}  ${DIM}OpenClaw / OpenCode · Linux / macOS${NC}             ${CYAN}│${NC}"
 echo -e "${CYAN}╰────────────────────────────────────────────────────╯${NC}"
-echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
+AGENT_RUNTIME="${EASEL_AGENT_RUNTIME:-}"
+if [ -z "$AGENT_RUNTIME" ] && [ -t 0 ]; then
+    RUNTIME_CHOICE="$(ask 'Agent runtime：1 OpenClaw（默认）/ 2 OpenCode [1]')"
+    [ "$RUNTIME_CHOICE" = "2" ] && AGENT_RUNTIME="opencode" || AGENT_RUNTIME="openclaw"
+fi
+AGENT_RUNTIME="${AGENT_RUNTIME:-openclaw}"
+case "$AGENT_RUNTIME" in openclaw|opencode) ;; *) echo "EASEL_AGENT_RUNTIME 仅支持 openclaw 或 opencode" >&2; exit 1 ;; esac
+echo -e "\n${DIM}  Agent runtime：${AGENT_RUNTIME}${NC}\n"
 
 # ---- 1. Node.js >= 24.16 ----
 # 跟随 openclaw@latest 的引擎要求：当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0
@@ -80,6 +87,10 @@ echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不�
 step "1/8" "检查系统环境" "Python · Node.js · Git · FFmpeg"
 info "检查 Node.js..."
 node_version_ok() {  # $1=major $2=minor
+    if [ "$AGENT_RUNTIME" = "opencode" ]; then
+        [ "$1" -gt 20 ] || { [ "$1" -eq 20 ] && [ "$2" -ge 10 ]; }
+        return
+    fi
     { [ "$1" -eq 24 ] && [ "$2" -ge 16 ]; } \
         || { [ "$1" -eq 26 ] && [ "$2" -ge 1 ]; } \
         || [ "$1" -ge 27 ]
@@ -199,36 +210,21 @@ step "2/8" "准备 Node.js 工具链" "设置 npm registry"
 npm config set registry https://registry.npmjs.org 2>/dev/null
 ok "npm registry: npmjs.org"
 
-# ---- 3. 检测/安装 OpenClaw（复用用户已有安装，不覆盖全局配置） ----
-step "3/8" "检测 OpenClaw" "已有安装将直接复用"
-info "检查 OpenClaw..."
-if command -v openclaw >/dev/null 2>&1; then
-    OPENCLAW_BIN="$(command -v openclaw)"
-    ok "检测到 OpenClaw：$($OPENCLAW_BIN --version 2>&1 | head -1)"
-else
-    info "安装 OpenClaw..."
-    npm install -g openclaw@latest --loglevel warn 2>&1 | tail -1
-    # npm 全局 bin 目录未必在当前 shell 的 PATH 上：macOS Homebrew 的 Node 会把全局包装到
-    # $(npm prefix -g)/bin（如 /opt/homebrew/Cellar/node/<ver>/bin），而 /opt/homebrew/bin 里
-    # 并没有 openclaw 链接。此时 command -v 拿到空值，后面 $OPENCLAW_BIN --version 会直接崩。
-    # 先把 npm 全局 bin 补进 PATH 再检测。
-    if ! command -v openclaw >/dev/null 2>&1; then
-        NPM_GLOBAL_BIN="$(npm prefix -g 2>/dev/null)/bin"
-        if [ -x "$NPM_GLOBAL_BIN/openclaw" ]; then
-            export PATH="$NPM_GLOBAL_BIN:$PATH"
-        fi
-    fi
-    OPENCLAW_BIN="$(command -v openclaw)"
-    if [ -z "$OPENCLAW_BIN" ]; then
-        echo "OpenClaw 安装后仍未在 PATH 中找到。请把 npm 全局 bin 目录（$(npm prefix -g 2>/dev/null)/bin）加入 PATH 后重新运行 setup.sh（幂等，会跳过已装部分）。" >&2
-        exit 1
-    fi
-    ok "OpenClaw 已安装：$($OPENCLAW_BIN --version 2>&1 | head -1)"
+# ---- 3. 检测/安装 Agent runtime ----
+step "3/8" "检测 Agent runtime" "已有安装将直接复用"
+EASEL_AGENT_RUNTIME="$AGENT_RUNTIME" python3 -m easel runtime-setup
+OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || true)"
+if [ -z "$OPENCLAW_BIN" ] && [ -x "$(npm prefix -g 2>/dev/null)/bin/openclaw" ]; then
+    export PATH="$(npm prefix -g)/bin:$PATH"
+    OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || true)"
 fi
 OC="$OPENCLAW_BIN --profile $PROFILE"
 
-# ---- 4. 初始化 Easel 专属 OpenClaw profile ----
-step "4/8" "初始化 Easel profile" "独立配置、独立 workspace、独立 Gateway"
+# ---- 4. 初始化 Agent workspace ----
+step "4/8" "初始化 Agent workspace" "独立配置与项目技能"
+if [ "$AGENT_RUNTIME" = "opencode" ]; then
+    ok "OpenCode 使用项目 opencode.json 与现有 skills/openclaw/"
+else
 info "初始化 Easel profile (--profile $PROFILE)..."
 if [ -f "$HOME/.openclaw-${PROFILE}/openclaw.json" ]; then
     ok "Profile 已存在"
@@ -255,6 +251,7 @@ else
         exit 1
     fi
     ok "Profile 初始化完成 → ~/.openclaw-${PROFILE}/"
+fi
 fi
 
 # ---- 5. 安装 easel CLI ----
@@ -301,7 +298,16 @@ else
     warn "  vim .env"
 fi
 
+# 所有 Easel 入口读取同一个持久化选择；重跑安装器时更新而不重复追加。
+python3 - "$PROJECT_ROOT/.env" "$AGENT_RUNTIME" <<'PY'
+import pathlib, sys
+path, runtime = pathlib.Path(sys.argv[1]), sys.argv[2]
+lines = [line for line in path.read_text().splitlines() if not line.startswith("EASEL_AGENT_RUNTIME=")]
+path.write_text("\n".join(lines).rstrip() + f"\nEASEL_AGENT_RUNTIME={runtime}\n")
+PY
+
 # ---- 8. 同步 skills + workspace ----
+if [ "$AGENT_RUNTIME" = "openclaw" ]; then
 info "同步 Easel skills..."
 bash "$PROJECT_ROOT/openclaw/sync.sh" 2>&1 | grep -E '✓|→'
 
@@ -632,11 +638,15 @@ if ! $OC config validate; then
     exit 1
 fi
 ok "OpenClaw 配置校验通过"
+else
+    info "OpenCode 将从项目 opencode.json 直接发现 skills/openclaw/"
+    opencode models >/dev/null 2>&1 || warn "OpenCode 尚未配置模型；请运行 opencode 后使用 /connect"
+fi
 
 # ---- 11. 启动 gateway ----
 step "8/8" "启动并验证" "配置校验 · Chromium · Gateway health"
-info "启动 Easel gateway..."
-bash "$PROJECT_ROOT/scripts/gateway.sh" start
+info "启动 Easel ${AGENT_RUNTIME} 服务..."
+EASEL_AGENT_RUNTIME="$AGENT_RUNTIME" python3 -m easel gateway start
 
 # Playwright is a runtime dependency for browser login/publishing.
 if python3 -c 'import playwright' >/dev/null 2>&1; then
@@ -666,5 +676,5 @@ echo "    easel web                    # 启动 Web 工作台"
 echo "    easel chat                   # 终端对话"
 echo "    easel doctor                 # 检查环境"
 echo "    easel ping                   # Gateway 连通性"
-echo -e "\n  ${DIM}Easel profile：~/.openclaw-${PROFILE}/${NC}"
+echo -e "\n  ${DIM}Agent runtime：${AGENT_RUNTIME}${NC}"
 echo -e "  ${DIM}项目目录：$PROJECT_ROOT${NC}\n"

@@ -26,6 +26,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export interface StatusResponse {
   gateway: boolean;
+  runtime: {
+    id: string;
+    label: string;
+    install_hint: string;
+    capabilities: string[];
+  };
   skills: SkillItem[];
   personas: PersonaItem[];
 }
