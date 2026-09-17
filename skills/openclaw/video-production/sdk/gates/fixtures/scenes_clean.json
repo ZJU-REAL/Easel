@@ -1,0 +1,48 @@
+{
+ "scenes": [
+  {
+   "id": 1,
+   "cards": [
+    {
+     "slot": "center",
+     "form": "rings",
+     "variant": "v2"
+    }
+   ],
+   "transition": "wipe"
+  },
+  {
+   "id": 2,
+   "cards": [
+    {
+     "slot": "left",
+     "form": "eq",
+     "variant": "v1"
+    }
+   ],
+   "transition": "slide"
+  },
+  {
+   "id": 3,
+   "cards": [
+    {
+     "slot": "center",
+     "form": "burst",
+     "variant": "v1"
+    }
+   ],
+   "transition": "zoom"
+  },
+  {
+   "id": 4,
+   "cards": [
+    {
+     "slot": "right",
+     "form": "rows",
+     "variant": "v1"
+    }
+   ],
+   "transition": "fade"
+  }
+ ]
+}

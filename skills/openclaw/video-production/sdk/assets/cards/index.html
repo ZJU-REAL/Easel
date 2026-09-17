@@ -1,0 +1,104 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>视频产线 · 问询卡面</title>
+<style>
+:root{--bg:#faf7f2;--card:#fff;--line:#e8e2d8;--ink:#1f2933;--sub:#6b7280;--celadon:#158f9a;--indigo:#3f56a8;--ok:#2f9e6b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Songti SC','Noto Serif SC','Microsoft YaHei',serif;color:var(--ink);
+ background:radial-gradient(circle at 22% 12%,rgba(214,236,233,.5),transparent 34%),radial-gradient(circle at 80% 20%,rgba(240,226,214,.5),transparent 36%),var(--bg);
+ min-height:100vh;padding:38px 18px 80px}
+.wrap{max-width:680px;margin:0 auto}
+h1{font-size:21px;font-weight:600;letter-spacing:.5px}
+.meta{color:var(--sub);font-size:12.5px;margin:6px 0 22px;font-family:system-ui}
+.q{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px 22px;margin-bottom:18px;box-shadow:0 8px 26px rgba(31,41,51,.06)}
+.q .tag{display:inline-block;font-size:11px;letter-spacing:.08em;color:#fff;background:var(--celadon);border-radius:999px;padding:2px 10px;margin-bottom:10px;font-family:system-ui}
+.q h2{font-size:17px;font-weight:600;line-height:1.5}
+.q .desc{color:var(--sub);font-size:13px;line-height:1.7;margin:8px 0 14px;white-space:pre-wrap;font-family:system-ui}
+.opts{display:grid;gap:10px}
+.opt{display:flex;align-items:flex-start;gap:10px;border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;cursor:pointer;background:#fff;transition:border-color .15s,background .15s,box-shadow .15s}
+.opt:hover{border-color:#c9d7d4}
+.opt.on{border-color:var(--celadon);background:linear-gradient(135deg,rgba(21,143,154,.08),rgba(63,86,168,.08));box-shadow:0 0 0 3px rgba(21,143,154,.12)}
+.opt .mk{width:18px;height:18px;border:1.5px solid #b9c2cc;border-radius:6px;flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-family:system-ui}
+.opt.radio .mk{border-radius:50%}
+.opt.on .mk{background:var(--celadon);border-color:var(--celadon)}
+.opt.on .mk::after{content:'✓'}
+.opt .txt{font-size:14.5px;line-height:1.5;font-family:system-ui}
+.opt .txt small{display:block;color:var(--sub);font-size:12px;margin-top:3px}
+.opt img{width:74px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:none}
+.previews{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 4px}
+.previews img{width:150px;border-radius:10px;border:1px solid var(--line)}
+textarea{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:11px 13px;font:13.5px/1.6 system-ui;color:var(--ink);background:#fff;resize:vertical;min-height:64px;outline:none}
+textarea:focus{border-color:var(--celadon);box-shadow:0 0 0 3px rgba(21,143,154,.12)}
+.notes{margin-top:12px}
+.notes label{font-size:12px;color:var(--sub);display:block;margin-bottom:5px;font-family:system-ui}
+.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+button{border:0;border-radius:12px;padding:10px 22px;font-size:14px;font-family:system-ui;cursor:pointer;background:var(--indigo);color:#fff;font-weight:600}
+button:hover{filter:brightness(1.06)}
+button:disabled{opacity:.45;cursor:default}
+.done{color:var(--ok);font-weight:600;font-family:system-ui;font-size:13.5px;display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:12px}
+.foot{color:var(--sub);font-size:12px;text-align:center;margin-top:26px;font-family:system-ui}
+</style></head><body><div class="wrap">
+<h1>视频产线 · 问询卡面</h1>
+<div class="meta" id="meta">加载中…</div>
+<div id="list"></div>
+<div class="foot">提交即落盘 answers/（协议为脊柱）· 回终端执行 run.py resume 继续</div>
+</div>
+<script>
+const list=document.getElementById('list'),meta=document.getElementById('meta');
+let QS=[];
+const state={};
+async function load(){
+  const r=await fetch('./questions.json',{cache:'no-store'});
+  const d=await r.json();QS=d.questions||[];
+  meta.textContent=`${QS.length} 道待作答 · ${d.generated_at||''}`;
+  list.innerHTML='';
+  if(!QS.length){list.innerHTML='<div class="q"><h2>没有待作答的问题</h2><div class="desc">回终端/聊天继续跑即可。</div></div>';return}
+  QS.forEach(q=>render(q));
+}
+function render(q){
+  state[q.id]={values:[]};
+  const el=document.createElement('div');el.className='q';el.id='q-'+q.id;
+  const typeLabel={multi:'多选',single:'单选',approval:'审批','multi-select':'多选','single-select':'单选','free-text':'自由输入'}[q.type]||q.type;
+  let h=`<span class="tag">${typeLabel}${q.gate?' · '+q.gate:''}</span><h2>${esc(q.title||q.id)}</h2>`;
+  if(q.description)h+=`<div class="desc">${esc(q.description)}</div>`;
+  if(q.previews&&q.previews.length)h+='<div class="previews">'+q.previews.map(p=>`<img src="./${esc(p)}">`).join('')+'</div>';
+  if(q.type==='free-text'){
+    h+=`<textarea id="ta-${q.id}" placeholder="在这里作答…"></textarea>`;
+  }else{
+    const radio=(q.type==='single-select'||q.type==='single'||q.type==='approval');
+    h+='<div class="opts">'+(q.options||[]).map(o=>`
+      <div class="opt ${radio?'radio':''}" data-q="${q.id}" data-v="${esc(o.value)}">
+        <span class="mk"></span>${o.preview?`<img src="./${esc(o.preview)}">`:''}
+        <span class="txt">${esc(o.label)}${o.description?`<small>${esc(o.description)}</small>`:''}</span>
+      </div>`).join('')+'</div>';
+  }
+  h+=`<div class="notes"><label>备注（可选）</label><textarea id="no-${q.id}" style="min-height:40px" placeholder="补充说明 / 修改意见…"></textarea></div>`;
+  h+=`<div class="actions"><button id="bt-${q.id}">提交</button></div>`;
+  el.innerHTML=h;list.appendChild(el);
+  el.querySelectorAll('.opt').forEach(op=>{
+    op.onclick=()=>{
+      const v=op.dataset.v, radio=(q.type==='single-select'||q.type==='single'||q.type==='approval');
+      const cur=state[q.id].values;
+      if(radio){state[q.id].values=[v];el.querySelectorAll('.opt').forEach(x=>x.classList.remove('on'));op.classList.add('on');}
+      else{if(cur.includes(v)){state[q.id].values=cur.filter(x=>x!==v);op.classList.remove('on');}
+           else{state[q.id].values=[...cur,v];op.classList.add('on');}}
+    };
+  });
+  const bt=el.querySelector('#bt-'+q.id);
+  bt.onclick=async()=>{
+    const ta=el.querySelector('#ta-'+q.id);
+    const no=el.querySelector('#no-'+q.id);
+    const values=q.type==='free-text'?(ta.value.trim()?[ta.value.trim()]:[]):state[q.id].values;
+    if(!values.length){bt.textContent='请先作答';setTimeout(()=>bt.textContent='提交',1200);return}
+    bt.disabled=true;bt.textContent='提交中…';
+    const r=await fetch('./answer',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:q.id,values,notes:no.value.trim()})});
+    const ok=(await r.json().catch(()=>({ok:false}))).ok;
+    if(ok){
+      bt.style.display='none';
+      const d=document.createElement('div');d.className='done';d.textContent='✓ 已提交，落盘 answers/'+q.id+'.json';
+      el.querySelector('.actions').replaceWith(d);
+    }else{bt.disabled=false;bt.textContent='提交失败，重试';}
+  };
+}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+load();
+</script></body></html>

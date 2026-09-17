@@ -41,6 +41,7 @@ def find_sdk(args) -> Path:
     if os.environ.get("VIDEO_PIPELINE_SDK"):
         cands.append(os.environ["VIDEO_PIPELINE_SDK"])
     cands += [
+        str(Path(__file__).resolve().parents[1] / "sdk"),  # 技能内置快照（随仓库分发）
         str(Path.cwd() / "video-pipeline-sdk"),
         str(Path.home() / "video-pipeline-sdk"),
         str(Path.home() / "video-pipeline" / "video-pipeline-sdk"),
@@ -48,7 +49,7 @@ def find_sdk(args) -> Path:
     for c in cands:
         if c and (Path(c) / "pipeline" / "run.py").is_file():
             return Path(c)
-    print("找不到视频产线 SDK。请设环境变量 VIDEO_PIPELINE_SDK 或用 --sdk 指定。", file=sys.stderr)
+    print("找不到视频产线 SDK。请检查技能内置 sdk/，或设环境变量 VIDEO_PIPELINE_SDK / 用 --sdk 指定。", file=sys.stderr)
     print("试过：" + " ｜ ".join(map(str, cands)), file=sys.stderr)
     sys.exit(1)
 
@@ -275,7 +276,7 @@ def cmd_status(args) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser(description="视频产线 Easel 薄壳（转发 run.py）")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--sdk", help="视频产线 SDK 路径")
+    common.add_argument("--sdk", help="视频产线 SDK 路径（默认：技能内置 sdk/）")
     common.add_argument("--base", help="运行态根目录")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

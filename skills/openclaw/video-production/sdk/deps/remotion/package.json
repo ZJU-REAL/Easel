@@ -1,0 +1,28 @@
+{
+  "name": "remotion-test",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion compositions",
+    "preview": "remotion preview"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.481",
+    "@remotion/google-fonts": "^4.0.481",
+    "@remotion/light-leaks": "^4.0.503",
+    "@remotion/noise": "^4.0.481",
+    "@remotion/three": "^4.0.481",
+    "@remotion/transitions": "^4.0.503",
+    "culori": "^4.0.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.481",
+    "remotion-animated": "^2.2.0",
+    "remotion-bits": "^0.2.0",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

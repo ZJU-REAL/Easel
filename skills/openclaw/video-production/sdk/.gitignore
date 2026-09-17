@@ -1,0 +1,18 @@
+# 依赖与产物
+node_modules/
+deps/remotion/node_modules/
+out/
+build/
+*.log
+.DS_Store
+__pycache__/
+
+# 受限资产（许可原因不入库；说明见 assets/*/README.md 与 ATTRIBUTIONS.md）
+assets/sfx/*.mp3
+assets/luts/*.cube
+assets/fonts/simhei.ttf
+assets/fonts/simkai.ttf
+
+# 本机临时
+*.bak
+*.tmp
