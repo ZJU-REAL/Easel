@@ -1,0 +1,58 @@
+{
+  "theme_name": "warm-editorial",
+  "description": "暖色杂志风 - 栗色 + 米白 + 宋体,温厚的长文阅读感,适合观点 / 随笔 / 生活随笔",
+  "styles": {
+    "body": "font-family: 'Noto Serif SC', 'Songti SC', 'Source Han Serif SC', 'PingFang SC', serif; font-size: 15.5px; color: #3a2e26; line-height: 1.9; letter-spacing: 0.5px; word-spacing: 2px; padding: 20px 22px; background: #fbf7f0;",
+    "h1": "font-size: 23px; font-weight: 700; color: #5a2f1a; text-align: center; margin: 38px 0 26px; padding: 0 0 16px 0; letter-spacing: 2px; line-height: 1.45; border-bottom: 1px solid #c9a27d;",
+    "h2": "font-size: 18px; font-weight: 700; color: #5a2f1a; margin: 38px 0 20px; padding: 4px 0 10px 0; border-bottom: 2px solid #c9a27d; line-height: 1.5;",
+    "h3": "font-size: 16px; font-weight: 700; color: #7a4e3b; margin: 28px 0 12px; padding: 0 0 0 12px; border-left: 3px solid #c9a27d; letter-spacing: 0.5px;",
+    "p": "margin: 18px 0; text-indent: 0; text-align: justify; color: #3a2e26; line-height: 1.95;",
+    "blockquote": "margin: 26px 0; padding: 20px 24px; background: #f4ead8; border-left: 4px solid #c9a27d; color: #5a4636; font-size: 14.5px; border-radius: 0 6px 6px 0; line-height: 1.9; font-style: italic;",
+    "img": "max-width: 100%; height: auto; border-radius: 4px; margin: 26px auto; display: block; box-shadow: 0 6px 20px rgba(90,47,26,0.08);",
+    "strong": "color: #5a2f1a; font-weight: 700; border-bottom: 2px solid #e8c88a; padding: 0 1px;",
+    "em": "font-style: italic; color: #7a4e3b;",
+    "code_inline": "background: #f4ead8; color: #8b4513; padding: 2px 8px; border-radius: 3px; font-size: 13px; font-family: 'Menlo', 'Consolas', monospace;",
+    "code_block": "background: #2d1f15; color: #f4ead8; padding: 16px 18px; border-radius: 6px; font-size: 12.5px; line-height: 1.65; font-family: 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 20px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 20px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 12px 0; line-height: 1.9; color: #3a2e26; font-weight: 400;",
+    "li_bullet": "color: #c9a27d; font-weight: 700; font-size: 13px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "❖",
+    "li_number": "color: #8b4513; font-weight: 700; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #c9a27d, transparent); margin: 40px 0;",
+    "a": "color: #8b4513; text-decoration: none; border-bottom: 1px solid rgba(139,69,19,0.4);",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border: 1px solid #e8d9c0; table-layout: fixed; word-break: break-word;",
+    "th": "background: #c9a27d; color: #2d1f15; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 12.5px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #f0e4d0; color: #3a2e26; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #9c8877; text-align: center; margin-top: 12px; letter-spacing: 0.5px; font-style: italic;",
+    "section_divider": "text-align: center; color: #c9a27d; letter-spacing: 12px; font-size: 14px; margin: 36px 0; user-select: none;"
+  },
+  "highlights": {
+    "hl_yellow": "background: #fff2b8; color: #3a2e26; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "hl_blue": "background: #dde8f0; color: #2a4a6a; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "hl_pink": "background: #f9dcd0; color: #8a2a1a; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "hl_green": "background: #dce8c8; color: #4a5f1a; padding: 2px 7px; border-radius: 2px; font-weight: 500;",
+    "em_red": "color: #a8321f; font-weight: 700;",
+    "em_blue": "color: #2a4a6a; font-weight: 700;",
+    "em_orange": "color: #c76a1e; font-weight: 700;"
+  },
+  "section_divider_text": "❦  ❦  ❦",
+  "code_colors": {
+    "kw": "color: #d89868; font-weight: 600;",
+    "str": "color: #c8b878;",
+    "num": "color: #e8b070;",
+    "fn": "color: #b88870;",
+    "cls": "color: #c89868;",
+    "comm": "color: #8a7060; font-style: italic;",
+    "punct": "color: #c8b090;"
+  },
+  "list_style": {
+    "label": "A · 栗色大字",
+    "num_container": "display: inline-block; color: #7a3a28; font-family: 'Georgia','Times New Roman',serif; font-weight: 400; font-size: 24px; font-style: italic; margin-right: 10px; min-width: 24px; line-height: 1; vertical-align: -3px;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "decimal",
+    "bullet_container": "display: inline-block; color: #7a3a28; font-family: 'Georgia',serif; font-size: 16px; margin-right: 10px; font-weight: 700;",
+    "bullet_char": "§"
+  }
+}

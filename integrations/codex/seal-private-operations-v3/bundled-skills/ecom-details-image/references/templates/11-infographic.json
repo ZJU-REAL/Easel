@@ -1,0 +1,48 @@
+{
+  "id": "infographic",
+  "name": "信息图/A+Content",
+  "keywords": ["信息图", "infographic", "A+", "详情页", "卖点图", "产品信息图", "产品详情"],
+  "trigger_phrases": ["信息图", "产品信息图", "详情页图", "A+Content", "卖点图", "infographic"],
+  "prompt_template": {
+    "type": "e-commerce product infographic",
+    "subject": "{product_description}",
+    "features": "{feature_list}",
+    "layout": "structured sections with clear hierarchy",
+    "data_vis": "{data_elements}",
+    "color_scheme": "{brand_colors}",
+    "quality": "professional e-commerce design, mobile-friendly"
+  },
+  "defaults": {
+    "features": "4-6 key features with icons and descriptions",
+    "layout": "clean grid, product as focal point",
+    "data_vis": "simple charts or comparison tables",
+    "color_scheme": "brand-consistent palette"
+  },
+  "variants": {
+    "amazon-a-plus": {
+      "description": "亚马逊A+风格",
+      "overrides": { "layout": "4-quadrant module with banner, feature blocks, comparison, badges", "data_vis": "comparison table, ingredient chart, certification badges" }
+    },
+    "feature-grid": {
+      "description": "卖点网格",
+      "overrides": { "layout": "product centered with callout lines to feature blocks" }
+    },
+    "story-flow": {
+      "description": "故事线信息流",
+      "overrides": { "layout": "vertical story: problem → solution → features → results" }
+    }
+  },
+  "category_tips": {
+    "beauty": "ingredient breakdown with %, before/after data, dermatologist badges",
+    "electronics": "spec comparison, performance metrics, compatibility icons",
+    "food": "nutritional visualization, ingredient sourcing, recipe flow",
+    "fashion": "size guide, material composition, care instructions"
+  },
+  "examples": [
+    "Complex Amazon A+ Content module. Top banner with brand and tagline. Main: 4 quadrants each showing product detail with labeled feature: (1) {f1}, (2) {f2}, (3) {f3}, (4) {f4}. Below: comparison table. Bottom: spec chart and certification badges. {color} palette. Mobile-first, professional e-commerce, 2000x2500px",
+    "Product infographic. Left: {product} on gradient. Right: {n} feature blocks with icons vertically, callout lines connecting to product. Clean modern, {color} accents, 2000x2000px",
+    "{category} specification guide. Product centered with dimension callouts. Feature highlights with icons. Data visualization. Clean typography, mobile-friendly, 2000x2000px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

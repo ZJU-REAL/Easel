@@ -157,6 +157,16 @@ For faster browsing, each cover opens a lightweight preview of up to one minute.
 
 ## 🚀 Quick Start
 
+### Optional: Codex-native Seal V3
+
+The repository also includes the isolated [Seal Private Operations V3](integrations/codex/README.md),
+a Codex-native visual workspace for macOS and Windows. It keeps all 113 capabilities inside one
+Codex Skill and adds recoverable operations tasks connected to chat, profiles, trends, ideas,
+calendar entries, content projects, publishing, and review. The integration lives under
+`integrations/codex/`; it does not replace Easel's existing installation, runtime data, or account
+sessions, and it does not require OpenClaw. See the [Codex integration guide](integrations/codex/README.md)
+for installation and external-service boundaries.
+
 Requirements: Linux or macOS, Python 3.10+, and Git. The installer checks Node.js 22.19+, FFmpeg, and Playwright/Chromium, and provides a platform-specific guide when Node.js is missing.
 
 ```bash

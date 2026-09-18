@@ -1,0 +1,58 @@
+{
+  "theme_name": "mint-fresh",
+  "description": "小清新薄荷 - 薄荷绿 + 圆角卡片,轻盈透气,适合日常 / 生活方式 / 轻话题",
+  "styles": {
+    "body": "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #1f3a33; line-height: 1.85; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #f4faf7;",
+    "h1": "font-size: 22px; font-weight: 800; color: #0f5a4a; text-align: left; margin: 34px 0 22px; padding: 16px 20px; background: #cfeadd; border-radius: 14px; letter-spacing: 0.3px; line-height: 1.5;",
+    "h2": "font-size: 17.5px; font-weight: 700; color: #0f5a4a; margin: 38px 0 18px; padding: 8px 14px; background: #e4f3ec; border-radius: 10px; line-height: 1.5; letter-spacing: 0.3px; display: inline-block;",
+    "h3": "font-size: 15.5px; font-weight: 700; color: #1f3a33; margin: 28px 0 12px; padding: 0 0 0 12px; border-left: 3px solid #4fb896; letter-spacing: 0.3px;",
+    "p": "margin: 16px 0; text-indent: 0; text-align: justify; color: #1f3a33; line-height: 1.9;",
+    "blockquote": "margin: 24px 0; padding: 18px 22px; background: #e4f3ec; border-left: none; color: #0f5a4a; font-size: 14.5px; border-radius: 14px; line-height: 1.85; letter-spacing: 0.3px;",
+    "img": "max-width: 100%; height: auto; border-radius: 14px; margin: 24px auto; display: block; box-shadow: 0 6px 20px rgba(79,184,150,0.15); border: 1px solid #cfeadd;",
+    "strong": "color: #0f5a4a; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #b8e5d2 62%, #b8e5d2 95%, transparent 95%); padding: 1px 6px;",
+    "em": "font-style: italic; color: #4a6a62;",
+    "code_inline": "background: #e4f3ec; color: #0f5a4a; padding: 2px 8px; border-radius: 6px; font-size: 13px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; border: 1px solid #cfeadd;",
+    "code_block": "background: #1a2f29; color: #cfeadd; padding: 16px 18px; border-radius: 14px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 24px 0; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 18px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 18px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 10px 0; line-height: 1.85; color: #1f3a33; font-weight: 400;",
+    "li_bullet": "color: #4fb896; font-weight: 900; font-size: 14px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "◆",
+    "li_number": "color: #4fb896; font-weight: 800; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: linear-gradient(to right, transparent, #4fb896, transparent); margin: 38px 0; opacity: 0.5;",
+    "a": "color: #0f5a4a; text-decoration: none; border-bottom: 1px solid rgba(15,90,74,0.4);",
+    "table": "width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; border-radius: 12px; overflow: hidden; border: 1px solid #cfeadd; table-layout: fixed; word-break: break-word;",
+    "th": "background: #4fb896; color: #ffffff; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e4f3ec; color: #1f3a33; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 12.5px; color: #7a9a90; text-align: center; margin-top: 10px; letter-spacing: 0.5px;",
+    "section_divider": "text-align: center; color: #4fb896; letter-spacing: 14px; font-size: 13px; margin: 36px 0; user-select: none; opacity: 0.6;"
+  },
+  "highlights": {
+    "hl_yellow": "background: linear-gradient(180deg, transparent 58%, #fcf2a8 58%); color: #1f3a33; padding: 1px 6px; font-weight: 600;",
+    "hl_blue": "background: #d5e8f0; color: #1a4a5e; padding: 2px 7px; border-radius: 6px; font-weight: 500;",
+    "hl_pink": "background: #ffdfe5; color: #a0335a; padding: 2px 7px; border-radius: 6px; font-weight: 500;",
+    "hl_green": "background: #b8e5d2; color: #0f5a4a; padding: 2px 7px; border-radius: 6px; font-weight: 500;",
+    "em_red": "color: #d85a5a; font-weight: 700;",
+    "em_blue": "color: #3a7a9a; font-weight: 700;",
+    "em_orange": "color: #e58b3a; font-weight: 700;"
+  },
+  "section_divider_text": "✿ ✿ ✿",
+  "code_colors": {
+    "kw": "color: #88e0b8; font-weight: 600;",
+    "str": "color: #ffe99a;",
+    "num": "color: #ffb0a0;",
+    "fn": "color: #a8d8ff;",
+    "cls": "color: #d8b0ff;",
+    "comm": "color: #5e8a7c; font-style: italic;",
+    "punct": "color: #a8c5b8;"
+  },
+  "list_style": {
+    "label": "A · 薄荷胶囊",
+    "num_container": "display: inline-block; background: #4fb896; color: #ffffff; font-weight: 700; font-size: 11px; min-width: 28px; height: 20px; line-height: 20px; text-align: center; border-radius: 10px; margin-right: 12px; vertical-align: 2px; letter-spacing: 0.3px;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "padded",
+    "bullet_container": "display: inline-block; width: 8px; height: 8px; background: #4fb896; border-radius: 50%; margin-right: 12px; vertical-align: 3px;",
+    "bullet_char": ""
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "hero-image",
+  "name": "白底/纯色底产品主图",
+  "keywords": ["白底图", "主图", "hero image", "白背景", "product shot", "packshot", "产品照", "商品主图"],
+  "trigger_phrases": ["产品主图", "白底图", "白背景产品", "hero image", "电商主图", "纯色背景"],
+  "prompt_template": {
+    "type": "product photography",
+    "subject": "{product_description}",
+    "background": "clean white background",
+    "lighting": "soft diffused studio lighting, even illumination",
+    "composition": "centered, front view",
+    "quality": "8K, commercial e-commerce photography"
+  },
+  "defaults": {
+    "background": "clean white background",
+    "lighting": "soft diffused studio lighting",
+    "composition": "centered, front view"
+  },
+  "variants": {
+    "luxury": {
+      "description": "高端奢侈品风格",
+      "overrides": { "lighting": "Rembrandt lighting, subtle rim light", "background": "gradient from dark to light, premium feel" }
+    },
+    "fresh": {
+      "description": "清新自然风格",
+      "overrides": { "lighting": "bright natural light", "background": "light pastel tones" }
+    },
+    "tech": {
+      "description": "科技感风格",
+      "overrides": { "lighting": "dramatic side lighting", "background": "dark minimalist" }
+    },
+    "color": {
+      "description": "彩色背景风格",
+      "overrides": { "background": "{color} gradient background" }
+    }
+  },
+  "category_tips": {
+    "beauty": "emphasize texture and glow, show formula details",
+    "electronics": "highlight metallic finish, screen details, port precision",
+    "food": "vibrant colors, fresh appearance, show texture",
+    "fashion": "show fabric texture, drape quality, stitching details",
+    "home": "show material quality, craftsmanship, lifestyle appeal",
+    "jewelry": "macro detail, sparkle and cut quality, luxurious lighting"
+  },
+  "examples": [
+    "{product}, professional product photography on clean white background, soft diffused studio lighting, centered, 8K, commercial e-commerce photography, no shadows, no props",
+    "{product} on pure white seamless background, bright commercial studio lighting, centered, 3/4 profile, high resolution, marketplace ready, {material_description}",
+    "{product} floating slightly above white surface, softbox overhead, sharp rim light on edges, professional packshot, 8K, ultra-detailed textures"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

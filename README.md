@@ -197,6 +197,14 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ## 🚀 快速开始
 
+### 可选：Codex 原生 Seal V3
+
+仓库同时提供隔离的 [Seal 私人运营顾问 V3](integrations/codex/README.md)：一个面向 macOS 与 Windows 的
+Codex 原生可视化工作台。它将 113 项能力保留在一个 Codex Skill 内，并增加可恢复运营任务以及任务与
+对话、画像、热点、选题、日历、内容库、发布和复盘的联动。该集成位于 `integrations/codex/`，不会覆盖
+Easel 现有安装方式、运行目录或账号登录态，也不要求安装 OpenClaw。详细安装和外部服务边界见
+[Codex 集成说明](integrations/codex/README.md)。
+
 环境要求：Linux、macOS 或 Windows 10/11、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
 
 ```bash
