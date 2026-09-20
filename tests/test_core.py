@@ -32,6 +32,40 @@ import gemini_maas_adapter as gemini_adapter  # noqa: E402
 
 # ---- 媒体模型注册表：脚本与 Web 共用同一真相源 ----
 
+def test_opencode_stream_does_not_require_openclaw(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from easel.runtimes import RuntimeEvent, RunResult
+
+    class Handle:
+        def events(self):
+            yield RuntimeEvent("text", "opencode reply")
+
+        def poll(self):
+            return 0
+
+        def wait(self):
+            return RunResult(0, "opencode reply")
+
+        def close(self):
+            pass
+
+    def forbidden():
+        raise AssertionError("OpenCode must not resolve the OpenClaw CLI")
+
+    monkeypatch.setattr(web, "SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(web, "openclaw_base_cmd", forbidden)
+    monkeypatch.setattr(web, "get_runtime", lambda: SimpleNamespace(
+        descriptor=SimpleNamespace(id="opencode"), start=lambda request: Handle()))
+
+    async def run():
+        response = await web.api_chat_stream(web.ChatRequest(message="hello", sessionId="merge-check"))
+        events = [event async for event in response.body_iterator]
+        assert any(event.get("event") == "token" and "opencode reply" in event["data"] for event in events)
+        assert any(event.get("event") == "done" for event in events)
+        assert "merge-check" not in web._RUNNING_CHAT
+
+    asyncio.run(run())
+
 def test_media_provider_registry_reaches_web():
     assert provider_ids("video") == tuple(
         provider["id"] for provider in web.SKILL_API_REQUIREMENTS["ai-video-gen"]["providers"])

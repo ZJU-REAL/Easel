@@ -2005,29 +2005,31 @@ async def api_chat_stream(req: ChatRequest):
                 q.put_nowait(SENTINEL)
                 hproc.finish()
 
-        _heal_openclaw_session(sk)       # 清洗历史里无签名 thinking 块，防回放失效
-        # 原始事件流由常驻 gateway 写到共享文件（见 SHARED_RAW_STREAM / scripts/gateway.sh），
-        # 不是 agent 客户端写的。本轮开始时记下文件当前尾偏移：只读此偏移之后追加的行，
-        # 再用首个新事件的 runId 闩锁本轮，隔离其它并发会话的事件。
-        try:
-            raw_start_offset = SHARED_RAW_STREAM.stat().st_size
-        except OSError:
-            raw_start_offset = 0
+        runtime = get_runtime()
+        if runtime.descriptor.id == "openclaw":
+            _heal_openclaw_session(sk)       # 清洗历史里无签名 thinking 块，防回放失效
+            # 原始事件流由常驻 gateway 写到共享文件（见 SHARED_RAW_STREAM / scripts/gateway.sh），
+            # 不是 agent 客户端写的。本轮开始时记下文件当前尾偏移：只读此偏移之后追加的行，
+            # 再用首个新事件的 runId 闩锁本轮，隔离其它并发会话的事件。
+            try:
+                raw_start_offset = SHARED_RAW_STREAM.stat().st_size
+            except OSError:
+                raw_start_offset = 0
 
-        cmd = openclaw_base_cmd() + [
-            "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
-            "--session-key", f"agent:main:{sk}", "--session-id", _openclaw_session_id(sk),
-            "--thinking", THINKING_LEVEL,
-            "--timeout", str(TIMEOUT_CHAT), "--message", message,
-        ]
-        env = _proxy_env()
-        # 注意：不要在客户端 env 上设 OPENCLAW_RAW_STREAM*——`agent` 客户端不写 raw 流，
-        # 设了也没用；raw 流开关在 gateway 侧（scripts/gateway.sh）。
-        # 告诉 skill：本部署的 ask_user 选项卡片是否可用。卡片依赖 gateway 的
-        # question.* RPC（仅 2026.9.x 有），2026.6.11 上桥接不可用 → skill 改用
-        # 「文字问答跨轮等待」拿短信验证码，而不是空等卡片超时。
-        _cards_ok = question_bridge_supported is not None and question_bridge_supported()
-        env["EASEL_ASKUSER_CARDS"] = "1" if _cards_ok else "0"
+            cmd = openclaw_base_cmd() + [
+                "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
+                "--session-key", f"agent:main:{sk}", "--session-id", _openclaw_session_id(sk),
+                "--thinking", THINKING_LEVEL,
+                "--timeout", str(TIMEOUT_CHAT), "--message", message,
+            ]
+            env = _proxy_env()
+            # 注意：不要在客户端 env 上设 OPENCLAW_RAW_STREAM*——`agent` 客户端不写 raw 流，
+            # 设了也没用；raw 流开关在 gateway 侧（scripts/gateway.sh）。
+            # 告诉 skill：本部署的 ask_user 选项卡片是否可用。卡片依赖 gateway 的
+            # question.* RPC（仅 2026.9.x 有），2026.6.11 上桥接不可用 → skill 改用
+            # 「文字问答跨轮等待」拿短信验证码，而不是空等卡片超时。
+            _cards_ok = question_bridge_supported is not None and question_bridge_supported()
+            env["EASEL_ASKUSER_CARDS"] = "1" if _cards_ok else "0"
 
         # 会话级串行：同一会话若已有请求在跑，先提示排队，等它结束再开
         # （否则两个 openclaw 进程并发写同一 session 文件 → 崩溃 rc=1 / 会话串味）。
@@ -2049,7 +2051,6 @@ async def api_chat_stream(req: ChatRequest):
             client_q.put_nowait(CLIENT_DONE)
             return
 
-        runtime = get_runtime()
         if runtime.descriptor.id != "openclaw":
             handle = None
             result = None
