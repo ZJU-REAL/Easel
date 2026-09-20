@@ -403,6 +403,52 @@ def _fill_title_desc(page, title: str, desc: str, tags: list[str]):
     page.wait_for_timeout(300)
 
 
+VISIBILITY_LABELS = {"public": "公开", "friends": "好友可见", "private": "仅自己可见"}
+
+
+def _set_visibility(page, visibility: str) -> None:
+    """设置「谁可以看」可见性（仅当显式请求非 public 时调用，默认公开由平台保持）。
+
+    定位「谁可以看」区块内的 label（真实 DOM 2026-09-20 dump 校准：区块 = span「谁可以看」
+    所在的 div.content-obt4oA，内含 公开/好友可见/仅自己可见 三个 label；同页「同时发布到」
+    「保存权限」有同款 radio，故必须限定区块，不能全页取）。
+    **失败即硬失败**——绝不静默把用户要的「私密」发成公开。
+    """
+    if visibility not in VISIBILITY_LABELS:
+        _die(f"不支持的可见性：{visibility}（只能 public/friends/private）")
+    want = VISIBILITY_LABELS[visibility]
+    handle = page.evaluate_handle(
+        """(want) => {
+            const titles = [...document.querySelectorAll('span')]
+                .filter(e => (e.textContent || '').trim() === '谁可以看');
+            if (!titles.length) return null;
+            const sec = titles[0].closest('div.content-obt4oA');
+            if (!sec) return null;
+            return [...sec.querySelectorAll('label')]
+                .find(l => (l.innerText || '').trim() === want) || null;
+        }""", want)
+    el = handle.as_element() if handle else None
+    if el is None:
+        _die(f"未找到「谁可以看」的「{want}」选项（页面可能改版，检查 _set_visibility 选择器）")
+    el.scroll_into_view_if_needed()
+    el.click()
+    page.wait_for_timeout(500)
+    checked = page.evaluate(
+        """(want) => {
+            const titles = [...document.querySelectorAll('span')]
+                .filter(e => (e.textContent || '').trim() === '谁可以看');
+            if (!titles.length) return false;
+            const sec = titles[0].closest('div.content-obt4oA');
+            if (!sec) return false;
+            const hit = [...sec.querySelectorAll('label')]
+                .find(l => (l.innerText || '').trim() === want);
+            return !!hit && hit.getAttribute('data-checked') === 'true';
+        }""", want)
+    if not checked:
+        _die(f"可见性「{want}」点击后未生效（data-checked 非 true），已中止，不发布")
+    print(f"  可见性已设为：{want}")
+
+
 def _find_publish_button(page):
     """在 card-container-creator-layout 内找文本为「发布」的按钮（返回句柄或 None）。"""
     container = page.query_selector(SELECTORS["publish_container"])
@@ -1068,7 +1114,7 @@ def cmd_login(a) -> int:
             ctx.close()
 
 
-def _plan_lines(kind, title, desc, media, tags):
+def _plan_lines(kind, title, desc, media, tags, visibility="public"):
     tab = "发布视频" if kind == "video" else "发布图文"
     over = "  ⚠️超限" if len(title) > TITLE_MAX else ""
     return [
@@ -1076,12 +1122,14 @@ def _plan_lines(kind, title, desc, media, tags):
         f"标题：{title}（{len(title)}/{TITLE_MAX}{over}）",
         f"简介：{desc[:40]}{'...' if len(desc) > 40 else ''}",
         f"媒体：{media}", f"话题（写入简介）：{tags}",
+        f"谁可以看：{VISIBILITY_LABELS.get(visibility, visibility)}",
         "步骤：",
         "  1. 首页点「高清发布」→ 进 content/upload",
         f"  2. 切 tab「{tab}」",
         f"  3. {'上传视频等转码(≤5min)+选AI封面' if kind == 'video' else '上传图片'}",
         "  4. 填标题/简介（Ctrl+A 清空再逐字输入）+ # 话题",
-        "  5. 点「发布」→ 发布后读回作品列表对账（标题+时间窗对上才算发布成功）",
+        f"  5. 设「谁可以看」= {VISIBILITY_LABELS.get(visibility, visibility)}",
+        "  6. 点「发布」→ 发布后读回作品列表对账（标题+时间窗对上才算发布成功）",
     ]
 
 
@@ -1090,7 +1138,8 @@ def cmd_plan(a) -> int:
     media = [str(Path(a.video).expanduser())] if a.video else (
         [s.strip() for s in (a.images or "").split(",") if s.strip()])
     tags = [t.strip() for t in (a.tags or "").split(",") if t.strip()]
-    for ln in _plan_lines(kind, a.title or "<title>", a.content or "", media, tags):
+    for ln in _plan_lines(kind, a.title or "<title>", a.content or "", media, tags,
+                          getattr(a, "visibility", "public")):
         print(ln)
     return 0
 
@@ -1147,7 +1196,8 @@ def _publish(a, kind: str) -> int:
 
     if not a.exec:
         print("dry-run（加 --exec 真正发布）：\n")
-        for ln in _plan_lines(kind, a.title, a.content or "", media, tags):
+        for ln in _plan_lines(kind, a.title, a.content or "", media, tags,
+                              getattr(a, "visibility", "public")):
             print(ln)
         return 0
 
@@ -1181,6 +1231,7 @@ def _publish(a, kind: str) -> int:
                 _wait_video_processed(page)
                 _select_ai_cover(page)
             _fill_title_desc(page, a.title, a.content or "", tags)
+            _set_visibility(page, getattr(a, "visibility", "public"))
             _click_publish(page, len(a.title) + len(a.content or ""))
             # 点击后轮询等风控墙浮现（2026-09-12 真机发现：墙的渲染晚于 2.5s，
             # 单次检查会扑空 → 漏进收尾 → 对着被墙遮挡的按钮空点超时。≤12s 窗口）
@@ -1255,6 +1306,15 @@ def _publish(a, kind: str) -> int:
         m = readback.matched
         _acct = (readback.evidence or {}).get("account") or {}
         _who = f"；账号：{_acct.get('display_name')}" if _acct.get("display_name") else ""
+        # 可见性硬核对：请求「仅自己可见」却读回公开/好友可看 = 泄露风险，必须显式报警。
+        want_vis = getattr(a, "visibility", "public")
+        if want_vis == "private" and m.status != "private":
+            login_state.write_status(
+                sf, "success",
+                f"⚠️ 已发布（作品 {m.platform_content_id}）但读回状态为「{m.status}」而非 private——"
+                f"请立即到内容管理页确认是否已公开")
+            print(f"⚠️ 警告：请求「仅自己可见」，但读回状态为「{m.status}」（可能已公开）——"
+                  f"请到内容管理页核对 {m.platform_content_id}", file=sys.stderr)
         login_state.write_status(sf, "success",
                                  f"发布成功（读回核验：作品 {m.platform_content_id}，{m.status}{_who}）")
         print(f"✅ 抖音发布成功（读回核验：{m.platform_content_id}{_who}）")
@@ -1422,6 +1482,8 @@ def main() -> int:
         p.add_argument("--images", help="图片路径，逗号分隔（图文）")
         p.add_argument("--video", help="视频路径（视频）")
         p.add_argument("--tags", help="话题，逗号分隔（写入简介 # 话题）")
+        p.add_argument("--visibility", choices=["public", "friends", "private"], default="public",
+                       help="谁可以看：public=公开（默认）/friends=好友可见/private=仅自己可见")
         p.add_argument("--exec", action="store_true", help="真正发布（默认 dry-run）")
         p.add_argument("--allow-unsafe", action="store_true",
                        help="放行内容安全闸门（检出内部设置泄露也照发，谨慎）")

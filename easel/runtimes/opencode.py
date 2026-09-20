@@ -214,6 +214,22 @@ class OpenCodeAdapter:
             Diagnostic("OpenCode service", self.health().ok, "运行 python -m easel gateway start"),
         ]
 
+    def node_requirement(self) -> tuple[bool, str]:
+        return False, "20.10"
+
+    def is_local_gateway_base(self, url: str) -> bool:
+        return False
+
+    def provider_creds(self) -> dict[str, tuple[str, str]]:
+        return {}
+
+    def sync_chat_providers(self, provider_updates: dict[str, dict], keep_custom: set[str],
+                            primary_ref: str) -> str:
+        return "当前 runtime（OpenCode）不支持同步 chat 供应商"
+
+    def config_snapshot(self) -> dict:
+        return {"primary": "", "providers": {}}
+
     def manage_service(self, action: ServiceAction) -> ActionResult:
         return _run_service_script("opencode-gateway", action)
 

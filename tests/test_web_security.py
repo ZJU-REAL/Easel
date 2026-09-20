@@ -30,6 +30,16 @@ ORIGINAL_ENV = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_openclaw_runtime(monkeypatch):
+    """本文件的契约是 openclaw.json 侧的行为（供应商读取/同步/网关放行）。
+
+    运行时选择会读开发机 .env 的 EASEL_AGENT_RUNTIME（可能是 opencode），钉死它，
+    用例才不随本机配置漂移。
+    """
+    monkeypatch.setenv("EASEL_AGENT_RUNTIME", "openclaw")
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """把 .env 与 openclaw.json 同步都换成沙箱，绝不碰用户真配置。"""
