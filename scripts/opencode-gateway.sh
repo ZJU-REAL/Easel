@@ -32,7 +32,7 @@ case "${1:-status}" in
   stop)
     p="$(pid)"; if [ -n "$p" ] && kill "$p" 2>/dev/null; then echo "[easel] OpenCode server stopped"; else echo "[easel] OpenCode server was not running"; fi
     rm -f "$PIDFILE" ;;
-  restart) "$0" stop; "$0" start ;;
+  restart) bash "$0" stop; bash "$0" start ;;
   status) if live; then echo "[easel] OpenCode server running (PID $(pid))"; else echo "[easel] OpenCode server not running"; exit 1; fi ;;
   logs) tail -f "$LOGFILE" ;;
   *) echo "Usage: $0 {start|stop|restart|status|logs}" >&2; exit 1 ;;

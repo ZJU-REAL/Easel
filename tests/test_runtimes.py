@@ -86,6 +86,22 @@ def test_opencode_event_parser():
     assert event.data == {"session_id": "ses_123"}
 
 
+@pytest.mark.parametrize("lines,detail", [
+    ([json.dumps({"type": "error", "error": {"name": "APIError", "data": {
+        "message": "An active OpenCode Go subscription is required to use Go models.",
+    }}})], "subscription"),
+    ([], "没有返回正文"),
+])
+def test_opencode_zero_exit_does_not_hide_model_failure(lines, detail):
+    from types import SimpleNamespace
+    handle = opencode.OpenCodeRunHandle(SimpleNamespace(stdout=iter(lines), wait=lambda: 0), None)
+    assert list(handle.events()) == []
+    result = handle.wait()
+    assert result.returncode != 0
+    assert not result.clean_end
+    assert detail in result.diagnostics["error"]
+
+
 def test_opencode_server_url_uses_configured_port(monkeypatch):
     monkeypatch.delenv("EASEL_OPENCODE_URL", raising=False)
     monkeypatch.setenv("EASEL_OPENCODE_PORT", "4096")

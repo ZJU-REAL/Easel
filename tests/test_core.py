@@ -32,18 +32,23 @@ import gemini_maas_adapter as gemini_adapter  # noqa: E402
 
 # ---- 媒体模型注册表：脚本与 Web 共用同一真相源 ----
 
-def test_opencode_stream_does_not_require_openclaw(tmp_path, monkeypatch):
+@pytest.mark.parametrize("model_error", [False, True])
+def test_opencode_stream_does_not_require_openclaw(tmp_path, monkeypatch, model_error):
     from types import SimpleNamespace
     from easel.runtimes import RuntimeEvent, RunResult
 
     class Handle:
         def events(self):
-            yield RuntimeEvent("text", "opencode reply")
+            if not model_error:
+                yield RuntimeEvent("text", "opencode reply")
 
         def poll(self):
             return 0
 
         def wait(self):
+            if model_error:
+                return RunResult(1, clean_end=False, stop_reason="runtime_error",
+                                 diagnostics={"error": "subscription required"})
             return RunResult(0, "opencode reply")
 
         def close(self):
@@ -60,7 +65,13 @@ def test_opencode_stream_does_not_require_openclaw(tmp_path, monkeypatch):
     async def run():
         response = await web.api_chat_stream(web.ChatRequest(message="hello", sessionId="merge-check"))
         events = [event async for event in response.body_iterator]
-        assert any(event.get("event") == "token" and "opencode reply" in event["data"] for event in events)
+        if model_error:
+            assert any(event.get("event") == "error" and "subscription required" in event["data"] for event in events)
+            saved = json.loads(web._turn_file("web:merge-check").read_text())
+            assert not saved["clean_end"]
+            assert "subscription required" in saved["text"]
+        else:
+            assert any(event.get("event") == "token" and "opencode reply" in event["data"] for event in events)
         assert any(event.get("event") == "done" for event in events)
         assert "merge-check" not in web._RUNNING_CHAT
 

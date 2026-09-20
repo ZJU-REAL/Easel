@@ -80,6 +80,12 @@ def parse_event(line: str) -> RuntimeEvent | None:
         return None
     part = event.get("part") if isinstance(event.get("part"), dict) else {}
     kind = event.get("type")
+    if kind == "error":
+        error = event.get("error") or {}
+        data = error.get("data") if isinstance(error, dict) else None
+        message = (data.get("message") if isinstance(data, dict) else None)
+        message = message or (error.get("message") if isinstance(error, dict) else str(error))
+        raise RuntimeError(message or "OpenCode 模型请求失败")
     if kind == "text" and part.get("text"):
         return RuntimeEvent("text", str(part["text"]), {"session_id": event.get("sessionID") or part.get("sessionID")})
     if kind == "reasoning" and part.get("text"):
@@ -95,13 +101,18 @@ class OpenCodeRunHandle:
         self.native_session_id = native_session_id
         self._text: list[str] = []
         self._events_done = False
+        self._error: str | None = None
 
     def events(self):
         if self._events_done:
             return
         assert self.process.stdout is not None
         for line in self.process.stdout:
-            event = parse_event(line)
+            try:
+                event = parse_event(line)
+            except RuntimeError as exc:
+                self._error = str(exc)
+                continue
             if event:
                 if event.type == "text":
                     self._text.append(event.text)
@@ -113,6 +124,10 @@ class OpenCodeRunHandle:
             for _ in self.events():
                 pass
         rc = self.process.wait()
+        if self._error or (rc == 0 and not self._text):
+            message = self._error or "OpenCode 已退出，但没有返回正文；请检查模型配置或重试。"
+            return RunResult(rc or 1, "".join(self._text), clean_end=False,
+                             stop_reason="runtime_error", diagnostics={"error": message})
         return RunResult(rc, "".join(self._text), clean_end=rc == 0)
 
     def cancel(self) -> None:

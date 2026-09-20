@@ -2100,7 +2100,10 @@ async def api_chat_stream(req: ChatRequest):
                     full_text.append(result.text)
                     to_client("token", result.text)
                 if result.returncode and sk not in _STOPPED_CHAT and not timed_out:
-                    to_client("error", f"❌ 执行失败（退出码 {result.returncode}）")
+                    detail = result.diagnostics.get("error") or f"执行失败（退出码 {result.returncode}）"
+                    error_text = f"❌ {detail}"
+                    full_text.append("\n\n" + error_text if full_text else error_text)
+                    to_client("error", error_text)
             except Exception as exc:
                 to_client("error", f"❌ 启动失败：{exc}")
             finally:
