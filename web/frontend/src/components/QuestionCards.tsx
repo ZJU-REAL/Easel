@@ -9,41 +9,56 @@ import { answerQuestion } from '../lib/api';
  * question.resolve 要求 answers 里**每个问题都有答案**（单个缺失即报
  * QUESTION_INVALID_ANSWER: "question 'xxx' requires an answer"）。
  * 因此多问题时渲染全部题目，用户每问答完一项，全部选齐后自动提交一次。
+ *
+ * 多选：问题对象带 multiSelect: true 时，answers[qid] 可携带多个 label
+ * （gateway 对 multiSelect=false 的多值直接报 "does not allow multiple answers"，
+ * 前端只按数据渲染，不绕过校验）。
  */
 function QuestionCard({ question, onAnswered }: { question: ChatQuestion; onAnswered: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
+  const [customVals, setCustomVals] = useState<Record<string, string[]>>({});
   const [showCustom, setShowCustom] = useState<Record<string, boolean>>({});
 
   const items: ChatQuestionItem[] = question.questions || [];
-  const allAnswered = items.length > 0 && items.every((it) => (selected[it.questionId] || '').trim());
+  const valsOf = (it: ChatQuestionItem): string[] => selected[it.questionId] || [];
+  const allAnswered = items.length > 0 && items.every((it) => valsOf(it).length > 0);
 
-  const submitSingle = async (it: ChatQuestionItem, label: string) => {
-    if (busy) return;
-    setBusy(true); setError('');
-    try {
-      const res = await answerQuestion({
-        questionId: question.id,
-        answers: { [it.questionId]: [label] },
-      });
-      if (!res.ok) setError(res.error || '提交失败');
-      else onAnswered();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
+  const pick = (it: ChatQuestionItem, label: string) => {
+    setSelected((s) => {
+      const cur = s[it.questionId] || [];
+      const next = it.multiSelect
+        ? (cur.includes(label) ? cur.filter((v) => v !== label) : [...cur, label])
+        : [label];
+      return { ...s, [it.questionId]: next };
+    });
   };
 
-  const submitAll = async () => {
+  const fillCustom = (it: ChatQuestionItem) => {
+    const v = (custom[it.questionId] || '').trim();
+    if (!v) return;
+    setSelected((s) => {
+      const cur = s[it.questionId] || [];
+      return { ...s, [it.questionId]: it.multiSelect && !cur.includes(v) ? [...cur, v] : [v] };
+    });
+    setCustomVals((c) => {
+      const cur = c[it.questionId] || [];
+      return { ...c, [it.questionId]: cur.includes(v) ? cur : [...cur, v] };
+    });
+  };
+
+  const removeCustom = (it: ChatQuestionItem, v: string) => {
+    setSelected((s) => ({ ...s, [it.questionId]: (s[it.questionId] || []).filter((x) => x !== v) }));
+    setCustomVals((c) => ({ ...c, [it.questionId]: (c[it.questionId] || []).filter((x) => x !== v) }));
+  };
+
+  const submit = async () => {
     if (busy || !allAnswered) return;
     setBusy(true); setError('');
     const answers: Record<string, string[]> = {};
-    for (const it of items) {
-      answers[it.questionId] = [selected[it.questionId]];
-    }
+    for (const it of items) answers[it.questionId] = valsOf(it);
     try {
       const res = await answerQuestion({ questionId: question.id, answers });
       if (!res.ok) setError(res.error || '提交失败');
@@ -61,21 +76,35 @@ function QuestionCard({ question, onAnswered }: { question: ChatQuestion; onAnsw
         <div className="question-card">
           {items.map((it, idx) => {
             const options: { label: string; description?: string }[] = it.options || [];
-            const val = selected[it.questionId] || '';
+            const vals = valsOf(it);
             const ctl = showCustom[it.questionId];
+            const cvals = customVals[it.questionId] || [];
             return (
               <div key={it.questionId} className="question-card__item">
                 {idx > 0 && <div className="question-card__divider" />}
                 {it.header && <div className="question-card__chip">{it.header}</div>}
-                <div className="question-card__title">{it.question || '请选择'}</div>
+                <div className="question-card__title">
+                  {it.question || '请选择'}
+                  {it.multiSelect && <span className="question-card__multi">可多选</span>}
+                </div>
                 <div className="question-card__options">
                   {options.map((opt) => (
                     <button key={opt.label}
-                      className={`question-card__option${val === opt.label ? ' question-card__option--selected' : ''}`}
+                      className={`question-card__option${vals.includes(opt.label) ? ' question-card__option--selected' : ''}`}
                       disabled={busy}
-                      onClick={() => setSelected((s) => ({ ...s, [it.questionId]: opt.label }))}>
+                      onClick={() => pick(it, opt.label)}>
                       <strong>{opt.label}</strong>
                       {opt.description && <span>{opt.description}</span>}
+                    </button>
+                  ))}
+                  {cvals.map((v) => (
+                    <button key={`custom-${v}`}
+                      className="question-card__option question-card__option--selected"
+                      disabled={busy}
+                      title="点击移除"
+                      onClick={() => removeCustom(it, v)}>
+                      <strong>{v}</strong>
+                      <span>自定义 · 点击移除</span>
                     </button>
                   ))}
                   <button className="question-card__other" disabled={busy}
@@ -92,7 +121,7 @@ function QuestionCard({ question, onAnswered }: { question: ChatQuestion; onAnsw
                       onChange={(e) => setCustom((c) => ({ ...c, [it.questionId]: e.target.value }))}
                     />
                     <button disabled={busy || !(custom[it.questionId] || '').trim()}
-                      onClick={() => setSelected((s) => ({ ...s, [it.questionId]: custom[it.questionId].trim() }))}>
+                      onClick={() => fillCustom(it)}>
                       填入
                     </button>
                   </div>
@@ -101,18 +130,18 @@ function QuestionCard({ question, onAnswered }: { question: ChatQuestion; onAnsw
             );
           })}
 
-          {/* 单问题：选完即提交；多问题：全部选齐后自动提交 */}
+          {/* 单选题：选完点提交；多题：全部选齐后提交（单选/多选同一规则） */}
           {items.length === 1 ? (
             <div className="question-card__actions">
               <button className="question-card__submit" disabled={busy || !allAnswered}
-                onClick={() => void submitSingle(items[0], selected[items[0].questionId])}>
+                onClick={() => void submit()}>
                 提交
               </button>
             </div>
           ) : (
             allAnswered && !busy && (
               <div className="question-card__actions">
-                <button className="question-card__submit" disabled={busy} onClick={() => void submitAll()}>
+                <button className="question-card__submit" disabled={busy} onClick={() => void submit()}>
                   全部已选，提交
                 </button>
               </div>

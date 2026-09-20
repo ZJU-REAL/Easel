@@ -1,0 +1,28 @@
+{
+ "frame": [
+  1920,
+  1080
+ ],
+ "min_margin": 104,
+ "elements": [
+  {
+   "name": "hero",
+   "rect": [
+    640,
+    252,
+    640,
+    400
+   ]
+  },
+  {
+   "name": "intruder",
+   "rect": [
+    640,
+    550,
+    400,
+    300
+   ]
+  }
+ ],
+ "allow_overlap": []
+}

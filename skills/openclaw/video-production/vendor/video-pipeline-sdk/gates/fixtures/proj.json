@@ -1,0 +1,26 @@
+{
+ "source": "assets/sfx/mk-1490-fast-whoosh-transition.mp3",
+ "materials": [
+  "assets/fx/FxCardA.tsx",
+  "assets/fx/FxCardB.tsx"
+ ],
+ "animations": [
+  "FxCardA",
+  "FxCardB"
+ ],
+ "transitions": [
+  "cut"
+ ],
+ "sfx": [
+  {
+   "file": "assets/sfx/mk-1490-fast-whoosh-transition.mp3",
+   "at": 105,
+   "volume": 0.18
+  },
+  {
+   "file": "assets/sfx/mk-3120-technology-transition-slide.mp3",
+   "at": 198,
+   "volume": 0.18
+  }
+ ]
+}

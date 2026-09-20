@@ -40,6 +40,22 @@ function Try-OpenClawConfig($Key, $Value, [switch]$Json) {
     & openclaw @arguments 2>&1 | Out-Null
     return ($LASTEXITCODE -eq 0)
 }
+# JSON 值的配置写入。Windows PowerShell 5.1（系统自带版本）向原生程序传参时会剥掉字符串里的
+# 双引号：任何含 JSON 的 config set 都会变成裸键值、--strict-json 解析失败（见 issue #41）。
+# 这里改走 --batch-file：argv 里只出现临时文件路径（无引号字符），JSON 从文件读，5.1/7 行为一致。
+function OpenClaw-ConfigBatch($Operations) {
+    $batchPath = Join-Path ([System.IO.Path]::GetTempPath()) "easel-config-set-$(Get-Random).json"
+    try {
+        [System.IO.File]::WriteAllText($batchPath, (ConvertTo-Json -InputObject $Operations -Depth 40 -Compress))
+        & openclaw --profile easel config set --batch-file $batchPath 2>&1 | Where-Object { $_ -notmatch '^No change$' }
+        if ($LASTEXITCODE -eq 0) { return }
+        # 老版本 openclaw 不认 --batch-file：退回逐条写入（PS7 可用；Windows PS5.1 下请升级 openclaw）
+        Write-Warning '当前 OpenClaw 不支持 --batch-file，退回逐条写入；建议 npm i -g openclaw@latest 升级。'
+        foreach ($op in $Operations) {
+            OpenClaw-Config $op.path (ConvertTo-Json -InputObject $op.value -Depth 40 -Compress) -Json
+        }
+    } finally { Remove-Item $batchPath -Force -ErrorAction SilentlyContinue }
+}
 # 原子写入 anthropic provider。部分 OpenClaw 版本（如 2026.3.x）的 schema 要求 provider 一次性带齐
 # baseUrl + models，逐字段 config set 会因中间态缺字段而整体校验失败（baseUrl/models: received undefined）。
 # 用 venv Python 生成 JSON，避开 ConvertTo-Json 对空数组的序列化坑；整块替换也会顺带清掉旧的残留 header。
@@ -48,7 +64,7 @@ function Write-AnthropicProvider($BaseUrl, $ApiKey, $ApiKeyHeader, $AnthropicVer
     $env:A_API_KEY = $ApiKey
     $env:A_HDR = $ApiKeyHeader
     $env:A_VER = $AnthropicVersion
-    $seed = & $Python -c @'
+    $seed = @'
 import json, os
 p = {"baseUrl": os.environ["A_BASE_URL"], "apiKey": os.environ["A_API_KEY"], "models": []}
 hdr = os.environ.get("A_HDR"); ver = os.environ.get("A_VER")
@@ -58,9 +74,9 @@ if hdr or ver:
     if ver: h["anthropic-version"] = ver
     p["headers"] = h
 print(json.dumps(p))
-'@
+'@ | & $Python -
     Remove-Item Env:A_BASE_URL, Env:A_API_KEY, Env:A_HDR, Env:A_VER -ErrorAction SilentlyContinue
-    OpenClaw-Config 'models.providers.anthropic' $seed -Json
+    OpenClaw-ConfigBatch @(@{ path = 'models.providers.anthropic'; value = ($seed | ConvertFrom-Json) })
 }
 
 Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta
@@ -179,7 +195,7 @@ if ($AgentRuntime -eq 'openclaw') {
 # 这里在写入任何配置前，先把 models.providers.* 下残留的 null 叶子节点原地清空。
 $openclawJson = Join-Path $HOME '.openclaw-easel\openclaw.json'
 if (Test-Path $openclawJson) {
-    & $Python -c @'
+    @'
 import json, sys
 
 path = sys.argv[1]
@@ -206,31 +222,39 @@ if strip_nulls(providers):
     with open(path, "w") as f:
         json.dump(config, f, indent=2)
         f.write("\n")
-'@ $openclawJson
+'@ | & $Python - $openclawJson
 }
 
 # 仅当真正写了 anthropic provider 时，才补设它的 provider 级超时（见文末 timeoutSeconds）；
 # 否则会给 OpenAI/MAAS 用户凭空造出一个只有 timeoutSeconds、缺 baseUrl/models 的残缺 anthropic provider。
 $anthropicSynced = $false
-if (Is-UsableKey $envValues['OPENAI_MAAS_API_KEY'] -and $envValues.ContainsKey('OPENAI_MAAS_ENDPOINT')) {
+# 注意函数调用外面这对括号不能省：`if (Is-UsableKey $x -and $y)` 会让解析器进入命令模式，
+# 把 `-and` 当成 Is-UsableKey 的参数名（简单函数会把它静默吞进 $args），
+# 于是 ContainsKey 那半边守卫被丢掉且不报错。加括号才让 -and 回到运算符语义。
+if ((Is-UsableKey $envValues['OPENAI_MAAS_API_KEY']) -and $envValues.ContainsKey('OPENAI_MAAS_ENDPOINT')) {
     $model = if ($envValues.ContainsKey('OPENAI_MAAS_MODEL')) { $envValues['OPENAI_MAAS_MODEL'] } else { 'gpt-5.5' }
     $port = if ($envValues.ContainsKey('OPENAI_MAAS_ADAPTER_PORT')) { $envValues['OPENAI_MAAS_ADAPTER_PORT'] } else { '18791' }
     $adapter = Join-Path $Root 'scripts\openai_maas_adapter.py'
     $provider = @{ baseUrl = "http://127.0.0.1:$port/v1"; api = 'openai-completions'; apiKey = 'local-adapter'; timeoutSeconds = 600; request = @{ allowPrivateNetwork = $true }; models = @(@{ id = $model; name = 'OpenAI-compatible model'; reasoning = $true; input = @('text') }); localService = @{ command = $Python; args = @($adapter, '--port', $port); cwd = $Root; healthUrl = "http://127.0.0.1:$port/health"; idleStopMs = 0; env = @{ OPENAI_MAAS_API_KEY = $envValues['OPENAI_MAAS_API_KEY']; OPENAI_MAAS_ENDPOINT = $envValues['OPENAI_MAAS_ENDPOINT']; OPENAI_MAAS_MODEL = $model; OPENAI_MAAS_API_KEY_HEADER = if ($envValues.ContainsKey('OPENAI_MAAS_API_KEY_HEADER')) { $envValues['OPENAI_MAAS_API_KEY_HEADER'] } else { 'Authorization' } } } }
-    OpenClaw-Config 'models.providers.rednote-openai' ($provider | ConvertTo-Json -Compress -Depth 10) -Json
+    OpenClaw-ConfigBatch @(@{ path = 'models.providers.rednote-openai'; value = $provider })
     OpenClaw-Config 'agents.defaults.model.primary' "rednote-openai/$model"
 } elseif (Is-UsableKey $envValues['OPENAI_API_KEY']) {
     $model = if ($envValues.ContainsKey('OPENAI_MODEL')) { $envValues['OPENAI_MODEL'] } else { 'gpt-4o' }
-    $models = @(@{ id = $model; name = 'OpenAI model'; reasoning = $true; input = @('text', 'image') }) | ConvertTo-Json -Compress -Depth 5 -AsArray
-    OpenClaw-Config 'models.providers.openai.api' 'openai-completions'; OpenClaw-Config 'models.providers.openai.apiKey' $envValues['OPENAI_API_KEY']; OpenClaw-Config 'models.providers.openai.baseUrl' $(if ($envValues.ContainsKey('OPENAI_BASE_URL')) { $envValues['OPENAI_BASE_URL'] } else { 'https://api.openai.com/v1' }); OpenClaw-Config 'models.providers.openai.models' $models -Json; OpenClaw-Config 'agents.defaults.model.primary' "openai/$model"
-} elseif (Is-UsableKey $envValues['EASEL_LLM_API_KEY'] -and $envValues.ContainsKey('EASEL_LLM_BASE_URL')) {
+    OpenClaw-ConfigBatch @(
+        @{ path = 'models.providers.openai.api'; value = 'openai-completions' },
+        @{ path = 'models.providers.openai.apiKey'; value = $envValues['OPENAI_API_KEY'] },
+        @{ path = 'models.providers.openai.baseUrl'; value = $(if ($envValues.ContainsKey('OPENAI_BASE_URL')) { $envValues['OPENAI_BASE_URL'] } else { 'https://api.openai.com/v1' }) },
+        @{ path = 'models.providers.openai.models'; value = @(@{ id = $model; name = 'OpenAI model'; reasoning = $true; input = @('text', 'image') }) },
+        @{ path = 'agents.defaults.model.primary'; value = "openai/$model" }
+    )
+} elseif ((Is-UsableKey $envValues['EASEL_LLM_API_KEY']) -and $envValues.ContainsKey('EASEL_LLM_BASE_URL')) {
     # 原子写入整块 provider（含 header 与 anthropic-version）；整块替换会顺带清掉旧的专用 header。
     $hdr = if ($envValues.ContainsKey('EASEL_LLM_API_KEY_HEADER')) { $envValues['EASEL_LLM_API_KEY_HEADER'] } else { 'api-key' }
     $ver = if ($envValues.ContainsKey('EASEL_LLM_ANTHROPIC_VERSION')) { $envValues['EASEL_LLM_ANTHROPIC_VERSION'] } else { '2023-06-01' }
     Write-AnthropicProvider $envValues['EASEL_LLM_BASE_URL'] $envValues['EASEL_LLM_API_KEY'] $hdr $ver
     $anthropicSynced = $true
     OpenClaw-Config 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })
-} elseif (Is-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN'] -and $envValues.ContainsKey('ANTHROPIC_BASE_URL')) {
+} elseif ((Is-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and $envValues.ContainsKey('ANTHROPIC_BASE_URL')) {
     Write-AnthropicProvider $envValues['ANTHROPIC_BASE_URL'] $envValues['ANTHROPIC_AUTH_TOKEN'] '' ''
     $anthropicSynced = $true
     OpenClaw-Config 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })

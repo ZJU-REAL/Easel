@@ -421,11 +421,15 @@ def _fill_and_submit(page, title, content, tags):
 def _launch(p, headed: bool, base: str | None, proxy: str | None):
     profile = _profile_dir(base)
     profile.mkdir(parents=True, exist_ok=True)
+    args = list(LAUNCH_ARGS)
     kwargs = dict(headless=not headed,
                   locale="zh-CN",
-                  args=LAUNCH_ARGS)
+                  args=args)
     if proxy:
         kwargs["proxy"] = {"server": proxy}
+    else:
+        # 显式直连：Chromium 级屏蔽系统/环境代理（开 VPN 也能用）——同抖音链兜底
+        args.append("--no-proxy-server")
     return p.chromium.launch_persistent_context(str(profile), **kwargs)
 
 

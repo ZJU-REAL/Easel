@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { fetchSkillDetail, executeSkill, saveEnv } from '../lib/api';
 import type { SkillDetail } from '../lib/api';
 import { renderMarkdown } from '../lib/sanitize';
+import { displayName } from '../lib/skillDisplayNames';
 
 interface SkillDrawerProps {
   skillName: string;
@@ -86,9 +87,10 @@ export default function SkillDrawer({ skillName, persona, onClose, onConfigured 
         <div className="drawer-header">
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>
-              <div className="skill-detail-title">{skillName}</div>
+              <div className="skill-detail-title">{displayName(skillName)}</div>
+              <div className="skill-detail-rawname">{skillName}</div>
               <div className="skill-detail-meta">
-                {detail?.layer && <span className="badge badge-accent">{detail.layer}</span>}
+                {detail?.layer && <span className="badge badge-accent">{{discover:'发现',plan:'策划',produce:'制作',publish:'发布',attribute:'归因',general:'通用'}[detail.layer] || detail.layer}</span>}
                 {detail?.needsApi && (
                   detail.apiConfigured
                     ? <span className="badge badge-ok">✓ 已配置</span>

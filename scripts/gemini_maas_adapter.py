@@ -179,6 +179,22 @@ def gemini_to_openai(data: dict, model: str) -> dict:
     }
 
 
+_FINISH_MAP = {"STOP": "stop", "MAX_TOKENS": "length", "SAFETY": "content_filter",
+               "RECITATION": "content_filter"}
+
+
+def map_finish_reason(reason: object) -> str:
+    return _FINISH_MAP.get(reason, "stop") if isinstance(reason, str) else "stop"
+
+
+def stream_endpoint_for(endpoint: str) -> str:
+    # Gemini 流式用 :streamGenerateContent?alt=sse；把配置里的 :generateContent 换过去。
+    url = endpoint.replace(":generateContent", ":streamGenerateContent")
+    if "alt=" not in url:
+        url += ("&" if "?" in url else "?") + "alt=sse"
+    return url
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "EaselGeminiAdapter/1.0"
 
@@ -209,28 +225,22 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError("GEMINI_MAAS_API_KEY is not configured")
             payload = openai_to_gemini(body)
             call_id_debug = payload.pop("_adapterDebug", [])
-            request = Request(
-                os.environ.get("GEMINI_MAAS_ENDPOINT", DEFAULT_ENDPOINT),
-                data=json.dumps(payload, ensure_ascii=False).encode(),
-                headers={"api-key": api_key, "Content-Type": "application/json"},
-                method="POST",
-            )
-            # Internal MaaS must bypass any workstation-wide outbound proxy.
-            with build_opener(ProxyHandler({})).open(request, timeout=600) as response:
-                result = gemini_to_openai(json.load(response), body.get("model", DEFAULT_MODEL))
+            endpoint = os.environ.get("GEMINI_MAAS_ENDPOINT", DEFAULT_ENDPOINT)
+            model = body.get("model", DEFAULT_MODEL)
             if body.get("stream"):
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()
-                choice = result["choices"][0]
-                chunk = {k: result[k] for k in ("id", "created", "model")}
-                chunk.update({"object": "chat.completion.chunk", "choices": [{
-                    "index": 0, "delta": choice["message"], "finish_reason": choice["finish_reason"]
-                }]})
-                self.wfile.write(("data: " + json.dumps(chunk, ensure_ascii=False) + "\n\n").encode())
-                self.wfile.write(b"data: [DONE]\n\n")
+                # 走 Gemini 原生 SSE，把 thought/answer/tool 增量逐块转成 OpenAI chunk，
+                # 让上层 OpenClaw 逐字流式 + 实时显示思考 CoT（reasoning_content）。
+                self.stream_gemini(endpoint, payload, api_key, model)
             else:
+                request = Request(
+                    endpoint,
+                    data=json.dumps(payload, ensure_ascii=False).encode(),
+                    headers={"api-key": api_key, "Content-Type": "application/json"},
+                    method="POST",
+                )
+                # Internal MaaS must bypass any workstation-wide outbound proxy.
+                with build_opener(ProxyHandler({})).open(request, timeout=600) as response:
+                    result = gemini_to_openai(json.load(response), model)
                 self.send_json(200, result)
         except HTTPError as exc:
             detail = exc.read().decode(errors="replace")[:2000]
@@ -248,6 +258,79 @@ class Handler(BaseHTTPRequestHandler):
             )}})
         except (URLError, OSError, ValueError, RuntimeError) as exc:
             self.send_json(502, {"error": {"message": str(exc)}})
+
+    def stream_gemini(self, endpoint: str, payload: dict, api_key: str, model: str) -> None:
+        request = Request(
+            stream_endpoint_for(endpoint),
+            data=json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"api-key": api_key, "Content-Type": "application/json"},
+            method="POST",
+        )
+        # Internal MaaS must bypass any workstation-wide outbound proxy.
+        # open() 先建连——上游 HTTPError 在此抛出、由 do_POST 统一转 JSON 错误（此时响应头未发）。
+        upstream = build_opener(ProxyHandler({})).open(request, timeout=600)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        base = {
+            "id": "chatcmpl-" + uuid.uuid4().hex,
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model,
+        }
+
+        def emit(delta: dict, finish: str | None = None) -> None:
+            chunk = dict(base)
+            chunk["choices"] = [{"index": 0, "delta": delta, "finish_reason": finish}]
+            self.wfile.write(("data: " + json.dumps(chunk, ensure_ascii=False) + "\n\n").encode())
+            self.wfile.flush()
+
+        emit({"role": "assistant"})
+        tool_index = 0
+        finish_reason = "stop"
+        with upstream:
+            for raw in upstream:
+                line = raw.decode(errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    chunk = json.loads(data)
+                except ValueError:
+                    continue
+                candidate = (chunk.get("candidates") or [{}])[0]
+                parts = (candidate.get("content") or {}).get("parts") or []
+                for part in parts:
+                    if not isinstance(part, dict):
+                        continue
+                    if "text" in part:
+                        key = "reasoning_content" if part.get("thought") else "content"
+                        emit({key: str(part["text"])})
+                    function = part.get("functionCall")
+                    if isinstance(function, dict):
+                        signature = part.get("thoughtSignature")
+                        call_id = encode_signature(signature) if isinstance(signature, str) \
+                            else "call_" + uuid.uuid4().hex
+                        emit({"tool_calls": [{
+                            "index": tool_index,
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": function.get("name", "tool"),
+                                "arguments": json.dumps(
+                                    function.get("args") or {}, ensure_ascii=False, separators=(",", ":")),
+                            },
+                        }]})
+                        tool_index += 1
+                reason = candidate.get("finishReason")
+                if reason:
+                    finish_reason = map_finish_reason(reason)
+        emit({}, "tool_calls" if tool_index else finish_reason)
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
 
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"[gemini-adapter] {self.address_string()} {fmt % args}", flush=True)

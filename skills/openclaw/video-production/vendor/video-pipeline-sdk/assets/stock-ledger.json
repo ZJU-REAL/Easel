@@ -1,0 +1,110 @@
+[
+  {
+    "name": "stock_milkyway",
+    "vid": 4148,
+    "slug": "milky-way-seen-at-night",
+    "category": "night-sky",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/4148/4148-1080.mp4",
+    "probe": "1920,1080,16.166667"
+  },
+  {
+    "name": "stock_snowforest",
+    "vid": 3350,
+    "slug": "moon-in-the-sky-a-snowy-forest",
+    "category": "forest",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/3350/3350-1080.mp4",
+    "probe": "1920,1080,11.375000"
+  },
+  {
+    "name": "stock_sunset",
+    "vid": 15169,
+    "slug": "red-sunset-over-the-ocean",
+    "category": "ocean",
+    "res": "720",
+    "url": "https://assets.mixkit.co/videos/15169/15169-720.mp4",
+    "probe": "1280,720,48.248200"
+  },
+  {
+    "name": "stock_editor",
+    "vid": 44071,
+    "slug": "boy-editing-a-video-on-a-computer",
+    "category": "technology",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/44071/44071-1080.mp4",
+    "probe": "1920,1080,22.772750"
+  },
+  {
+    "name": "stock_tunnel",
+    "vid": 31497,
+    "slug": "traveling-through-a-tunnel-of-black-cubes-in-3d",
+    "category": "technology",
+    "res": "720",
+    "url": "https://assets.mixkit.co/videos/31497/31497-720.mp4",
+    "probe": "1280,720,15.000000"
+  },
+  {
+    "name": "stock_scrambled",
+    "vid": 31771,
+    "slug": "scrambled-dots-and-lines-within-a-sphere-of-dots",
+    "category": "technology",
+    "res": "720",
+    "url": "https://assets.mixkit.co/videos/31771/31771-720.mp4",
+    "probe": "1920,1080,15.033008"
+  },
+  {
+    "name": "stock_money",
+    "vid": 45703,
+    "slug": "money-counting-machine-counting-up-money",
+    "category": "money",
+    "res": "720",
+    "url": "https://assets.mixkit.co/videos/45703/45703-720.mp4",
+    "probe": "1920,1080,21.366667"
+  },
+  {
+    "name": "stock_worldmap",
+    "vid": 12748,
+    "slug": "world-map-in-a-digital-world",
+    "category": "business",
+    "res": "720",
+    "url": "https://assets.mixkit.co/videos/12748/12748-720.mp4",
+    "probe": "1920,1080,15.000000"
+  },
+  {
+    "name": "stock_ink",
+    "vid": 44818,
+    "slug": "abstract-video-of-a-liquid-with-dark-ink-flowing",
+    "category": "abstract",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/44818/44818-1080.mp4",
+    "probe": "1920,1080,17.400000"
+  },
+  {
+    "name": "stock_graphs",
+    "vid": 42648,
+    "slug": "business-man-exposing-graphs",
+    "category": "business",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/42648/42648-1080.mp4",
+    "probe": "1920,1080,6.333333"
+  },
+  {
+    "name": "stock_bubbles",
+    "vid": 51869,
+    "slug": "blurry-sky-background-with-bubbles-floating-in-front",
+    "category": "bubbles",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/51869/51869-1080.mp4",
+    "probe": "1920,1080,10.300000"
+  },
+  {
+    "name": "stock_dunes",
+    "vid": 4149,
+    "slug": "dunes-in-the-sahara-desert",
+    "category": "desert",
+    "res": "1080",
+    "url": "https://assets.mixkit.co/videos/4149/4149-1080.mp4",
+    "probe": "1920,1080,11.400000"
+  }
+]

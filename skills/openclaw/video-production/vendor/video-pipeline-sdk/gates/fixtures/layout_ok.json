@@ -1,0 +1,65 @@
+{
+ "frame": [
+  1920,
+  1080
+ ],
+ "min_margin": 104,
+ "elements": [
+  {
+   "name": "hero",
+   "rect": [
+    640,
+    252,
+    640,
+    400
+   ]
+  },
+  {
+   "name": "left",
+   "rect": [
+    170,
+    430,
+    560,
+    330
+   ]
+  },
+  {
+   "name": "right",
+   "rect": [
+    1190,
+    430,
+    560,
+    330
+   ]
+  },
+  {
+   "name": "chips",
+   "rect": [
+    660,
+    852,
+    600,
+    50
+   ]
+  },
+  {
+   "name": "floater_TR",
+   "rect": [
+    1780,
+    116,
+    80,
+    30
+   ],
+   "edge": true
+  }
+ ],
+ "allow_overlap": [
+  [
+   "left",
+   "hero"
+  ],
+  [
+   "right",
+   "hero"
+  ]
+ ]
+}

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
 import QuestionCards from './QuestionCards';
+import BrushEntry from './BrushEntry';
 import type { ChatSession, ChatMessage, StreamState } from '../lib/store';
-import { uploadFiles } from '../lib/api';
+import { uploadFiles, adoptOversize } from '../lib/api';
 import type { UploadedFile } from '../lib/api';
 import { IconArrowUp, IconStop, IconPlus, IconFile } from './icons';
 
@@ -39,6 +40,7 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [maxMb, setMaxMb] = useState(50);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,12 +48,34 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
   const isStreaming = !!stream;
   const isEmpty = session.messages.length === 0 && !isStreaming;
 
+  useEffect(() => {
+    fetch('/api/upload/limits').then((r) => r.json())
+      .then((d) => { if (d?.max_mb) setMaxMb(d.max_mb); }).catch(() => {});
+  }, []);
+
   const doUpload = async (fs: FileList | File[]) => {
     const arr = Array.from(fs);
     if (!arr.length) return;
+    const cap = maxMb * 1024 * 1024;
+    const big = arr.filter((f) => f.size > cap);
+    const small = arr.filter((f) => f.size <= cap);
+
+    if (big.length) {
+      // 超限：不走上传通道，复制进收件箱后作为普通附件（界面零新增元素）
+      setUploading(true);
+      try {
+        const saved = await adoptOversize(big, session.id);
+        setAttachments((a) => [...a, ...saved]);
+      } catch (err) {
+        alert((err as Error).message || '超限文件处理失败');
+      } finally {
+        setUploading(false);
+      }
+    }
+    if (!small.length) return;
     setUploading(true);
     try {
-      const saved = await uploadFiles(arr, session.id);
+      const saved = await uploadFiles(small, session.id);
       setAttachments((a) => [...a, ...saved]);
     } catch (err) {
       alert((err as Error).message || '上传失败');
@@ -70,7 +94,7 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
 
   useEffect(() => {
     if (!isEmpty) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [session.messages, stream?.content, stream?.thinking, stream?.activity, isEmpty]);
+  }, [session.messages, stream?.content, stream?.thinking, stream?.activity, stream?.stillWorking, isEmpty]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -111,22 +135,25 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
           ))}
         </div>
       )}
-      <textarea
-        ref={textareaRef}
-        className="chat-input"
-        placeholder={dragOver ? '松手上传素材…' : hero ? '把你的想法告诉我，选题 / 文案 / 卡片 / 视频 / 发布都行…（可拖入图片/文档当素材）' : '发消息…（Enter 发送，Shift+Enter 换行，可拖入/粘贴素材）'}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onPaste={onPaste}
-        rows={1}
-        autoFocus={hero}
-      />
+      <div className="composer-top">
+        <BrushEntry onPick={(t) => { setInput(t); requestAnimationFrame(() => textareaRef.current?.focus()); }} />
+        <textarea
+          ref={textareaRef}
+          className="chat-input"
+          placeholder={dragOver ? '松手上传素材…' : hero ? '把你的想法告诉我，选题 / 文案 / 卡片 / 视频 / 发布都行…（可拖入图片/文档当素材）' : '发消息…（Enter 发送，Shift+Enter 换行，可拖入/粘贴素材）'}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={onPaste}
+          rows={1}
+          autoFocus={hero}
+        />
+      </div>
       <input ref={fileInputRef} type="file" multiple hidden
         onChange={(e) => { if (e.target.files) doUpload(e.target.files); e.target.value = ''; }} />
       <div className="composer-bar">
         <button className="composer-attach-btn" onClick={() => fileInputRef.current?.click()}
-          disabled={isStreaming || uploading} title="添加素材（图片/文档）">
+          disabled={isStreaming || uploading} title={`添加素材（图片/文档）；超过 ${maxMb}MB 的大文件将自动存为本地素材（不走上传）`}>
           <IconPlus size={15} /> {uploading ? '上传中…' : '素材'}
         </button>
         <span className="composer-hint">{isStreaming ? '生成中…' : 'Enter 发送 · Shift+Enter 换行'}</span>
@@ -212,6 +239,7 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
                 isStreaming={live}
                 thinking={live ? stream!.thinking : ''}
                 activity={live ? stream!.activity : ''}
+                stillWorking={live ? stream!.stillWorking : ''}
                 actions={actions}
               />
             );

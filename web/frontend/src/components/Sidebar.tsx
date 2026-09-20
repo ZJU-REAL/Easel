@@ -7,6 +7,7 @@ import {
   IconNewChat, IconEdit, IconArchive, IconUnarchive, IconTrash, IconChevron,
   IconDashboard,
 } from './icons';
+import { IconGear } from './settingsIcons';
 
 export type Page = 'dashboard' | 'chat' | 'trends' | 'ideas' | 'calendar' | 'publish' | 'breakdown' | 'skills' | 'outputs' | 'accounts' | 'profile';
 
@@ -26,6 +27,7 @@ interface SidebarProps {
   onSessionArchive: (id: string, archived: boolean) => void;
   onNewChat: () => void;
   gatewayStatus: string;
+  onOpenSettings: () => void;
 }
 
 // 主导航（精简）；热点雷达/选题库/内容日历/发布中心 收进「工作台」，不占侧栏
@@ -54,6 +56,7 @@ export default function Sidebar({
   onSessionArchive,
   onNewChat,
   gatewayStatus,
+  onOpenSettings,
 }: SidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -173,7 +176,10 @@ export default function Sidebar({
           : gatewayStatus === 'disconnected'
             ? '网关离线'
             : '连接中…'}
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>subnav-1</span>
+        <button className="settings-gear" onClick={onOpenSettings} title="设置（模型 · 环境 · 更多）">
+          <IconGear size={13} /> 设置
+        </button>
+        <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tertiary)' }}>subnav-1</span>
       </div>
     </div>
   );

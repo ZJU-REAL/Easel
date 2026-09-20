@@ -118,6 +118,12 @@ case "${1:-status}" in
             exit 0
         fi
         echo "[easel] Starting Easel gateway (profile: $PROFILE)..."
+        # 原始事件流由 gateway 进程按自己的 env 写到单个共享文件（web/app.py 会 tail 它做流式）。
+        # 注意：`openclaw agent` 客户端没有 --raw-stream 标志，在客户端 env 上设这俩变量无效，
+        # 必须在这里、真正跑模型的 gateway 上开启。setsid -f/nohup 会继承下面 export 的 env。
+        export OPENCLAW_RAW_STREAM=1
+        export OPENCLAW_RAW_STREAM_PATH="${EASEL_RAW_STREAM_PATH:-/tmp/easel-raw-stream.jsonl}"
+        : > "$OPENCLAW_RAW_STREAM_PATH"    # 每次起 gateway 清空，避免无限增长/读到上次残留
         _detach openclaw --profile "$PROFILE" gateway run --force --allow-unconfigured --bind loopback > "$LOGFILE" 2>&1
         sleep 4
         if gateway_live; then

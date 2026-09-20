@@ -353,6 +353,16 @@ export async function uploadFiles(files: File[], sessionId: string): Promise<Upl
   return r.files;
 }
 
+/** 超限文件复制通道：返回与 uploadFiles 同构的附件引用。 */
+export interface AdoptedFile { id: string; name: string; path: string; }
+export async function adoptOversize(files: File[], sessionId: string): Promise<AdoptedFile[]> {
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  fd.append('sessionId', sessionId);
+  const r = await request<{ ok: boolean; files: AdoptedFile[] }>('/api/upload/local', { method: 'POST', body: fd });
+  return r.files;
+}
+
 export function deleteSession(sessionKey: string): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>(`/api/session/${encodeURIComponent(sessionKey)}`, {
     method: 'DELETE',
@@ -555,6 +565,7 @@ export function streamChat(
   onRecoveryUnavailable?: () => void,
   attachments: UploadedFile[] = [],
   onQuestion?: (q: ChatQuestion) => void,
+  onHeartbeat?: (note: string) => void,
 ): AbortController {
   const controller = new AbortController();
   let lastEventId = 0;
@@ -591,6 +602,9 @@ export function streamChat(
           try { onActivity(JSON.parse(data) as string); } catch { onActivity(data); }
         } else if (currentEvent === 'question' && onQuestion) {
           try { onQuestion(JSON.parse(data) as ChatQuestion); } catch { /* 解析失败忽略 */ }
+        } else if (currentEvent === 'heartbeat') {
+          // 防呆心跳：独立于 activity/thinking，仅作「未卡住」提示，不覆盖真实状态。
+          if (onHeartbeat) { try { onHeartbeat(JSON.parse(data) as string); } catch { onHeartbeat(data); } }
         } else if (currentEvent === 'error') {
           let msg = '执行失败';
           try { msg = JSON.parse(data) as string; } catch { msg = data; }
@@ -677,4 +691,135 @@ export function streamChat(
 export function fetchLastTurn(sessionId: string, turnId?: string): Promise<{ status: string; text: string; turn_id?: string }> {
   const query = turnId ? `?turn_id=${encodeURIComponent(turnId)}` : '';
   return request(`/api/chat/last/${encodeURIComponent(sessionId)}${query}`);
+}
+
+// ═══ 设置面板 · 环境安装（install_tool 引擎桥） ═══
+
+export interface EnvTool {
+  id: string;
+  state: 'ok' | 'missing' | 'no_dir' | 'fail';
+  version: string | null;
+  detail: string | null;
+  name: string;
+  group: string;
+  group_name?: string;
+  desc: string;
+  big?: boolean;
+}
+
+export interface EnvToolsResponse {
+  python: string;
+  tools: EnvTool[];
+  cachedAt?: number;
+}
+
+export function fetchEnvTools(refresh = false): Promise<EnvToolsResponse> {
+  return request(`/api/env/tools${refresh ? '?refresh=1' : ''}`);
+}
+
+export interface EnvJobResult {
+  id: string;
+  state: 'ok' | 'fail';
+  version?: string | null;
+  strategy?: string | null;
+  detail?: string | null;
+}
+
+export interface EnvJob {
+  jobId: string;
+  id: string;
+  state: 'running' | 'ok' | 'fail';
+  lines: string[];
+  result: EnvJobResult | null;
+  started: number;
+  ended: number | null;
+}
+
+export function startEnvInstall(id: string): Promise<{ jobId: string; id: string; state: string }> {
+  return request('/api/env/install', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+}
+
+export function fetchEnvJob(jobId: string): Promise<EnvJob> {
+  return request(`/api/env/job/${encodeURIComponent(jobId)}`);
+}
+
+// ═══ 设置面板 · 模型通道（只读 + 真自测） ═══
+
+export interface ModelRow {
+  slot?: string;
+  order: number;
+  name: string;
+  sub: string;
+  type: string;
+  model: string;
+  baseUrl: string;
+  keyMasked: string;
+  role: string;
+  result: string;
+  keyNew?: string;
+  keyNew2?: string;
+  key2Label?: string;
+  key2Masked?: string;
+  modelEditable?: boolean;
+  baseEditable?: boolean;
+  baseOptional?: boolean;
+  adv?: boolean;
+  deletable?: boolean;
+}
+
+export interface ModelSaveRow {
+  slot: string;
+  name?: string;
+  model: string;
+  baseUrl: string;
+  key: string;
+  key2?: string;
+  primary?: boolean;
+}
+
+export interface ModelSaveResponse extends ModelChannelsResponse {
+  ok: boolean;
+  note?: string;
+}
+
+export function saveModelConfig(channel: string, rows: ModelSaveRow[]): Promise<ModelSaveResponse> {
+  return request('/api/settings/models/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, rows }),
+  });
+}
+
+export interface ModelChannelRows { rows: ModelRow[] }
+
+export interface ModelChannelsResponse {
+  channels: {
+    chat: ModelChannelRows;
+    transcribe: ModelChannelRows;
+    image?: ModelChannelRows;
+    video?: ModelChannelRows;
+    music?: ModelChannelRows;
+    speech?: ModelChannelRows;
+  };
+  primary: string;
+}
+
+export function fetchModelChannels(): Promise<ModelChannelsResponse> {
+  return request('/api/settings/models');
+}
+
+// （保存接口见上方 saveModelConfig）
+
+export interface SelftestResult { baseUrl: string; ok: boolean; ms: number; detail?: string }
+
+export function runChannelSelftest(channel: string): Promise<{ channel: string; results: SelftestResult[]; testedAt: number }> {
+  return request('/api/settings/models/selftest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel }),
+  });
 }

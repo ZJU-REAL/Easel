@@ -3,6 +3,7 @@ import type { ComponentType } from 'react';
 import { fetchSkills } from '../lib/api';
 import type { SkillItem } from '../lib/api';
 import SkillDrawer from './SkillDrawer';
+import { displayName } from '../lib/skillDisplayNames';
 import {
   IconSearch, IconCompass, IconSkills, IconSend, IconChart, IconLayers,
   IconVideo, IconImage, IconMusic, IconMic, IconText, IconLayout, IconProfile, IconOutputs,
@@ -67,7 +68,7 @@ export default function SkillPage({ persona }: SkillPageProps) {
     const q = query.trim().toLowerCase();
     if (!q) return skills;
     return skills.filter((s) =>
-      s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
+      s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q) || displayName(s.name).toLowerCase().includes(q));
   }, [skills, query]);
 
   const grouped = useMemo(() => {
@@ -134,7 +135,8 @@ export default function SkillPage({ persona }: SkillPageProps) {
                   >
                     {alert && <div className="skill-card-alert" title="需要配置 API key">!</div>}
                     <div className="skill-card-icon" style={{ color: meta.color }}><Icon size={19} /></div>
-                    <div className="skill-card-name">{s.name}</div>
+                    <div className="skill-card-name">{displayName(s.name)}</div>
+                    <div className="skill-card-rawname">{s.name}</div>
                     <div className="skill-card-desc">{s.description?.trim() || LAYER_DESC[layer.key]}</div>
                     <div className="skill-card-foot">
                       {s.needsApi && (s.apiConfigured

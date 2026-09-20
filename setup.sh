@@ -383,16 +383,30 @@ if [ -z "${CLAUDE_MODEL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; th
     fi
 fi
 
+# .env.example 里的 key 带的是占位符，所以「变量有值」≠「这个 key 能用」。
+# 认证判定一律走这里，别再各写各的 -n/-z：之前下面那段用 `-z ANTHROPIC_API_KEY`
+# 判「没配 Anthropic」，占位符行一留就永远不成立，整条 OpenAI 分支被跳过，
+# 最后只写了个指向不存在 provider 的 primary，对话直接报
+# "No route-compatible authentication source is configured for openai"。
+# 语义与 setup.ps1 的 Is-UsableKey 保持一致。
+usable_key() {
+    [ -n "${1:-}" ] || return 1
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        *replace_me*|*your-api-key*|*your_api_key*|*"your api key"*) return 1 ;;
+    esac
+    return 0
+}
+
 MODEL_CONFIGURED=false
-if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
+if usable_key "${ANTHROPIC_API_KEY:-}"; then
     MODEL_CONFIGURED=true
-elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
+elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     MODEL_CONFIGURED=true
-elif [ -n "${OPENAI_API_KEY:-}" ] && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
+elif usable_key "${OPENAI_API_KEY:-}"; then
     MODEL_CONFIGURED=true
-elif [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+elif usable_key "${ANTHROPIC_AUTH_TOKEN:-}" && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
     MODEL_CONFIGURED=true
-elif [ -n "${OPENAI_MAAS_API_KEY:-}" ] && [ -n "${OPENAI_MAAS_ENDPOINT:-}" ]; then
+elif usable_key "${OPENAI_MAAS_API_KEY:-}" && [ -n "${OPENAI_MAAS_ENDPOINT:-}" ]; then
     MODEL_CONFIGURED=true
 fi
 
@@ -449,17 +463,22 @@ STANDARD_LLM_CONFIGURED=false
 # 仅当真正写了 anthropic provider 时，才补设它的 provider 级超时（见下方 timeoutSeconds）；
 # 否则会给 OpenAI/MAAS 用户凭空造出一个只有 timeoutSeconds、缺 baseUrl/models 的残缺 anthropic provider。
 ANTHROPIC_PROVIDER_SYNCED=false
-if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
+# 下面 if 链里只要有一支写成了 provider 就算配好；仅 else（谁都没匹配上）会翻成 false。
+AUTH_CONFIGURED=true
+if usable_key "${ANTHROPIC_API_KEY:-}"; then
     STANDARD_LLM_CONFIGURED=true
-elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
+elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     STANDARD_LLM_CONFIGURED=true
-elif [ -n "${OPENAI_API_KEY:-}" ] && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
+elif usable_key "${OPENAI_API_KEY:-}"; then
     STANDARD_LLM_CONFIGURED=true
 fi
 
-if [ "$STANDARD_LLM_CONFIGURED" = true ] && [ -z "${ANTHROPIC_API_KEY:-}" ] \
-   && [ -z "${EASEL_LLM_API_KEY:-}" ] && [ -n "${OPENAI_API_KEY:-}" ] \
-   && [ "$OPENAI_API_KEY" != "REPLACE_ME" ]; then
+# 「只配了 OpenAI」才走这支（Anthropic/EASEL_LLM 优先级更高）。判据必须是 usable_key
+# 而非 -z，否则 .env.example 留下的占位符会一直把这支挡掉。
+# EASEL_LLM 要连 BASE_URL 一起判：只填了 key 没填 URL 时它哪条分支都用不上，
+# 不能让这种半拉配置把可用的 OPENAI 也一并挡死、最后落到「认证未配置」。
+if usable_key "${OPENAI_API_KEY:-}" && ! usable_key "${ANTHROPIC_API_KEY:-}" \
+   && ! { usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; }; then
     OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
     $OC config set models.providers.openai.api "openai-completions" 2>&1 | sed '/^No change$/d'
     $OC config set models.providers.openai.apiKey "$OPENAI_API_KEY" 2>&1 | sed '/^No change$/d'
@@ -470,7 +489,7 @@ if [ "$STANDARD_LLM_CONFIGURED" = true ] && [ -z "${ANTHROPIC_API_KEY:-}" ] \
     DEFAULT_PRIMARY_MODEL="openai/$OPENAI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "OpenAI 服务认证已同步"
-elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${OPENAI_MAAS_API_KEY:-}" ]; then
+elif [ "$STANDARD_LLM_CONFIGURED" = false ] && usable_key "${OPENAI_MAAS_API_KEY:-}"; then
     OPENAI_PROVIDER="rednote-openai"
     OPENAI_MODEL="${OPENAI_MAAS_MODEL:-gpt-5.5}"
     OPENAI_PORT="${OPENAI_MAAS_ADAPTER_PORT:-18791}"
@@ -515,7 +534,7 @@ PY
     DEFAULT_PRIMARY_MODEL="$OPENAI_PROVIDER/$OPENAI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "OpenAI-compatible 服务已通过本地适配器同步"
-elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${GEMINI_MAAS_API_KEY:-}" ]; then
+elif [ "$STANDARD_LLM_CONFIGURED" = false ] && usable_key "${GEMINI_MAAS_API_KEY:-}"; then
     GEMINI_PROVIDER="rednote-gemini"
     GEMINI_MODEL="${GEMINI_MAAS_MODEL:-gemini-3.1-pro-preview}"
     $OC config set models.providers."$GEMINI_PROVIDER".baseUrl \
@@ -548,17 +567,17 @@ elif [ "$STANDARD_LLM_CONFIGURED" = false ] && [ -n "${GEMINI_MAAS_API_KEY:-}" ]
     DEFAULT_PRIMARY_MODEL="$GEMINI_PROVIDER/$GEMINI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
     ok "Gemini-compatible 服务已通过本地适配器同步"
-elif [ -n "${EASEL_LLM_API_KEY:-}" ] && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
+elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     # 原子写入整块 provider（含 header 与 anthropic-version）；整块替换会顺带清掉旧的 CodeWiz 专用 header。
     oc_write_anthropic "$EASEL_LLM_BASE_URL" "$EASEL_LLM_API_KEY" \
         "${EASEL_LLM_API_KEY_HEADER:-api-key}" "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}"
     ANTHROPIC_PROVIDER_SYNCED=true
     ok "自定义 Anthropic 兼容 MaaS 认证已同步"
-elif [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+elif usable_key "${ANTHROPIC_AUTH_TOKEN:-}" && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
     oc_write_anthropic "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN"
     ANTHROPIC_PROVIDER_SYNCED=true
     ok "Anthropic 兼容服务认证已同步"
-elif [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLACE_ME" ]; then
+elif usable_key "${ANTHROPIC_API_KEY:-}"; then
     # 官方 ANTHROPIC_API_KEY 可搭配 ANTHROPIC_BASE_URL 指向自定义代理/网关；未指定时显式指向官方端点，
     # 否则请求会发往默认的 api.anthropic.com，代理网络下会直接超时。provider 由 oc_write_anthropic 原子写入。
     oc_write_anthropic "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}" "$ANTHROPIC_API_KEY"
@@ -569,13 +588,23 @@ elif [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "$ANTHROPIC_API_KEY" != "sk-ant-REPLAC
         ok "API key 已同步"
     fi
 else
-    warn "认证未配置 — 编辑 .env 后重新运行 bash setup.sh"
+    AUTH_CONFIGURED=false
+    warn "认证未配置：.env 里没有可用的 API key（占位符 REPLACE_ME 不算）"
+    warn "  编辑 $PROJECT_ROOT/.env 填入真实 key 后，重新运行 bash setup.sh"
 fi
 
 # ---- 10. OpenClaw agent 模型 + 超时 ----
 # CLAUDE_MODEL 保留旧变量名以兼容现有环境，值必须是 OpenClaw 的 provider/model。
 # 不要填内部 proxy 映射名（如 claude-4.6-opus-google），否则 OpenClaw 不认识。
-$OC config set agents.defaults.model.primary "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" 2>&1 | sed '/^No change$/d'
+if [ "$AUTH_CONFIGURED" = true ]; then
+    $OC config set agents.defaults.model.primary "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" 2>&1 | sed '/^No change$/d'
+else
+    # 上面一个 provider 都没写。这时还去写 primary 只会把 agent 指向一个不存在的
+    # provider（CLAUDE_MODEL 直接来自 .env），对话时报 "No route-compatible
+    # authentication source is configured for <provider>" —— 比「没配置」更难查。
+    # 保持不动：既不造假配置，也不覆盖用户上一次跑成功时留下的可用 primary。
+    warn "未写入 agents.defaults.model.primary；openclaw 中已有的模型设置保持不变"
+fi
 # 整个 agent run 的总时长上限。制作层任务（OpenClaw 自执行短剧/长稿/多镜）很久 → 给足。
 $OC config set agents.defaults.timeoutSeconds 7200 2>&1 | sed '/^No change$/d'
 # Easel 使用 profiles/<当前画像>/memory.md；关闭 OpenClaw 全局记忆索引，避免旧索引跨画像召回。

@@ -53,6 +53,7 @@ python <skill>/scripts/bili_upload.py upload --video out.mp4 --title "标题" \
 - 转载：`--copyright 2 --source <原链接>`。
 - 定时发布：`--dtime <10位时间戳>`（距今需 >4 小时）。
 - 分区可用中文名（内置 30 个常用）或 `--tid` 数字。
+- 投稿成功后自动**读回对账**（直连 member 稿件接口：标题前缀 + 时间窗找新稿件，四档结论）；读回未核实会明确报出并提示人工核对，不会把未核实当成功。
 
 ## Profile 感知
 
@@ -64,7 +65,7 @@ python <skill>/scripts/bili_upload.py upload --video out.mp4 --title "标题" \
 1. 投稿前先 `check` 确认 biliup 与 cookie；未登录先 `login`。
 2. 先省略 `--exec` 预览命令与参数（默认即 dry-run），确认后再加 `--exec` 投稿。
 3. 脚本会在 dry-run 提醒风险、真发前强制扫描标题/简介/标签/转载来源，发现密钥、内部地址或路径时阻止投稿。
-4. 投稿成功后调用 `skill-publish-log` 记录平台、时间、标题与内容标识；失败不得记为成功。
+4. 投稿成功后自动读回对账（读回对上才算成功），再调用 `skill-publish-log` 记录平台、时间、标题与内容标识；失败不得记为成功。
 5. B站以横版 16:9 为主；竖版素材可先用 video-reframe 处理。
 6. 分区选错会影响推荐，拿不准让用户确认分区。
 7. 封面、标签（≤10）显著影响点击与推荐，尽量补全。

@@ -5,7 +5,7 @@
 对上才算「已发布」。协议取自生产级发布引擎的读回对账实践：
 抖音 = 页面内 fetch work_list 接口（同域、登录态随 cookie 走），快手 = 捕获
 作品管理页自身发出的 XHR（借页面生成参数/签名，不复刻请求），小红书 = 捕获
-页面自身签名响应（待补）。原则：没有平台侧证据时保留「未核实」，
+页面自身签名响应（待补），B站 = 直连 member 稿件接口读回（cookies.json，无需浏览器）。原则：没有平台侧证据时保留「未核实」，
 不凭脚本结束声明已提交。
 
 outcome 四档（调用方据此落回执，绝不把未核实当成功）：
@@ -22,6 +22,9 @@ import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any
+import json
+import urllib.request
+from pathlib import Path
 from urllib.parse import urlencode
 
 DOUYIN_MANAGE_URL = "https://creator.douyin.com/creator-micro/content/manage"
@@ -703,6 +706,170 @@ def verify_kuaishou_publish(page, *, title: str, since_ms: int | None = None,
             return ReadbackResult(outcome="verified", matched=matched,
                                   candidates=works[:5], evidence=evidence)
         print(f"… 快手读回第 {i + 1}/{attempts} 轮：列表 {len(works)} 条未见本次作品", file=sys.stderr)
+        if i + 1 < attempts:
+            time.sleep(delay_s)
+    if last_error is not None and not last_candidates:
+        return ReadbackResult(outcome="readback_error", evidence=evidence, error=str(last_error))
+    return ReadbackResult(outcome="unverified", candidates=last_candidates[:5], evidence=evidence)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# B站读回（创作中心 · 纯 API 直连）
+#
+# 与抖音/快手不同：B站稿件列表是稳定的 web API（member.bilibili.com/x/web/archives），
+# 带 biliup cookies.json 的 SESSDATA 直连即可读——不需要浏览器、不需要捕获签名。
+# 探针实测（2026-09-18）：code=0；列表在 data.arc_audits[]；条目 = {Archive:{aid,bvid,
+# title,state,state_desc,ctime,ptime,duration,...}, stat:{view,like,...}}；data.page.count=总数。
+# ═══════════════════════════════════════════════════════════════════════
+
+BILIBILI_ARCHIVES_API = "https://member.bilibili.com/x/web/archives"
+BILIBILI_NAV_API = "https://api.bilibili.com/x/web-interface/nav"
+BILIBILI_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+BILIBILI_REFERER = "https://member.bilibili.com/platform/upload-manager/article"
+# 未登录 / csrf 校验失败（会话失效）
+BILIBILI_LOGOUT_CODES = (-101, -111)
+# 兜底状态映射（以接口返回的 state_desc 为主；此表仅当 state_desc 缺失时生效）
+BILIBILI_STATE_FALLBACK = {0: "published", -1: "pending", -2: "pending", -30: "pending",
+                           -4: "rejected", -16: "private", -100: "deleted"}
+
+
+def _bilibili_load_cookies(cookie_file) -> str:
+    """读 biliup 格式 cookies.json → Cookie 头字符串（同时容忍裸 {name,value} 列表）。"""
+    data = json.loads(Path(cookie_file).expanduser().read_text(encoding="utf-8"))
+    try:
+        cookies = data["cookie_info"]["cookies"]
+    except (KeyError, TypeError):
+        cookies = data.get("cookies", [])
+    pairs = [f"{c['name']}={c['value']}" for c in cookies if c.get("name")]
+    if not pairs:
+        raise RuntimeError("cookies.json 里没有可用的 cookie 项")
+    return "; ".join(pairs)
+
+
+# 读回也走直连：urllib 默认会吃 http_proxy/https_proxy 环境变量，开着系统代理/VPN 时
+# 读回会从境外出口打 B站（投稿侧已由 bili_upload._direct_env 直连）——空 ProxyHandler 屏蔽之，
+# 保证「投稿直连、读回也直连」一致，不触发风控。
+_DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _bilibili_api(cookie_file, url: str, *, timeout_s: float = 20.0) -> dict[str, Any]:
+    """直连请求 B站 web API（带 cookies，绕过环境/系统代理）。网络类错误包成 RuntimeError。"""
+    req = urllib.request.Request(url, headers={
+        "Cookie": _bilibili_load_cookies(cookie_file),
+        "User-Agent": BILIBILI_UA,
+        "Referer": BILIBILI_REFERER,
+    })
+    last: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            with _DIRECT_OPENER.open(req, timeout=timeout_s) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if attempt == 1:
+                time.sleep(1.5)  # 冷连接被重置（B站常见）——给一次机会
+    raise RuntimeError(f"B站 API 请求失败：{type(last).__name__}: {last}") from last
+
+
+def _bilibili_assert_logged_in(cookie_file) -> dict[str, Any]:
+    """登录态确认（nav）。未登录 → LoginRequiredError；返回 data。"""
+    data = _bilibili_api(cookie_file, BILIBILI_NAV_API)
+    d = data.get("data") or {}
+    if data.get("code") in BILIBILI_LOGOUT_CODES or not d.get("isLogin"):
+        raise LoginRequiredError("B站登录态已失效（nav.isLogin=False）——请重新扫码登录（bili_login.py）")
+    return d
+
+
+def _map_bilibili_item(raw: dict[str, Any]) -> WorkItem | None:
+    """arc_audits 条目 → 统一 WorkItem（纯函数，供离线测试）。"""
+    arc = raw.get("Archive") or raw
+    bvid = arc.get("bvid")
+    if not bvid and arc.get("aid"):
+        bvid = "av" + str(arc["aid"])
+    if not bvid:
+        return None
+    ts = arc.get("pubtime") or arc.get("ptime") or arc.get("ctime")
+    stat = raw.get("stat") or {}
+    return WorkItem(
+        platform_content_id=str(bvid),
+        title=arc.get("title") or "",
+        status=arc.get("state_desc") or BILIBILI_STATE_FALLBACK.get(arc.get("state"), f"state:{arc.get('state')}"),
+        published_at_ms=int(ts) * 1000 if ts else None,
+        stats={k: stat.get(k) for k in ("view", "like", "comment", "danmaku") if k in stat},
+    )
+
+
+def read_bilibili_works(cookie_file, *, limit: int = 20) -> list[WorkItem]:
+    """读当前账号稿件列表（投稿管理，含审核中/已发布/未通过）。"""
+    url = BILIBILI_ARCHIVES_API + "?" + urlencode({
+        "status": "is_pubing,pubed,not_pubed", "pn": 1,
+        "ps": max(1, min(limit, 50)), "coop": 1, "interactive": 1,
+    })
+    data = _bilibili_api(cookie_file, url)
+    code = data.get("code")
+    if code in BILIBILI_LOGOUT_CODES:
+        raise LoginRequiredError(f"B站登录态已失效（archives code={code}）")
+    if code != 0:
+        raise RuntimeError(f"B站稿件列表接口返回 code={code}：{data.get('message') or data.get('msg')}")
+    audits = (data.get("data") or {}).get("arc_audits") or []
+    works: list[WorkItem] = []
+    for item in audits:
+        if not isinstance(item, dict):
+            continue
+        w = _map_bilibili_item(item)
+        if w:
+            works.append(w)
+    return works
+
+
+def read_bilibili_account(cookie_file) -> dict[str, Any]:
+    """账号身份快照：uid + 昵称（读回回执标准件）。"""
+    d = _bilibili_assert_logged_in(cookie_file)
+    return {"platform": "bilibili", "uid": d.get("mid"), "name": d.get("uname")}
+
+
+def capture_bilibili_snapshot(cookie_file) -> set[str]:
+    """发前快照：读当前稿件的全部 bvid。
+    失败（未登录/通道异常）返回空集合——对账自动退化为标题+时间窗，不影响主流程。"""
+    try:
+        return {w.platform_content_id for w in read_bilibili_works(cookie_file, limit=50)}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def verify_bilibili_publish(cookie_file, *, title: str, since_ms: int | None = None,
+                            limit: int = 20, attempts: int = 4,
+                            delay_s: float = 12.0,
+                            snapshot_ids: set[str] | None = None) -> ReadbackResult:
+    """B站发布后对账入口：多轮读回（审核队列/索引延迟）。四档同抖音。"""
+    last_error: Exception | None = None
+    last_candidates: list[WorkItem] = []
+    evidence: dict[str, Any] = {"attempts": 0}
+    for i in range(max(1, attempts)):
+        evidence = {"attempts": i + 1, "checked_at": int(time.time())}
+        try:
+            works = read_bilibili_works(cookie_file, limit=limit)
+        except LoginRequiredError as e:
+            return ReadbackResult(outcome="login_required", evidence=evidence, error=str(e))
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            print(f"⚠️ B站读回第 {i + 1}/{attempts} 轮失败：{e}", file=sys.stderr)
+            if i + 1 < attempts:
+                time.sleep(delay_s)
+            continue
+        last_candidates = works
+        evidence["count"] = len(works)
+        matched = find_published_work(works, title, since_ms=since_ms, exclude_ids=snapshot_ids)
+        if matched:
+            try:
+                evidence["account"] = read_bilibili_account(cookie_file)
+            except Exception as e:  # noqa: BLE001
+                evidence["account_error"] = str(e)
+            print(f"✅ B站读回对账通过：{matched.platform_content_id}（{matched.status}）", file=sys.stderr)
+            return ReadbackResult(outcome="verified", matched=matched,
+                                  candidates=works[:5], evidence=evidence)
+        print(f"… B站读回第 {i + 1}/{attempts} 轮：列表 {len(works)} 条未见本次稿件", file=sys.stderr)
         if i + 1 < attempts:
             time.sleep(delay_s)
     if last_error is not None and not last_candidates:

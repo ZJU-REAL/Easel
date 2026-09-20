@@ -14,6 +14,7 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   thinking?: string;
   activity?: string;
+  stillWorking?: string;   // 防呆心跳提示（未卡住）；仅流式时的独立提示，不替代思考/活动
   actions?: BubbleActions;
 }
 
@@ -36,7 +37,7 @@ function ActionBar({ actions }: { actions: BubbleActions }) {
   );
 }
 
-export default function MessageBubble({ message, isStreaming, thinking, activity, actions }: MessageBubbleProps) {
+export default function MessageBubble({ message, isStreaming, thinking, activity, stillWorking, actions }: MessageBubbleProps) {
   const html = useMemo(() => {
     if (message.role === 'user') return '';
     return renderMarkdown(message.content);
@@ -61,13 +62,19 @@ export default function MessageBubble({ message, isStreaming, thinking, activity
   // 思考 / 活动：流式时用实时值；结束后用消息里持久化的值 —— 一直保留，不隐藏
   const effThinking = isStreaming ? (thinking || '') : (message.thinking || '');
   const liveActivity = isStreaming ? (activity || '') : '';
+  const liveHint = isStreaming ? (stillWorking || '') : '';   // 防呆「未卡住」提示，附着显示、不顶掉真实状态
   const doneSteps = !isStreaming ? (message.activity || '') : '';
 
-  const livePanel = (effThinking || liveActivity || doneSteps) ? (
+  const livePanel = (effThinking || liveActivity || liveHint || doneSteps) ? (
     <div className="live-panel">
-      {liveActivity && (
-        <div className="live-activity"><span className="live-pulse" />{liveActivity}</div>
-      )}
+      {liveActivity ? (
+        <div className="live-activity">
+          <span className="live-pulse" />{liveActivity}
+          {liveHint && <span className="live-still"> · {liveHint}</span>}
+        </div>
+      ) : liveHint ? (
+        <div className="live-activity"><span className="live-pulse" />{liveHint}</div>
+      ) : null}
       {doneSteps && (
         <details className="thinking-block">
           <summary>🧠 执行过程（{doneSteps.split('\n').length} 步）</summary>
@@ -84,7 +91,7 @@ export default function MessageBubble({ message, isStreaming, thinking, activity
   ) : null;
 
   // 等待回复中（还没有正文、思考、活动）
-  if (isStreaming && !message.content && !effThinking && !liveActivity) {
+  if (isStreaming && !message.content && !effThinking && !liveActivity && !liveHint) {
     return (
       <div className="message-row assistant">
         <div className="message-bubble assistant">

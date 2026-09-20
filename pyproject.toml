@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easel"
-version = "0.1.1"
+version = "0.2.0"
 description = "社媒内容工作流整合层 — Easel CLI"
 requires-python = ">=3.10"
 # 运行依赖统一安装，确保 Web、媒体处理和浏览器发布开箱可用。
@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.115,<1",        # Web 后端
     "uvicorn>=0.30,<1",         # ASGI server（easel web）
     "sse-starlette>=2.1,<4",    # 对话流式 SSE
+    "httpx>=0.27,<1",           # 对话直连常驻网关（EASEL_CHAT_TRANSPORT=http）的 SSE 客户端
     "pydantic>=2.7,<3",         # 请求模型
     "segno>=1.6,<2",             # B站扫码登录二维码渲染（纯 Python）
     "python-multipart>=0.0.9,<1", # FastAPI 文件上传 / Form

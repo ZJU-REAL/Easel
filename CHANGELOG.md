@@ -2,6 +2,30 @@
 
 All notable changes to Easel are documented in this file.
 
+## [0.2.0] - 2026-09-18
+
+### Added
+
+- Added the `video-production` Skill: an end-to-end video pipeline (probe → transcribe → scenes → design table → scaffold → verify → preview → render → deliver) with two human confirmation gates and quality gates (five-piece manifest, loudness, transitions). The upstream `video-pipeline-sdk` (MIT) is now vendored into the repo so the pipeline is self-contained, reproducible, and editable. Skill count is now 114.
+- Added three-tier transcription with automatic fallback: SRT/VTT subtitles first, then SiliconFlow ASR API, then local whisper as a last resort — so a run no longer requires downloading the 3GB model when a transcript or API key is available.
+- Added a **「笔」capability menu** to the workbench input area: click to browse everything Easel can do ("能做的都在这"); selecting an item prefills the prompt.
+- Added a ffmpeg-based slideshow renderer for image-storyboard voiceover dramas (Ken Burns, differentiated transitions, libass dynamic captions, light whoosh SFX, loudnorm).
+
+### Improved
+
+- Improved the Skill library display: Chinese display names shown large with the original name beneath, kept in sync across search and the drawer.
+- Improved in-conversation cards to support multi-select (`ask_user` multiSelect rendering and multi-value submission).
+- Improved file uploads: files exceeding the upload limit are automatically converted to local materials via a copy channel (without changing the 50MB config).
+- Improved reasoning visibility: `--thinking` now defaults to medium so chain-of-thought shows when the gateway supports it.
+
+### Fixed
+
+- Fixed chain-of-thought (CoT) display in the Web conversation: token/thinking now streams token-by-token, and the anti-stall heartbeat no longer overrides real status.
+- Fixed the Gemini adapter to support `streamGenerateContent` streaming.
+- Fixed UTF-8 persistence on Windows (state read/write) and migrated the shutdown hook to a lifespan handler.
+
+[0.2.0]: https://github.com/ZJU-REAL/Easel/releases/tag/v0.2.0
+
 ## [0.1.1] - 2026-09-15
 
 ### Added

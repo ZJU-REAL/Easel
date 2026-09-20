@@ -252,6 +252,7 @@ PLATFORMS: dict[str, dict] = {
 _ACTIONS = {"goto", "upload", "filechooser_upload", "fill", "type", "click", "js_click", "js_eval", "wait", "press", "waitfor", "screenshot"}
 
 # Chromium 启动性能参数（提速冷启动；勿禁用图片——二维码是图片）
+# 国内平台一律直连：下方各 launch 处统一附 --no-proxy-server（Chromium 级屏蔽系统/环境代理，开 VPN 也能用）
 LAUNCH_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
@@ -560,7 +561,7 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
            "tags": a.tags or "", "cover": a.cover or ""}
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
-            str(profile), headless=not headed, args=LAUNCH_ARGS,
+            str(profile), headless=not headed, args=LAUNCH_ARGS + ["--no-proxy-server"],
             viewport={"width": 1440, "height": 900})
         page = browser.pages[0] if browser.pages else browser.new_page()
         if not do_publish:
@@ -1122,7 +1123,7 @@ def cmd_login_qr(a) -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
             str(profile), headless=True, locale="zh-CN",
-            args=LAUNCH_ARGS)
+            args=LAUNCH_ARGS + ["--no-proxy-server"])
         page = browser.pages[0] if browser.pages else browser.new_page()
         try:
             page.goto(cfg["login_url"], wait_until="domcontentloaded")
@@ -1254,7 +1255,7 @@ def cmd_whoami(a) -> int:
             profile.mkdir(parents=True, exist_ok=True)
             browser = p.chromium.launch_persistent_context(
                 str(profile), headless=True, locale="zh-CN",
-                args=LAUNCH_ARGS)
+                args=LAUNCH_ARGS + ["--no-proxy-server"])
             page = browser.pages[0] if browser.pages else browser.new_page()
             try:
                 page.goto(cfg["publish_url"], wait_until="domcontentloaded", timeout=30000)

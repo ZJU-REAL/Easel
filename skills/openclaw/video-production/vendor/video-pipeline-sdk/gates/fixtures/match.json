@@ -1,0 +1,47 @@
+[
+ {
+  "scene": 1,
+  "no": "①",
+  "sub": "一些人在拿一堆别人听不懂的名词",
+  "clip": "stock_scrambled.mp4",
+  "clip_start": 1.0,
+  "dur": 4.0,
+  "credit": "scrambled dots · Mixkit"
+ },
+ {
+  "scene": 2,
+  "no": "②",
+  "sub": "忽悠别人，然后把客卖出高价",
+  "clip": "stock_money.mp4",
+  "clip_start": 2.0,
+  "dur": 3.1,
+  "credit": "money counting · Mixkit"
+ },
+ {
+  "scene": 3,
+  "no": "③",
+  "sub": "用AI技术改变，你觉得你能够改变一些人吗",
+  "clip": "stock_worldmap.mp4",
+  "clip_start": 1.5,
+  "dur": 3.1,
+  "credit": "world map · Mixkit"
+ },
+ {
+  "scene": 4,
+  "no": "④",
+  "sub": "真的有吗？根本就没有好吧",
+  "clip": "stock_bubbles.mp4",
+  "clip_start": 2.0,
+  "dur": 3.0,
+  "credit": "bubbles · Mixkit"
+ },
+ {
+  "scene": 5,
+  "no": "⑤",
+  "sub": "你们到底在卖什么呀，你们到底在讲什么呀",
+  "clip": "stock_graphs.mp4",
+  "clip_start": 0.3,
+  "dur": 3.8,
+  "credit": "exposing graphs · Mixkit"
+ }
+]
