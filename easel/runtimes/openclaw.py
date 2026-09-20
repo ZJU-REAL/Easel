@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 from easel.openclaw_cmd import openclaw_base_cmd
+from easel.openclaw_workspace import workspace_dir
 from .base import (
     ActionResult, Diagnostic, QuestionAnswer, RunRequest, RunResult, RuntimeDescriptor,
     RuntimeEvent, RuntimeHealth, ServiceAction, SetupContext, SetupResult,
@@ -253,14 +254,20 @@ class OpenClawAdapter:
             or (env.get("ANTHROPIC_AUTH_TOKEN") and env.get("ANTHROPIC_BASE_URL"))
             or (env.get("OPENAI_MAAS_API_KEY") and env.get("OPENAI_MAAS_ENDPOINT"))
         )
-        skills = Path.home() / ".openclaw" / "workspace-easel" / "skills"
+        ws = workspace_dir()
+        skills = ws / "skills"
+        try:
+            synced = skills.is_dir() and any(skills.iterdir())
+        except OSError:
+            synced = False
         return [
             Diagnostic("OpenClaw command", command_ok, self.descriptor.install_hint),
             Diagnostic("OpenClaw >= 2026.6.11", version is not None and version >= (2026, 6, 11),
                        "请升级：npm install -g openclaw@latest"),
             Diagnostic(".env (API Key)", auth_ok, "请配置模型 API key"),
-            Diagnostic("Skills synced", skills.is_dir() and any(skills.iterdir()) if skills.is_dir() else False,
-                       "重新运行 setup"),
+            Diagnostic("Skills synced", synced,
+                       f"agent 实际读取的 workspace 是 {ws}，其中 skills/ 为空或不存在；"
+                       "重新运行 setup.ps1（Windows）或 bash openclaw/sync.sh（Linux/macOS）"),
             Diagnostic("OpenClaw gateway", self.health().ok, "运行 python -m easel gateway start"),
         ]
 

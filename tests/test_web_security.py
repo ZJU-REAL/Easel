@@ -79,8 +79,46 @@ def test_guard_env_values_rejects(updates):
         web._guard_env_values(updates)
 
 
+# ---- 不换行也能执行命令：bash 在赋值右侧照做命令替换 ----
+# `KEY=$(id)` 里没有任何换行，却在 `source .env` 时直接执行；`KEY=a;id` 则是元字符截断赋值
+# 另起一条命令。只拦 \r\n\x00 等于没拦住这条路。
+@pytest.mark.parametrize("value", [
+    "sk-a$(id)",            # 命令替换
+    "sk-a`id`",             # 反引号
+    "sk-a${HOME}",          # 变量展开（值会被悄悄改写）
+    "sk-a;id",              # 分号另起一条命令
+    "sk-a&&id",
+    "sk-a|id",
+    "sk-a >/tmp/pwn",       # 空格 + 重定向
+    "sk-a'\"",              # 引号：破坏后续解析
+    "sk-a\\",               # 反斜杠续行
+])
+def test_guard_env_values_rejects_shell_metachars(value):
+    with pytest.raises(Exception):
+        web._guard_env_values({"OPENAI_API_KEY": value})
+
+
+def test_env_shell_substitution_rejected_via_api(client):
+    """走真接口也得拦住，且 .env 一个字节都不许变。"""
+    _assert_blocked(client, {"channel": "chat",
+                             "rows": [{"slot": "openai", "model": "gpt-4o", "key": "sk-a$(id)"}]})
+
+
 def test_guard_env_values_allows_normal():
     web._guard_env_values({"OPENAI_API_KEY": "sk-normal", "OPENAI_BASE_URL": "https://a.com/v1"})
+
+
+@pytest.mark.parametrize("value", [
+    "sk-proj-Abc123_-xyz",                                   # 常见 key 形态
+    "https://api.example.com/v1",                            # base url
+    "https://gw.example.com:8443/openai/v1?api-version=1",   # 带端口与 query
+    "anthropic/claude-sonnet-5",                             # 模型 id
+    "8890",                                                  # 端口
+    "a.b-c_d@e+f=g~h,i%j#k[l]",                              # 允许字符集全覆盖
+])
+def test_guard_env_values_allows_real_values(value):
+    """收紧字符集不能把正常值一起误杀 —— 这几类是面板真会写进去的。"""
+    web._guard_env_values({"OPENAI_API_KEY": value})
 
 
 def test_both_env_writers_are_guarded():
@@ -101,6 +139,28 @@ def test_both_env_writers_are_guarded():
 ])
 def test_rebase_without_new_key_rejected(client, channel, row):
     _assert_blocked(client, {"channel": channel, "rows": [row]})
+
+
+def test_local_gateway_user_is_not_locked_out(client, monkeypatch):
+    """这道闸不能把本地网关用户一起关在外面。
+
+    网关模式下 openclaw.json 存的 baseUrl 是 127.0.0.1:8890（真实上游在 easel-models.yaml），
+    面板显示/回传的却是上游地址 —— 两者天生不等，闸按「换址」判就会让网关用户连改个模型都
+    保存不了。而且 _sync_openclaw_chat 那边本来就不改网关的 baseUrl，不存在拿旧 Key 打新地址。
+    """
+    monkeypatch.setattr(web, "_openclaw_provider_creds",
+                        lambda: {"myproxy": ("http://127.0.0.1:8890/v1", "sk-fake-gw")})
+    resp = _save(client, {"channel": "chat",
+                          "rows": [{"slot": "custom", "name": "myproxy", "model": "gpt-5.5",
+                                    "baseUrl": "https://upstream.example.com/v1", "key": ""}]})
+    assert resp.status_code < 400, f"网关用户被误拦：{resp.status_code} {resp.text[:200]}"
+
+
+def test_local_gateway_helper():
+    assert web._is_local_gateway_base("http://127.0.0.1:8890/v1")
+    assert not web._is_local_gateway_base("https://api.openai.com/v1")
+    assert not web._is_local_gateway_base("")
+    assert not web._is_local_gateway_base(None)
 
 
 # ---- Base URL 必须整串校验（只看开头挡不住内嵌凭据/控制字符）----

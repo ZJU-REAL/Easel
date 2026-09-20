@@ -3,19 +3,37 @@ set -euo pipefail
 
 # Easel — 同步 SKILL + workspace 到 OpenClaw 的 easel 隔离 profile
 #
-# --profile easel 的实际路径（以 ~/.openclaw-easel/openclaw.json 里 agents.defaults.workspace 为准）：
-#   workspace → ~/.openclaw-easel/workspace/   （2026.9.x 起 openclaw 用此布局，不再是 ~/.openclaw/workspace-easel）
-#   config    → ~/.openclaw-easel/openclaw.json
+# workspace 目标目录**不写死**：OpenClaw 的默认布局变过（2026.6.x 是
+#   ~/.openclaw/workspace-easel，2026.9.x 起是 ~/.openclaw-easel/workspace）。
+# 写死哪一个，都会在另一个版本上同步到 agent 根本不读的地方 —— 而且这里照样打印
+# "synced"、doctor 也照样报绿，技能静默不生效（issue #19）。
+# 统一问 easel/openclaw_workspace.py（它直接问 openclaw 自己要运行时的 workspaceDir），
+# 写入端与读取端同源，布局再变也不用改这里。
+#   config → ~/.openclaw-easel/openclaw.json
 #
 # 用法：bash openclaw/sync.sh
-# 可用 EASEL_OPENCLAW_WORKSPACE 覆盖（若将来 openclaw 布局又变）。
+# 可用 EASEL_OPENCLAW_WORKSPACE 覆盖（解析器同样认这个变量，优先级最高）。
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PROFILE="easel"
-# agent 实际读取的 workspace（openclaw.json 里 workspace 字段），skills/shared/outputs 必须落在这里
-OPENCLAW_WORKSPACE_DST="${EASEL_OPENCLAW_WORKSPACE:-$HOME/.openclaw-${PROFILE}/workspace}"
+# agent 实际读取的 workspace，skills/shared/outputs 必须落在这里。
+# 解析器拿不出来（没装 python / 没装 openclaw）才退回旧默认值，并明确提示，
+# 不能装作同步成功 —— 那正是 issue #19 最难查的地方。
+OPENCLAW_WORKSPACE_DST=""
+for _py in "$PROJECT_ROOT/.venv/bin/python" python3 python; do
+    command -v "$_py" >/dev/null 2>&1 || [ -x "$_py" ] || continue
+    # 只认最后一行：解析器 import 链上任何一个模块打一句废话（deprecation / conda banner）
+    # 都会混进 stdout，整段拿去当路径就会 mkdir 出一个鬼目录，然后照样报同步成功。
+    OPENCLAW_WORKSPACE_DST="$("$_py" "$PROJECT_ROOT/easel/openclaw_workspace.py" 2>/dev/null | tail -n 1 || true)"
+    [ -n "$OPENCLAW_WORKSPACE_DST" ] && break
+done
+if [ -z "$OPENCLAW_WORKSPACE_DST" ]; then
+    OPENCLAW_WORKSPACE_DST="${EASEL_OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace-${PROFILE}}"
+    echo "[easel] 警告：无法向 openclaw 问出 workspace，回退到 $OPENCLAW_WORKSPACE_DST" >&2
+    echo "        若 agent 读不到技能，请用 EASEL_OPENCLAW_WORKSPACE 指定实际目录。" >&2
+fi
 OPENCLAW_SKILL_DST="$OPENCLAW_WORKSPACE_DST/skills"
 OPENCLAW_WORKSPACE_SRC="$SCRIPT_DIR/workspace"
 OPENCLAW_SKILL_SRC="$PROJECT_ROOT/skills/openclaw"

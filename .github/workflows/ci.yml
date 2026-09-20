@@ -37,5 +37,8 @@ jobs:
           cache: pip
       - name: Install Easel and test dependencies
         run: python -m pip install -e . pytest
+      # 不要改回 `pytest tests/`：技能自带的用例在 skills/**/tests/ 下，限定目录就把它们
+      # （目前 38 个，skill-wechat-publisher 那批）整批排除在 CI 之外 —— 本地 `pytest` 全绿、
+      # CI 也全绿，但那部分从来没在 CI 上跑过。从根目录跑一次，两边都覆盖。
       - name: Run unit tests
-        run: python -m pytest tests/ -v
+        run: python -m pytest -v

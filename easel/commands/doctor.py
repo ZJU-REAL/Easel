@@ -17,8 +17,12 @@ from easel.runtimes import get_runtime
 # 项目根目录（Easel/）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# OpenClaw 已验证的稳定下限。低于此版本会命中一系列破坏性变更：anthropic provider 必须原子写入、
-# timeoutSeconds 被判 Unrecognized key、记忆检索 schema 尚未迁移到 memory.search.* 等（见 issue #9/#11）。
+# OpenClaw 已验证的稳定下限（= 我们实测跑通过的最老版本）。低于它会命中 anthropic provider 必须
+# 原子写入、models.providers.*.timeoutSeconds 被判 Unrecognized key 等破坏性变更（见 issue #9/#11）。
+#
+# 别拿「记忆检索 memory.search.*」当抬高下限的理由：2026.6.11 **没有** memory.search（实测
+# `config set memory.search.…` 报 Unrecognized key），那是 2026.9.x 才有的 schema，setup.sh:613
+# 已经按「先试新的、失败退回 agents.defaults.memorySearch」探测处理，不需要版本下限兜。
 MIN_OPENCLAW = (2026, 6, 11)
 
 GREEN = "\033[0;32m"
@@ -39,7 +43,10 @@ def _node_version_ok(strict: bool) -> bool:
     """检查 Node.js 版本。
 
     strict=True 对齐 openclaw@latest（2026.9.x）的引擎：>=24.16.0 <25 || >=26.1.0（25.x/26.0 被排除）。
-    strict=False 用于已装较旧 OpenClaw（<=2026.6.x，引擎 ^20.10 || ^22.11 || >=24）的宽松下限 >=20.10。
+    strict=False 用于已装较旧 OpenClaw（我们支持的下限 2026.6.11）。**下限是 22.19**，不是 20.10：
+    实测 openclaw@2026.6.11 的 package.json engines 就是 `">=22.19.0"`，且其 openclaw.mjs 里还有
+    一道硬运行时检查（MIN_NODE_MAJOR=22 / MIN_NODE_MINOR=19，不满足直接 process.exit(1)）。
+    写 20.10 的后果是：Node 20.10–22.18 上 doctor 报绿，而每一条 openclaw 命令都起不来。
     """
     try:
         result = subprocess.run(
@@ -55,7 +62,7 @@ def _node_version_ok(strict: bool) -> bool:
         major, minor = int(m.group(1)), int(m.group(2))
         if strict:
             return (major == 24 and minor >= 16) or (major == 26 and minor >= 1) or major >= 27
-        return (major, minor) >= (20, 10)
+        return (major, minor) >= (22, 19)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
@@ -117,12 +124,22 @@ def _gateway_healthy() -> bool:
         return False
 
 
-def _skills_synced() -> bool:
-    """Check ~/.openclaw/workspace-easel/skills/ has content."""
-    skills_dir = Path.home() / ".openclaw" / "workspace-easel" / "skills"
-    if not skills_dir.is_dir():
-        return False
-    return any(skills_dir.iterdir())
+def _skills_synced() -> tuple[bool, str]:
+    """检查 agent 真正读取的那个 workspace 里有没有 skills。
+
+    这里的目标目录**不能**硬编码：OpenClaw 的默认布局在 2026.6.x / 2026.9.x 之间变过
+    （见 easel/openclaw_workspace.py）。以前这里写死了旧布局，而 sync.sh 写的是新布局，
+    于是同步脚本报 "synced"、doctor 报绿，agent 却读不到任何技能（issue #19）。
+    """
+    from easel.openclaw_workspace import workspace_dir
+
+    ws = workspace_dir()
+    skills_dir = ws / "skills"
+    try:
+        ok = skills_dir.is_dir() and any(skills_dir.iterdir())
+    except OSError:
+        ok = False
+    return ok, f"agent 实际读取的 workspace 是 {ws}，其中 skills/ 为空或不存在"
 
 
 def _env_key_valid() -> bool:
@@ -238,11 +255,15 @@ def cmd_doctor(_args) -> int:
                       "请安装 Python 3.10 或更高版本")
     all_ok &= _check("Python venv module", _venv_available(),
                       "Debian/Ubuntu 请安装 python3-venv")
-    # openclaw 版本决定 Node 引擎要求：2026.9.x 需要 Node 24.16+，较旧版本沿用 >=20.10 的宽松下限。
-    # 未装 openclaw 时按 setup 的默认安装目标（openclaw@latest）从严要求 24.16+。
-    oc_ver = _openclaw_version() if runtime.descriptor.id == "openclaw" else None
-    node_strict = runtime.descriptor.id == "openclaw" and (oc_ver is None or oc_ver >= (2026, 9, 0))
-    node_floor = "24.16" if node_strict else "20.10"
+    if runtime.descriptor.id == "openclaw":
+        # openclaw 版本决定 Node 引擎要求：2026.9.x 需要 Node 24.16+，2026.6.x 需要 22.19+（实测
+        # 其 engines，见 _node_version_ok 的说明）。未装 openclaw 时按 setup 的默认安装目标
+        # （openclaw@latest）从严要求 24.16+。
+        oc_ver = _openclaw_version()
+        node_strict = oc_ver is None or oc_ver >= (2026, 9, 0)
+        node_floor = "24.16" if node_strict else "22.19"
+    else:
+        node_strict, node_floor = False, "20.10"
     has_node = shutil.which("node") is not None
     node_ok = _node_version_ok(node_strict)
     node_detail = (f"请安装 Node.js >= {node_floor}: https://nodejs.org/" if not has_node

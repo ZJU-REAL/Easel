@@ -78,7 +78,10 @@ OPENCLAW_PROFILE = "easel"
 # OpenAI 兼容端点（省掉每轮 6-7s 冷启动）。默认保持 cli —— http 路径目前还不具备 CLI 路径的
 # 几项保证（见 _run_gateway_turn 上方说明），想提速的部署显式设 EASEL_CHAT_TRANSPORT=http 开启。
 CHAT_TRANSPORT = os.environ.get("EASEL_CHAT_TRANSPORT", "cli").strip().lower()
-OPENCLAW_WORKSPACE = Path.home() / ".openclaw" / f"workspace-{OPENCLAW_PROFILE}"
+# 这里曾有个 OPENCLAW_WORKSPACE 常量，写死的是 2026.6.x 布局（~/.openclaw/workspace-<profile>）。
+# 全仓无人引用，但留着迟早会被新代码拿去用，而 OpenClaw 的布局 2026.9.x 起已经变成
+# <state 目录>/workspace（issue #19）。要用 workspace 路径请走 easel.openclaw_workspace.workspace_dir()，
+# 它直接问 openclaw 要运行时真值，不猜版本。
 # OpenClaw 会话历史（transcript）目录：<profile 配置目录>/agents/main/sessions/<session-id>.jsonl
 OPENCLAW_SESSIONS_DIR = Path.home() / f".openclaw-{OPENCLAW_PROFILE}" / "agents" / "main" / "sessions"
 
@@ -609,14 +612,36 @@ def _skill_api_configured(skill: str, env: dict[str, str] | None = None) -> bool
     return False
 
 
+# .env 的值是裸写 `KEY=value` 的，而 setup.sh:310/450 会 `source .env`。bash 在赋值右侧
+# 不做分词和通配，但**照做**命令替换，且元字符会截断赋值另起一条命令 —— 所以 `$(…)`、反引号、
+# `;`/`&`/`|`/`(`/`)`/`<`/`>`/空白 都等于任意命令执行。加引号写入不行：scripts/gateway.sh:63
+# 用 `sed -n 's/^KEY=//p'` 裸取值，引号会跟着漏进端口号。只能在入口把值的字符集收死。
+# 这里能写的全是 API Key / Base URL / 模型 id / 端口，没有一个需要空格或上面那些字符。
+_ENV_VALUE_OK = re.compile(r'[A-Za-z0-9_.:/@+\-=~,%?#\[\]]*')
+
+
 def _guard_env_values(updates: dict[str, str]) -> None:
-    """集中拦截 .env 值注入：值里带换行就能往 .env 追加任意行，而 setup.sh 会 `source .env`
-    —— 那等于任何能调到写 .env 接口的人都能执行命令。键名同理。两个写入口都必须先过这道。"""
+    """集中拦截 .env 值注入：值里带换行能往 .env 追加任意行，带 `$(…)` 能直接执行命令
+    —— 两者都等于任何能调到写 .env 接口的人都能拿到命令执行。键名同理。两个写入口都必须先过这道。"""
     for k, v in updates.items():
         if any(c in (k or '') for c in '\r\n=') or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', k or ''):
             raise HTTPException(400, f'非法的配置键名：{(k or "")[:40]!r}')
-        if any(c in (v or '') for c in '\r\n\x00'):
+        v = v or ''
+        if any(c in v for c in '\r\n\x00'):
             raise HTTPException(400, f'配置值不能包含换行符：{k}')
+        if not _ENV_VALUE_OK.fullmatch(v):
+            bad = ''.join(sorted({c for c in v if not _ENV_VALUE_OK.fullmatch(c)}))
+            raise HTTPException(400, f'配置值含不允许的字符（{bad!r}）：{k}')
+
+
+def _is_local_gateway_base(url: str) -> bool:
+    """这个供应商当前是不是挂在本地模型网关上。
+
+    网关模式下 openclaw.json 里存的 baseUrl 是 127.0.0.1:8890，真实上游在 easel-models.yaml，
+    面板显示/回传的是上游地址 —— 两边天生不相等。凡是拿「baseUrl 变了」当判据的逻辑都得先问过这里，
+    否则网关用户每次保存都被判成「换了地址」。
+    """
+    return str(url or '').startswith('http://127.0.0.1:8890')
 
 
 # 设置面板里「改了 Base URL 就必须重填 Key」要比对的 .env 键位（槽位 → (base 键, key 键)）。
@@ -1343,8 +1368,7 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
             prov = providers.setdefault(pkey, {})
             base, key, model = vals.get('base', ''), vals.get('key', ''), vals.get('model', '')
             if base and prov.get('baseUrl') != base:
-                _cur = str(prov.get('baseUrl') or '')
-                if _cur.startswith('http://127.0.0.1:8890'):
+                if _is_local_gateway_base(prov.get('baseUrl')):
                     pass  # 本地模型网关模式：保留网关地址（真实上游在 easel-models.yaml），勿改回直连
                 else:
                     prov['baseUrl'] = base
@@ -1515,9 +1539,12 @@ async def api_settings_models_save(req: ModelSaveRequest):
         # 同一条规矩也得覆盖 openclaw.json 这一侧：_sync_openclaw_chat 只在 key 非空时改
         # apiKey，却无条件改 baseUrl —— 只换地址、Key 留空，下一轮对话就会拿着原 Key 去打新地址。
         # 自定义供应商压根不写 .env，前面那道 _SLOT_ENV_KEYS 闸拦不到它。
+        # 但网关模式要放行：那边存的是 127.0.0.1:8890、面板回传的是真实上游，永远不相等，
+        # 这道闸会把网关用户彻底锁死（连只改模型都保存不了）；而且下面 _sync_openclaw_chat
+        # 本来就不会改网关的 baseUrl，没有「拿旧 Key 打新地址」这个风险。
         if is_chat and pkey and base and not key:
             _pb, _pk = _cur_prov.get(pkey, ('', ''))
-            if _pk and base != _pb.strip().rstrip('/'):
+            if _pk and base != _pb.strip().rstrip('/') and not _is_local_gateway_base(_pb):
                 raise HTTPException(400, f'更换 Base URL 时必须重新填写 API Key（{pkey}）')
         if is_chat and pkey and getattr(row, 'primary', False) and model:
             primary_ref = f'{pkey}/{model}'

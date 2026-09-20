@@ -59,6 +59,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 | [GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models) | audio-denoise | RNNoise 预训练模型 |
 | [timsainb/noisereduce](https://github.com/timsainb/noisereduce) | audio-denoise | 频谱降噪 |
 | [louisedesadeleer/clipify](https://github.com/louisedesadeleer/clipify) | clipify | 长视频切片（原始来源） |
+| [mengyuyuan/video-pipeline-sdk](https://github.com/mengyuyuan/video-pipeline-sdk) | video-production | 原始来源：整片视频产线 SDK（MIT）。已内置进 `skills/openclaw/video-production/vendor/video-pipeline-sdk/`，来源与同步策略见同目录 [VENDOR.md](../skills/openclaw/video-production/vendor/VENDOR.md) |
 
 ## 平台发布 / 数据采集（重型件，多依赖桌面/浏览器环境）
 

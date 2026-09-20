@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $Profile = 'easel'
 $Root = Split-Path -Parent $PSScriptRoot
 $LogFile = Join-Path $env:TEMP 'easel-gateway.log'

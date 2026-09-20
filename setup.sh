@@ -309,7 +309,10 @@ PY
 # ---- 8. 同步 skills + workspace ----
 if [ "$AGENT_RUNTIME" = "openclaw" ]; then
 info "同步 Easel skills..."
-bash "$PROJECT_ROOT/openclaw/sync.sh" 2>&1 | grep -E '✓|→'
+# 不要把 stderr 并进管道：sync.sh 解析不出 workspace 时那条警告只走 stderr，且不含 ✓/→，
+# 一并 grep 就被整条吃掉 —— 装完什么都没说，技能却同步到了 agent 不读的目录（issue #19
+# 的失败模式在这一层原样重建）。stdout 照旧过滤噪音，stderr 直通用户。
+bash "$PROJECT_ROOT/openclaw/sync.sh" | grep -E '✓|→'
 
 # ---- 9. 认证信息写入 Easel 专属 OpenClaw config ----
 info "同步认证到 OpenClaw profile..."

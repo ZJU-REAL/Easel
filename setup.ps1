@@ -143,7 +143,40 @@ if ($onboardHelp -match '--no-install-daemon' -and $onboardHelp -notmatch '--ski
 if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw profile 初始化失败，请检查上方输出。' }
 
 Info '同步 skills 与 workspace...'
-$workspace = Join-Path $HOME '.openclaw\workspace-easel'
+# workspace 目标不能写死：OpenClaw 的默认布局变过（2026.6.x 是 ~\.openclaw\workspace-easel，
+# 2026.9.x 起是 ~\.openclaw-easel\workspace）。写死其一就会在另一个版本上装到 agent 不读的
+# 目录里，而这里和 doctor 都照样报成功（issue #19）。统一问 easel\openclaw_workspace.py。
+#
+# 这段有两个 Windows 专属的坑，改动前请先看明白：
+#   1. 顶上是 $ErrorActionPreference='Stop'。此时只要对原生命令做任何 stderr 重定向
+#      （2>$null / 2>&1 / *>），PowerShell 5.1 会把 stderr 的每一行包成 ErrorRecord 抛出
+#      NativeCommandError —— 脚本级终止，下面的回退分支根本轮不到。所以这里**不重定向**，
+#      让 Python 的报错原样显示给用户，只用 $LASTEXITCODE 判成败。
+#   2. PS 5.1 按 [Console]::OutputEncoding（中文系统是 OEM 936）解码原生命令的 stdout，
+#      而 Python 那边输出的是 UTF-8（开头设了 PYTHONUTF8=1，模块里也显式 reconfigure）。
+#      路径含中文时两边对不上就是乱码。把 OutputEncoding 临时钉成 UTF-8，用完还原。
+$workspace = ''
+$prevOutEnc = [Console]::OutputEncoding
+try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    $wsOut = & $Python (Join-Path $Root 'easel\openclaw_workspace.py')
+    if ($LASTEXITCODE -eq 0) { $workspace = ($wsOut | Select-Object -Last 1) }
+} catch {
+    Write-Warning "解析 workspace 时出错：$($_.Exception.Message)"
+} finally {
+    [Console]::OutputEncoding = $prevOutEnc
+}
+$workspace = "$workspace".Trim()
+if ([string]::IsNullOrWhiteSpace($workspace)) {
+    # 走到这里说明 Python 压根没跑起来（解析器内部的逐级退化没机会执行）。先认用户的显式覆盖。
+    if ($env:EASEL_OPENCLAW_WORKSPACE) {
+        $workspace = $env:EASEL_OPENCLAW_WORKSPACE
+    } else {
+        $workspace = Join-Path $HOME '.openclaw-easel\workspace'
+    }
+    Write-Warning "无法向 openclaw 问出 workspace，回退到 $workspace；若 agent 读不到技能，请设 EASEL_OPENCLAW_WORKSPACE 后重跑。"
+}
+Info "  workspace → $workspace"
 $skills = Join-Path $workspace 'skills'
 New-Item -ItemType Directory -Force -Path $skills | Out-Null
 if (Test-Path (Join-Path $Root 'skills\openclaw')) { Copy-Item (Join-Path $Root 'skills\openclaw\*') $skills -Recurse -Force }
