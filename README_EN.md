@@ -160,7 +160,7 @@ For faster browsing, each cover opens a lightweight preview of up to one minute.
 Easel supports both **OpenClaw** and **OpenCode** as Agent runtimes. The installer asks which one to use; existing installs and projects without `EASEL_AGENT_RUNTIME` continue to default to OpenClaw. The choice is stored in the project `.env` and shared by the CLI, Web app, gateway, ping, and doctor commands.
 
 - OpenClaw keeps the existing isolated `easel` profile behavior.
-- OpenCode uses the project `opencode.json` to discover `skills/openclaw/`, while `easel gateway` manages its local headless server. Before first use, run `opencode` and configure a model with `/connect` if needed.
+- OpenCode uses the project `opencode.json` to discover `skills/openclaw/`, while `easel gateway` manages its local headless server. Providers and the default model can be managed in the Web settings panel (Conversation & Scripts): API keys are stored in OpenCode's native auth, and the default model is written to the project `opencode.json`. You can also run `opencode` and configure a model with `/connect`.
 
 Requirements: Linux, macOS, or Windows 10/11, Python 3.10+, and Git. The installer checks the runtime-specific Node.js floor (24.16+ or 26.1+ for OpenClaw; 20.10+ for OpenCode), FFmpeg, and Playwright/Chromium.
 

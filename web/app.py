@@ -39,6 +39,7 @@ if str(PROJECT_ROOT / "scripts") not in sys.path:
 
 from easel.runtimes import QuestionAnswer, RunRequest, get_runtime, runtime_env
 from easel.runtimes import openclaw as openclaw_runtime
+from easel.runtimes import opencode_config
 from easel.runtimes.openclaw_config import RESERVED_PROVIDER_KEYS
 from easel.persona import load_profile_text, persona_prefix, chat_turn_message, profile_exists, _FILE_ORDER
 from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
@@ -1442,6 +1443,64 @@ async def api_models_selftest(req: SelftestRequest):
 
     results = await asyncio.to_thread(lambda: [_probe(b, k) for b, k in targets])
     return {"channel": channel, "results": results, "testedAt": int(time.time())}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 设置面板 · OpenCode 供应商与模型（runtime=opencode；凭证只回状态，不回明文）
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@app.get("/api/settings/opencode")
+async def api_settings_opencode():
+    """OpenCode 供应商/模型快照；server 未就绪时降级为只读状态，不报 5xx。"""
+    return await asyncio.to_thread(opencode_config.snapshot)
+
+
+class OpencodeSaveRequest(BaseModel):
+    primary: str = ""
+    keys: dict[str, str] = Field(default_factory=dict)
+    removals: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/settings/opencode/save")
+async def api_settings_opencode_save(req: OpencodeSaveRequest):
+    """保存 OpenCode 凭证/默认模型：先全部校验，再逐项写入；key 只发往本机 server。"""
+    runtime = get_runtime()
+    if runtime.descriptor.id != "opencode":
+        raise HTTPException(400, f"当前 runtime（{runtime.descriptor.label}）不支持 OpenCode 配置管理")
+    if not req.primary and not req.keys and not req.removals:
+        raise HTTPException(400, "没有可保存的改动")
+    if len(req.keys) > 32 or len(req.removals) > 32:
+        raise HTTPException(400, "一次最多处理 32 个供应商")
+    if not await asyncio.to_thread(opencode_config.server_ready):
+        raise HTTPException(503, "OpenCode server 未就绪；先运行 easel gateway start")
+
+    def _apply() -> None:
+        # 所有校验都是只读；任何一项不合法都不会落盘或发出写请求
+        for pid, key in req.keys.items():
+            opencode_config.validate_provider_key(pid, key)
+        for pid in req.removals:
+            opencode_config.validate_removal(pid)
+        if req.primary:
+            opencode_config.validate_model(req.primary)
+        for pid, key in req.keys.items():
+            opencode_config.set_provider_key(pid, key)
+        for pid in req.removals:
+            opencode_config.remove_provider_key(pid)
+        if req.primary:
+            opencode_config.set_primary_model(req.primary)
+
+    try:
+        await asyncio.to_thread(_apply)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"OpenCode server 操作失败：{type(exc).__name__}: {exc}"[:200]) from exc
+    resp = {"ok": True, "note": "OpenCode 已保存（下一条消息生效）"}
+    resp.update(await asyncio.to_thread(opencode_config.snapshot))
+    return resp
 
 
 class AttachmentRef(BaseModel):

@@ -182,6 +182,12 @@ class OpenCodeAdapter:
         cmd = base_cmd() + ["run", "--format", "json", "--auto", "--dir", str(PROJECT_ROOT)]
         if sid:
             cmd += ["--attach", server_url(), "--session", sid]
+        # 项目 opencode.json 的 model 是设置面板真值：server 会缓存旧配置、会话也会记住旧模型，
+        # 所以每轮显式带 --model，面板一保存就下一条消息生效（延迟导入避免模块循环）。
+        from .opencode_config import primary_model
+        model = primary_model()
+        if model:
+            cmd += ["--model", model]
         cmd.append(run.prompt)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 cwd=run.cwd, text=True, bufsize=1, env=run.env)

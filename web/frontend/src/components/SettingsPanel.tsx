@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import EnvBoard from './EnvBoard';
 import type { JobView } from './EnvBoard';
 import {
   fetchEnvTools, startEnvInstall, fetchEnvJob,
   fetchModelChannels, runChannelSelftest, saveModelConfig,
+  fetchStatus, fetchOpencodeSettings, saveOpencodeSettings,
 } from '../lib/api';
-import type { EnvTool, ModelRow, SelftestResult } from '../lib/api';
+import type { EnvTool, ModelRow, SelftestResult, OpencodeModel, OpencodeSettings } from '../lib/api';
 import { IconSlidersHorizontal, IconPackage, IconEllipsis } from './settingsIcons';
 
 interface Props { onClose: () => void; }
@@ -152,6 +153,14 @@ export default function SettingsPanel({ onClose }: Props) {
   const [testing, setTesting] = useState(false);
   const [selftestNote, setSelftestNote] = useState('');
 
+  // ── OpenCode 供应商与模型（runtime=opencode 时替代 OpenClaw 对话板） ──
+  const [runtimeId, setRuntimeId] = useState('');
+  const [oc, setOc] = useState<OpencodeSettings | null>(null);
+  const [ocPrimary, setOcPrimary] = useState('');
+  const [ocKeys, setOcKeys] = useState<Record<string, string>>({});
+  const [ocLoading, setOcLoading] = useState(false);
+  const [ocBusy, setOcBusy] = useState('');
+
   useEffect(() => {
     let alive = true;
     fetchWithRetry(() => fetchModelChannels(), 5, 15000)
@@ -171,6 +180,33 @@ export default function SettingsPanel({ onClose }: Props) {
       .finally(() => { if (alive) setModelLoading(false); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetchStatus()
+      .then((s) => { if (alive) setRuntimeId(s.runtime?.id || ''); })
+      .catch(() => { /* 状态读不到：按 OpenClaw 板渲染 */ });
+    return () => { alive = false; };
+  }, []);
+
+  const applyOc = useCallback((d: OpencodeSettings) => {
+    setOc(d);
+    setOcPrimary(d.primary || '');
+    setOcKeys({});
+  }, []);
+
+  const loadOc = useCallback(async () => {
+    setOcLoading(true);
+    try {
+      applyOc(await fetchWithRetry(() => fetchOpencodeSettings(), 4, 15000));
+    } catch (e) {
+      setModelErr(e instanceof Error ? `OpenCode 配置读取失败：${e.message}` : 'OpenCode 配置读取失败');
+    } finally {
+      setOcLoading(false);
+    }
+  }, [applyOc]);
+
+  useEffect(() => { if (runtimeId === 'opencode') void loadOc(); }, [runtimeId, loadOc]);
 
   const doSelftest = useCallback(async (channel: string) => {
     setTesting(true);
@@ -194,6 +230,29 @@ export default function SettingsPanel({ onClose }: Props) {
   const [savedNote, setSavedNote] = useState('');
 
   const saveCurrent = useCallback(async () => {
+    if (runtimeId === 'opencode' && chan === 'chat') {
+      if (!oc?.serverReady) { setSavedNote('OpenCode server 未就绪，无法保存'); return; }
+      const keys: Record<string, string> = {};
+      Object.entries(ocKeys).forEach(([pid, k]) => { const v = k.trim(); if (v) keys[pid] = v; });
+      const primary = ocPrimary && ocPrimary !== oc.primary ? ocPrimary : '';
+      if (!Object.keys(keys).length && !primary) { setSavedNote('没有可保存的改动（Key 留空表示不改）'); return; }
+      setSaving(true);
+      setSavedNote('');
+      try {
+        const d = await fetchWithRetry(() => saveOpencodeSettings({
+          primary: primary || undefined,
+          keys: Object.keys(keys).length ? keys : undefined,
+        }), 3, 20000);
+        applyOc(d);
+        setSavedNote(d.note ? `✓ ${d.note}` : '✓ 已保存');
+      } catch (e) {
+        setSavedNote(e instanceof Error ? `保存失败：${e.message}` : '保存失败');
+      } finally {
+        setSaving(false);
+        setTimeout(() => setSavedNote(''), 6000);
+      }
+      return;
+    }
     const rows = chan === 'chat' ? chatRows : chan === 'transcribe' ? transRows : (mediaRows[chan] || []);
     const payload = rows
       .filter((r) => r.slot)
@@ -232,7 +291,22 @@ export default function SettingsPanel({ onClose }: Props) {
       setSaving(false);
       setTimeout(() => setSavedNote(''), 6000);
     }
-  }, [chan, chatRows, transRows, mediaRows, refreshEnv]);
+  }, [chan, chatRows, transRows, mediaRows, refreshEnv, runtimeId, oc, ocKeys, ocPrimary, applyOc]);
+
+  const removeOcKey = useCallback(async (pid: string) => {
+    if (!window.confirm(`清除「${pid}」在 OpenCode 里保存的凭证？`)) return;
+    setOcBusy(pid);
+    setSavedNote('');
+    try {
+      applyOc(await saveOpencodeSettings({ removals: [pid] }));
+      setSavedNote(`✓ 已清除 ${pid} 的凭证`);
+    } catch (e) {
+      setSavedNote(e instanceof Error ? `清除失败：${e.message}` : '清除失败');
+    } finally {
+      setOcBusy('');
+      setTimeout(() => setSavedNote(''), 6000);
+    }
+  }, [applyOc]);
 
   // Esc 关闭
   useEffect(() => {
@@ -301,6 +375,79 @@ export default function SettingsPanel({ onClose }: Props) {
     setMediaRows((m) => ({ ...m, [ch]: (m[ch] || []).map((r, j) => ({ ...r, role: j === i ? '主' : '备' })) }));
 
   const mediaOk = (ch: string) => (mediaRows[ch] || []).some((r) => r.result === '已配置');
+
+  const ocGroups = useMemo(() => {
+    const groups: Record<string, OpencodeModel[]> = {};
+    (oc?.models || []).forEach((m) => { (groups[m.providerID] = groups[m.providerID] || []).push(m); });
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [oc]);
+
+  const OC_SOURCE: Record<string, string> = { env: '环境变量', config: '配置文件', api: '已登录', custom: '自定义' };
+
+  /** OpenCode 供应商板（runtime=opencode）：凭证只显示状态，Key 输入只提交不回显。 */
+  const renderOpencodeBoard = () => {
+    if (ocLoading && !oc) {
+      return <div className="board"><div className="empty"><span className="spin" /> 正在读取 OpenCode 配置…<span className="hint">（server 繁忙时会自动重试）</span></div></div>;
+    }
+    if (!oc) {
+      return <div className="board"><div className="empty">读取失败。<span className="hint">点「刷新」重试。</span></div></div>;
+    }
+    if (!oc.serverReady) {
+      return <div className="board"><div className="empty">OpenCode server 未就绪。<span className="hint">{oc.message}</span></div></div>;
+    }
+    if (!oc.providers.length) {
+      return <div className="board"><div className="empty">还没有可用供应商。<span className="hint">先在终端运行 opencode auth login 配置。</span></div></div>;
+    }
+    return (
+      <div className="board">
+        <div className="prow head">
+          <span>顺序</span><span>供应商</span><span>来源</span><span>模型数</span>
+          <span>凭证</span><span>API Key</span><span>默认</span><span>状态</span><span />
+        </div>
+        {oc.providers.map((p, i) => {
+          const methods = oc.authMethods[p.id] || [];
+          // 只有明确了登录方法却不含 api 的（OAuth-only）才收起输入：/provider/auth 只覆盖带
+          // 交互登录的少数 provider，把它当白名单会让已配置的 provider 全都填不了 Key。
+          const oauthOnly = methods.length > 0 && !methods.includes('api');
+          const isDefault = Boolean(oc.primary) && oc.primary.startsWith(`${p.id}/`);
+          return (
+            <div className="prow" key={p.id}>
+              <span className="step">{i + 1}</span>
+              <span className="pname">{p.name}<small>{p.id}</small></span>
+              <span className="cell-text">{OC_SOURCE[p.source] || p.source || '—'}</span>
+              <span className="cell-text">{p.modelCount} 个</span>
+              <span className={`stt ${p.hasKey ? 'good' : 'warn-text'}`}>{p.hasKey ? '已配置' : '缺 Key'}</span>
+              {oauthOnly ? (
+                <span className="cell-text" title={`终端运行：opencode auth login ${p.id}`}>
+                  需终端登录：opencode auth login {p.id}
+                </span>
+              ) : (
+                <input
+                  className="mock key-input"
+                  type="password"
+                  value={ocKeys[p.id] || ''}
+                  placeholder={p.hasKey ? '留空=不改' : '粘贴 Key'}
+                  onChange={(e) => setOcKeys((k) => ({ ...k, [p.id]: e.target.value }))}
+                />
+              )}
+              <span>{isDefault ? <span className="tag main">当前</span> : null}</span>
+              <span className={`stt ${p.hasKey ? 'good' : 'warn-text'}`}>{p.hasKey ? '可管理' : '待配置'}</span>
+              {p.hasKey && p.source !== 'env' ? (
+                <button
+                  className="row-del"
+                  onClick={() => void removeOcKey(p.id)}
+                  disabled={ocBusy === p.id}
+                  title="清除该供应商在 OpenCode 里保存的凭证"
+                >
+                  ✕
+                </button>
+              ) : <span />}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const renderBoard = (
     rows: ModelRow[],
@@ -475,7 +622,39 @@ export default function SettingsPanel({ onClose }: Props) {
                 </div>
                 {savedNote ? <div className={`save-note${savedNote.startsWith('保存失败') || savedNote.startsWith('没有') ? ' err' : ''}`}>{savedNote}</div> : null}
 
-                {chan === 'chat' && (
+                {chan === 'chat' && runtimeId === 'opencode' && (
+                  <section className="st-panel active">
+                    <div className="panel-top">
+                      <span className={`pill ${oc?.serverReady ? 'ok' : 'warn'}`}><span className="dot" />{oc?.serverReady ? 'OpenCode 在线' : 'OpenCode 离线'}</span>
+                      <span className="desc">凭证存 OpenCode auth（本机）；默认模型写入项目 opencode.json</span>
+                      <span className="spacer" />
+                      <label className="desc" htmlFor="oc-model">默认模型</label>
+                      <select
+                        id="oc-model"
+                        className="mock"
+                        value={ocPrimary}
+                        disabled={!oc?.serverReady || ocLoading}
+                        onChange={(e) => setOcPrimary(e.target.value)}
+                      >
+                        <option value="">（不改）</option>
+                        {ocGroups.map(([pid, list]) => (
+                          <optgroup key={pid} label={pid}>
+                            {list.map((m) => (
+                              <option key={`${pid}/${m.id}`} value={`${pid}/${m.id}`}>{m.name}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button className="btn btn-sm" onClick={() => void loadOc()} disabled={ocLoading}>
+                        {ocLoading ? '读取中…' : '刷新'}
+                      </button>
+                    </div>
+                    {renderOpencodeBoard()}
+                    <div className="foot-note">填完 Key 点右上角「保存配置」（留空=不改）；「✕」清除 OpenCode 里保存的凭证；默认模型写入项目 opencode.json，下一条消息生效。</div>
+                  </section>
+                )}
+
+                {chan === 'chat' && runtimeId !== 'opencode' && (
                   <section className="st-panel active">
                     <div className="panel-top">
                       <span className={`pill ${chatOk ? 'ok' : 'off'}`}><span className="dot" />{chatOk ? '主通道在线' : '未配置'}</span>

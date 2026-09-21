@@ -1295,6 +1295,9 @@ textarea.field { resize: vertical; min-height: 90px; }
 .settings-overlay input.mock { border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; font: inherit; font-size: 12.5px; background: var(--bg); color: var(--text); width: 100%; min-width: 0; }
 .settings-overlay input.mock:focus { outline: none; border-color: #9db3d8; box-shadow: 0 0 0 3px rgba(63, 86, 168, 0.10); }
 .settings-overlay input.mock[disabled] { background: var(--surface-2); color: var(--text-tertiary); }
+.settings-overlay select.mock { border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 12.5px; background: var(--bg); color: var(--text); max-width: 320px; }
+.settings-overlay select.mock:focus { outline: none; border-color: #9db3d8; box-shadow: 0 0 0 3px rgba(63, 86, 168, 0.10); }
+.settings-overlay select.mock[disabled] { background: var(--surface-2); color: var(--text-tertiary); }
 .settings-overlay .save-note { margin: 0 0 10px; padding: 7px 11px; border-radius: 8px; font-size: 12.5px; background: var(--green-soft); color: #15803d; }
 .settings-overlay .save-note.err { background: var(--red-soft); color: #b91c1c; }
 .settings-overlay button.tag { border: 0; cursor: pointer; font: inherit; font-size: 11px; font-weight: 650; }
