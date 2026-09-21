@@ -36,12 +36,17 @@ MIN_OPENCLAW = (2026, 6, 11)
 _SESSION_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 OPENCLAW_PROFILE = "easel"
+# OpenClaw 会话历史（transcript）目录：<profile 配置目录>/agents/main/sessions/<session-id>.jsonl
+OPENCLAW_SESSIONS_DIR = Path.home() / f".openclaw-{OPENCLAW_PROFILE}" / "agents" / "main" / "sessions"
 
-# 对话传输层：cli＝每轮 spawn `openclaw agent`（默认，久经考验）；http＝直连常驻 gateway 的
-# OpenAI 兼容端点（省掉每轮 6-7s 冷启动）。默认保持 cli——http 路径目前还不具备 CLI 路径的
-# 几项保证，想提速的部署显式设 EASEL_CHAT_TRANSPORT=http 开启；只有调用方要求流式
-# （RunRequest.stream）时才会走 http。
-CHAT_TRANSPORT = os.environ.get("EASEL_CHAT_TRANSPORT", "cli").strip().lower()
+# 对话传输层：http＝直连常驻 gateway 的 OpenAI 兼容端点，agent 在 gateway 进程里直接跑，
+# 省掉每轮 spawn `openclaw agent` 瘦客户端的冷启动（本机实测同一句话：CLI 7.1-7.6s/轮，
+# HTTP 4.1-4.5s/轮，差值就是客户端冷启动）；cli＝每轮 spawn 的老路径。
+#
+# 默认 http，但**只对新会话生效**：见 resolve_transport。同一会话绝不中途换边——两条路径
+# 写的是不同的 transcript，换边等于静默清空整段对话记忆（实测拿 CLI 去续一个 HTTP 起的会话，
+# agent 直接答"无历史"）。设 EASEL_CHAT_TRANSPORT=cli 可整机回到老路径。
+CHAT_TRANSPORT = os.environ.get("EASEL_CHAT_TRANSPORT", "http").strip().lower()
 
 # gateway 进程把原始事件流（token/thinking/收尾）写到的**单个共享文件**。
 # 关键：`openclaw agent` 只是瘦客户端，没有 --raw-stream 标志——只有常驻 gateway 按它自己
@@ -142,28 +147,91 @@ def _heal_session(session_key: str) -> None:
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         import session_heal
-        path = Path.home() / ".openclaw-easel" / "agents" / "main" / "sessions" / f"{stable_session_id(session_key)}.jsonl"
+        path = OPENCLAW_SESSIONS_DIR / f"{stable_session_id(session_key)}.jsonl"
         if path.is_file():
             session_heal.sanitize_history_file(path)
     except Exception:
         pass
 
 
-def gateway_http_ready() -> bool:
-    """探测 gateway 的 OpenAI 兼容端点是否可用（不可用则回退 CLI 路径）。
+_HTTP_READY_CACHE: dict = {"at": -1e9, "ok": False}
+_HTTP_READY_TTL = 60.0          # 探针要打一次真端点，别每轮都付这个 RTT
 
-    需要 openclaw 侧开启 gateway.http.endpoints.chatCompletions。
+
+def gateway_http_ready(force: bool = False) -> bool:
+    """探测 gateway 的 /v1/chat/completions 到底挂没挂上。
+
+    **不能探 /v1/models**：那个路径会被 gateway 控制台 SPA 的 catch-all 接走，端点没开也照样
+    返回 200（body 是 OpenClaw Control 的 HTML 首页）—— 探了等于没探，只要网关活着就恒为 True。
+    这里直接打真端点：openclaw 要求 gateway.http.endpoints.chatCompletions.enabled === true
+    才挂这条路由（默认 false），没开就是 404；开了则因为 body 缺 messages 返回 400。用 400 当
+    "端点在"的证据，既走完整条路由又不消耗一次模型调用。
     """
+    now = time.monotonic()
+    if not force and now - _HTTP_READY_CACHE["at"] < _HTTP_READY_TTL:
+        return bool(_HTTP_READY_CACHE["ok"])
+    ok = False
     try:
         import httpx  # noqa: F401  HTTP 路径全靠它做 SSE；没装就当端点不可用，回退 CLI
-    except ImportError:
-        return False
-    try:
-        rq = urllib.request.Request("http://127.0.0.1:18789/v1/models")
-        with urllib.request.urlopen(rq, timeout=2) as response:
-            return response.status == 200
+        rq = urllib.request.Request(
+            "http://127.0.0.1:18789/v1/chat/completions", data=b"{}",
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(rq, timeout=3):
+                ok = False       # 空 body 还给 200 说明这不是我们要的端点，不敢用
+        except urllib.error.HTTPError as e:
+            ok = e.code == 400   # 400 Missing user message ⇒ 端点在；404 ⇒ 没开
     except Exception:  # noqa: BLE001
-        return False
+        ok = False
+    _HTTP_READY_CACHE.update(at=now, ok=ok)
+    return ok
+
+
+def transport_pin_file(session_key: str, pin_dir: Path) -> Path:
+    """会话传输「钉子」文件路径（钉过 http 的会话用它自证，web 重启后依然成立）。"""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_key)[:120]
+    return pin_dir / f"{safe}.transport"
+
+
+def resolve_transport(session_key: str, *, pin_dir: Path | None = None,
+                       transcript_dir: Path | None = None, enabled: str | None = None,
+                       probe=None) -> str:
+    """决定这一轮走哪条传输层，并保证同一会话**永不中途换边**。
+
+    换边的代价是静默丢光上下文，不是慢一点：CLI 路径用 `--session-id`（uuid5(sk)）把 transcript
+    钉死，而 /v1/chat/completions **压根不读 x-openclaw-session-id** —— openclaw 2026.6.11 全量
+    实测：该 header 只有 MCP 端点和对上游供应商的出站请求会用，OpenAI 兼容端点只认
+    x-openclaw-session-key，transcript 文件名由网关自己挑。于是同一个 web 会话在两条路径下落在
+    两份不同的 jsonl 上。实测拿 CLI 去续一个已有两轮 HTTP 历史的会话，agent 回答"无历史"。
+
+    所以判定顺序（都不依赖内存态，web 重启后依然成立）：
+      1) uuid5 那份 transcript 已落盘 → 这会话是 CLI 起的，继续 cli；
+      2) 有 http 钉子文件 → 继续 http；
+      3) 两者都没有 → 新会话，按总开关 + 真探针决定。
+    """
+    enabled = CHAT_TRANSPORT if enabled is None else enabled
+    probe = gateway_http_ready if probe is None else probe
+    transcript_dir = OPENCLAW_SESSIONS_DIR if transcript_dir is None else transcript_dir
+    if (transcript_dir / f"{stable_session_id(session_key)}.jsonl").is_file():
+        return "cli"
+    if pin_dir is not None:
+        try:
+            if transport_pin_file(session_key, pin_dir).read_text(encoding="utf-8").strip() == "http":
+                return "http"
+        except OSError:
+            pass
+    return "http" if (enabled == "http" and probe()) else "cli"
+
+
+def pin_transport(session_key: str, kind: str, pin_dir: Path | None) -> None:
+    """把会话钉在某条传输层上。只需钉 http —— cli 侧由 uuid5 transcript 文件自证。"""
+    if kind != "http" or pin_dir is None:
+        return
+    try:
+        pin_dir.mkdir(parents=True, exist_ok=True)
+        transport_pin_file(session_key, pin_dir).write_text("http", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def raw_event_for_run(line: str, expected_run_id: str | None) -> dict | None:
@@ -244,12 +312,14 @@ class OpenClawRunHandle:
     """
 
     def __init__(self, process, session_key: str, questions: bool, *, transport: str,
-                 raw_start_offset: int = 0, http_payload: tuple | None = None):
+                 raw_start_offset: int = 0, http_payload: tuple | None = None,
+                 pin_dir: Path | None = None):
         self.process = process
         self.session_key = session_key
         self.questions = questions
         self.transport = transport
         self.raw_start_offset = raw_start_offset
+        self.pin_dir = pin_dir                  # 传输钉子目录（web 的 SESSIONS_DIR；CLI 侧为 None）
         self._cancel = threading.Event()
         self._drain_lock = threading.RLock()   # 同一时刻只允许一个消费方 drain 事件队列
         self._stdout: list[str] = []
@@ -261,14 +331,17 @@ class OpenClawRunHandle:
             "transport": transport, "stop_reason": None, "last_ev": None,
             "saw_message_end": False, "fetch_count": 0, "token_chars": 0,
             "thinking_chars": 0, "delegated": False, "ignored_foreign_events": 0,
-            "run_id": None, "text_tail": "", "error": None,
+            "run_id": None, "text_tail": "", "error": None, "sse_thinking": False,
         }
+        # raw 流两条传输都要 tail：HTTP 模式正文以 SSE 为准，但思考流只在 raw 流里
+        # （openclaw 2026.6.11 的 chat/completions 不回传任何 reasoning 增量），
+        # 见 _handle_raw_line 里按 transport 分流。
+        threading.Thread(target=self._tail_shared_raw, daemon=True).start()
         if transport == "http":
             if http_payload is not None:
                 threading.Thread(target=self._run_http_turn, args=http_payload, daemon=True).start()
         else:
             threading.Thread(target=self._read_stdout, daemon=True).start()
-            threading.Thread(target=self._tail_shared_raw, daemon=True).start()
         if questions:
             threading.Thread(target=self._poll_questions, daemon=True).start()
 
@@ -352,12 +425,18 @@ class OpenClawRunHandle:
         if not delta:
             return
         if ev == "assistant_text_stream" and et == "text_delta":
+            if self.transport == "http":
+                # HTTP 模式正文以 SSE 为准（那条才是本请求自己的响应流）。这里再发一遍
+                # 就是同一段内容进两次队列 —— 前端会看到每个字重复。
+                return
             self._info["token_chars"] += len(delta)
             self._info["text_tail"] = (self._info.get("text_tail", "") + delta)[-160:]
             self._text.append(delta)
             self._q.put(RuntimeEvent("text", delta))
             return
         if ev == "assistant_thinking_stream" and et == "thinking_delta":
+            if self._info.get("sse_thinking"):
+                return      # SSE 已经在供思考流了，别叠第二份
             self._info["thinking_chars"] += len(delta)
             self._q.put(RuntimeEvent("thinking", delta))
             return
@@ -394,10 +473,14 @@ class OpenClawRunHandle:
                             self._info["error"] = f"网关返回错误：{str(d['error'])[:160]}"
                             return
                         delta = (d.get("choices") or [{}])[0].get("delta") or {}
-                        # 思考流：HTTP 模式不 tail 共享 raw 文件，thinking 事件的唯一来源就是
-                        # 这里的 reasoning 增量。不接的话「💭 思考过程」面板在本路径下永远是空的。
+                        # 思考流的两个可能来源，先到先得（`sse_thinking` 闩锁，防两路都来时重复）：
+                        # ① 这里的 reasoning 增量 —— openclaw 2026.6.11 的 chat/completions
+                        #    实现里 reasoning/thinking 出现 0 次，**不会**给；留着是给别的网关/
+                        #    以后的版本用。② 常驻 gateway 写的共享 raw 流（见 _tail_shared_raw），
+                        #    它按自己的 env 写，跟这一轮是谁触发的无关，所以 HTTP 模式照样能读到。
                         rc = delta.get("reasoning_content") or delta.get("reasoning")
                         if rc:
+                            self._info["sse_thinking"] = True
                             self._info["thinking_chars"] += len(rc)
                             self._q.put(RuntimeEvent("thinking", rc))
                         c = delta.get("content")
@@ -542,6 +625,11 @@ class OpenClawRunHandle:
         # 正常收尾的唯一标志：raw 流最后一个事件是 assistant_message_end（HTTP 模式为收到 [DONE]）。
         clean_end = self._info["last_ev"] == "assistant_message_end"
         self._result = RunResult(rc, text, clean_end, self._info["stop_reason"], self._diagnostics())
+        # 只有真的在 HTTP 上跑出了内容，才把这个会话钉到 http 上。钉早了（比如选路时就钉）
+        # 会把一个其实没跑成的会话锁死在 http，之后每轮都往一条不通的路上撞；而钉住之后
+        # 就绝不能再换回 cli —— 网关那份 transcript 我们按名字找不回来，换边即丢历史。
+        if self.transport == "http" and self._info["token_chars"]:
+            pin_transport(self.session_key, "http", self.pin_dir)
         return self._result
 
     def cancel(self) -> None:
@@ -603,20 +691,25 @@ class OpenClawAdapter:
         # 告诉 skill：本部署的 ask_user 选项卡片是否可用（见 askuser_cards_enabled）。
         env["EASEL_ASKUSER_CARDS"] = "1" if askuser_cards_enabled() else "0"
 
-        if run.stream and CHAT_TRANSPORT == "http" and gateway_http_ready():
+        # 只有调用方要求流式（web 对话）才可能走 http；其余（skill/ping/非流式）保持 CLI。
+        # 同一会话的传输由 resolve_transport 钉死，绝不中途换边（换边即丢 transcript 历史）。
+        kind = "cli" if not run.stream else resolve_transport(
+            run.session_key, pin_dir=run.sessions_dir)
+
+        if kind == "http":
             body = {
                 "model": "openclaw/default",
                 "stream": True,
                 "messages": [{"role": "user", "content": run.prompt}],
             }
-            # session-id 必须跟 CLI 路径钉死同一个（见 stable_session_id）：只带 session-key
-            # 的话网关会自己另起一个 transcript —— 跨天空闲后丢历史，且万一本轮回退 CLI，
-            # 两条路径会写进不同的会话文件，对话历史直接劈叉。
+            # 这两颗 header 里只有 session-key 对这轮有意义（端点靠它认会话）；
+            # session-id 在 openclaw 2026.6.11 的 chat/completions 上被静默忽略（见
+            # resolve_transport），带上只是为了网关升级后能对齐，不指望它钉 transcript。
             headers = {"x-openclaw-session-key": f"agent:main:{run.session_key}",
                        "x-openclaw-session-id": stable_session_id(run.session_key)}
             return OpenClawRunHandle(
                 _GatewayHttpProc(), run.session_key, questions, transport="http",
-                http_payload=(body, headers, run.timeout),
+                http_payload=(body, headers, run.timeout), pin_dir=run.sessions_dir,
             )
 
         # 原始事件流由常驻 gateway 写到共享文件（见 SHARED_RAW_STREAM / scripts/gateway.sh），
@@ -639,7 +732,7 @@ class OpenClawAdapter:
                                 cwd=run.cwd, text=True, bufsize=1, env=env)
         return OpenClawRunHandle(
             proc, run.session_key, questions, transport="cli",
-            raw_start_offset=raw_start_offset,
+            raw_start_offset=raw_start_offset, pin_dir=run.sessions_dir,
         )
 
     def health(self) -> RuntimeHealth:

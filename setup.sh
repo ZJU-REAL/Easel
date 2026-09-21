@@ -662,6 +662,12 @@ fi
 $OC config set gateway.mode local 2>&1 | sed '/^No change$/d'
 $OC config set gateway.bind loopback 2>&1 | sed '/^No change$/d'
 $OC config set gateway.auth.mode none 2>&1 | sed '/^No change$/d'
+# 对话直连常驻网关（http 传输层，见 easel/runtimes/openclaw.py）要用 OpenAI 兼容端点，而 openclaw 默认
+# 不挂这条路由（chatCompletions.enabled 默认 false），不开的话 POST /v1/chat/completions
+# 一律 404、只能退回每轮 spawn 客户端的老路径。端点只绑 loopback + auth.mode=none 的本机
+# 网关，不额外扩暴露面。旧版本没这个键时会报 Unrecognized key，吞掉即可（照常走 cli）。
+$OC config set gateway.http.endpoints.chatCompletions.enabled true --strict-json 2>&1 \
+    | sed -e '/^No change$/d' -e '/[Uu]nrecognized key/d' || true
 
 # Refuse to start with a config rejected by the installed OpenClaw version.
 # This catches schema changes early instead of producing opaque Gateway errors.

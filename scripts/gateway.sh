@@ -124,6 +124,15 @@ case "${1:-status}" in
         export OPENCLAW_RAW_STREAM=1
         export OPENCLAW_RAW_STREAM_PATH="${EASEL_RAW_STREAM_PATH:-/tmp/easel-raw-stream.jsonl}"
         : > "$OPENCLAW_RAW_STREAM_PATH"    # 每次起 gateway 清空，避免无限增长/读到上次残留
+        # 技能（如 skill-douyin-upload）靠 printenv EASEL_ASKUSER_CARDS 决定用选项卡片还是文字问答。
+        # web 的 cli 路径是每轮往客户端 env 里塞这个值，但 http 直连路径下 agent 跑在**本进程**里、
+        # 拿不到那份 env —— 不在这里补，2026.9.x 上会从卡片模式悄悄退化成文字问答。该值只取决于
+        # OpenClaw 版本有没有 question.* RPC，进程级导出一次即可。
+        export EASEL_ASKUSER_CARDS="$(
+            PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+                'from easel.gateway_questions import question_bridge_supported as s; print("1" if s() else "0")' \
+                2>/dev/null | tail -n 1)"
+        export EASEL_ASKUSER_CARDS="${EASEL_ASKUSER_CARDS:-0}"   # 探不出来就按"没有卡片"走文字问答
         _detach openclaw --profile "$PROFILE" gateway run --force --allow-unconfigured --bind loopback > "$LOGFILE" 2>&1
         sleep 4
         if gateway_live; then

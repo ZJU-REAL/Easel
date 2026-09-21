@@ -324,6 +324,13 @@ if ($embeddingKey -and $embeddingUrl -and $embeddingModel) {
     if (($embeddingKeyNames + $embeddingUrlNames + $embeddingModelNames | Where-Object { $envValues.ContainsKey($_) }).Count -gt 0) { Write-Warning '向量 API 配置不完整，已关闭向量检索；需要同时设置向量 API key、Base URL 和模型名' } else { Info '未配置独立向量 API，使用关键词记忆检索' }
 }
 OpenClaw-Config 'agents.defaults.timeoutSeconds' '7200'; OpenClaw-Config 'gateway.mode' 'local'; OpenClaw-Config 'gateway.bind' 'loopback'; OpenClaw-Config 'gateway.auth.mode' 'none'
+# 对话直连常驻网关（http 传输层，见 easel/runtimes/openclaw.py）要用 OpenAI 兼容端点，而 openclaw 默认不挂这条
+# 路由（chatCompletions.enabled 默认 false），不开则 POST /v1/chat/completions 一律 404、只能
+# 退回每轮 spawn 客户端的老路径。端点只绑 loopback + auth.mode=none 的本机网关，不扩暴露面。
+# 走尽力而为版：老版本没这个 key 时只是拿不到提速，不该让整个安装失败。
+if (-not (Try-OpenClawConfig 'gateway.http.endpoints.chatCompletions.enabled' 'true' -Json)) {
+    Info '当前 OpenClaw 不支持 chatCompletions 端点，对话将走每轮启动客户端的兼容路径（可用，只是每轮慢几秒）'
+}
 # 单次 LLM 请求的「空闲超时」。尽力而为：老版本 OpenClaw（如 2026.3.x）的 provider schema 不认识
 # timeoutSeconds，会报 Unrecognized key 并拒绝写入。这里吞掉这条噪音、绝不让它中断安装；
 # 新版本 OpenClaw 才会真正把它调到 600s。想彻底拿到更长超时，请 npm i -g openclaw@latest 升级。

@@ -54,11 +54,30 @@ REACT_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
 # <state 目录>/workspace（issue #19）。要用 workspace 路径请走 easel.openclaw_workspace.workspace_dir()，
 # 它直接问 openclaw 要运行时真值，不猜版本。
 # 对话的 OpenClaw 传输实现（共享 raw 流 tail、HTTP 网关 SSE、ask_user 桥接、收尾诊断）
-# 已收拢到 runtimes/openclaw.py；以下薄别名保留上游测试引用（与 doctor 薄别名同一约定），
+# 已收拢到 runtimes/openclaw.py；以下薄别名/薄包装保留上游测试引用（与 doctor 薄别名同一约定），
 # 实现与默认值以 adapter 为准。
 CHAT_TRANSPORT = openclaw_runtime.CHAT_TRANSPORT
 _gateway_http_ready = openclaw_runtime.gateway_http_ready
 _raw_event_for_run = openclaw_runtime.raw_event_for_run
+_openclaw_session_id = openclaw_runtime.stable_session_id
+OPENCLAW_SESSIONS_DIR = openclaw_runtime.OPENCLAW_SESSIONS_DIR
+
+
+def _transport_pin_file(sk: str) -> Path:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    return openclaw_runtime.transport_pin_file(sk, SESSIONS_DIR)
+
+
+def _resolve_transport(sk: str) -> str:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py；路径/开关读 web 侧全局。"""
+    return openclaw_runtime.resolve_transport(
+        sk, pin_dir=SESSIONS_DIR, transcript_dir=OPENCLAW_SESSIONS_DIR,
+        enabled=CHAT_TRANSPORT, probe=_gateway_http_ready)
+
+
+def _pin_transport(sk: str, kind: str) -> None:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    openclaw_runtime.pin_transport(sk, kind, SESSIONS_DIR)
 
 # 思考档位（每轮 --thinking）。前后端已完整支持展示思考：后端把 thinking_delta 转成 SSE
 # `thinking` 事件，前端 MessageBubble 渲染「💭 思考过程」并在流式结束后持久保留。面板里有没有
