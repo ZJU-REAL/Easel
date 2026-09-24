@@ -44,6 +44,7 @@ import content_guard  # noqa: E402  出站内容安全闸门
 # --------------------------------------------------------------------------- #
 PUBLISH_URL = "https://creator.xiaohongshu.com/publish/publish?source=official"
 EXPLORE_URL = "https://www.xiaohongshu.com/explore"
+CREATOR_LOGIN_URL = "https://creator.xiaohongshu.com/login"
 TITLE_MAX = 20  # 小红书标题上限（全角计法，见 calc_title_length）
 
 SELECTORS = {
@@ -126,6 +127,134 @@ def _abspaths(csv: str | None) -> list[str]:
 def _profile_dir(base: str | None) -> Path:
     root = Path(base).expanduser() if base else Path.home() / ".easel-browser-profiles"
     return root / PROFILE_NAME
+
+
+def _cloak_executable() -> Path | None:
+    """本机已装的 CloakBrowser 内核。只用 ~/.cloakbrowser，不用调研 profile / 9344 / 9345。
+
+    无头 Playwright Chromium 会被小红书 300012；同一出口下 Cloak 无头已实测能出码。
+    """
+    override = (os.environ.get("EASEL_CLOAK_BROWSER") or "").strip()
+    if override:
+        p = Path(override).expanduser()
+        return p if p.is_file() else None
+    root = Path.home() / ".cloakbrowser"
+    if not root.is_dir():
+        return None
+    choices = sorted(root.glob("chromium-*/chrome.exe"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return choices[0] if choices else None
+
+
+class _ProfileLock:
+    """同一份 XiaohongshuProfile 不能同时开两个 Cloak：账号页 whoami 和登录会把内核打成 exit 21。"""
+
+    def __init__(self, profile: Path):
+        self.path = profile / ".easel.lock"
+        self.fd: int | None = None
+
+    def acquire(self, timeout_s: float) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.time() + timeout_s
+        last: OSError | None = None
+        while True:
+            try:
+                self.fd = os.open(str(self.path), os.O_CREAT | os.O_RDWR)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(self.fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                os.lseek(self.fd, 0, os.SEEK_SET)
+                os.write(self.fd, f"{os.getpid()}\n".encode("ascii"))
+                return
+            except OSError as e:
+                last = e
+                if self.fd is not None:
+                    try:
+                        os.close(self.fd)
+                    except OSError:
+                        pass
+                    self.fd = None
+                if time.time() >= deadline:
+                    raise TimeoutError(f"登录目录正被占用：{self.path}") from last
+                time.sleep(0.4)
+
+    def release(self) -> None:
+        if self.fd is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(self.fd, 0, os.SEEK_SET)
+                msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+        self.fd = None
+
+
+def _clear_stale_chrome_locks(profile: Path) -> None:
+    for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        p = profile / name
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+
+def _browser_channel() -> str | None:
+    """Cloak 找不到时，有头登录才退回本机 Chrome/Edge。"""
+    if os.name != "nt":
+        return None
+    pf = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+    pf86 = Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
+    chrome = (
+        pf / "Google" / "Chrome" / "Application" / "chrome.exe",
+        pf86 / "Google" / "Chrome" / "Application" / "chrome.exe",
+        local / "Google" / "Chrome" / "Application" / "chrome.exe",
+    )
+    if any(p.is_file() for p in chrome):
+        return "chrome"
+    edge = (
+        pf / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        pf86 / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+    )
+    if any(p.is_file() for p in edge):
+        return "msedge"
+    return None
+
+
+def _risk_blocked(page) -> bool:
+    try:
+        url = page.url or ""
+        title = page.title() or ""
+        return ("website-login/error" in url or "error_code=300012" in url
+                or "安全限制" in title)
+    except Exception:
+        return False
+
+
+def _is_logged_in(page) -> bool:
+    try:
+        if page.query_selector(SELECTORS["login_ok"]) is not None:
+            return True
+    except Exception:
+        pass
+    try:
+        url = (page.url or "").split("?", 1)[0]
+        if "creator.xiaohongshu.com" in url and "/login" not in url:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _proxy(explicit: str | None, disable: bool) -> str | None:
@@ -421,16 +550,30 @@ def _fill_and_submit(page, title, content, tags):
 def _launch(p, headed: bool, base: str | None, proxy: str | None):
     profile = _profile_dir(base)
     profile.mkdir(parents=True, exist_ok=True)
-    args = list(LAUNCH_ARGS)
     kwargs = dict(headless=not headed,
                   locale="zh-CN",
-                  args=args)
+                  args=LAUNCH_ARGS)
     if proxy:
         kwargs["proxy"] = {"server": proxy}
-    else:
-        # 显式直连：Chromium 级屏蔽系统/环境代理（开 VPN 也能用）——同抖音链兜底
-        args.append("--no-proxy-server")
-    return p.chromium.launch_persistent_context(str(profile), **kwargs)
+    cloak = _cloak_executable()
+    if cloak:
+        kwargs["executable_path"] = str(cloak)
+    elif headed:
+        channel = _browser_channel()
+        if channel:
+            kwargs["channel"] = channel
+    last: Exception | None = None
+    for attempt in range(2):
+        try:
+            return p.chromium.launch_persistent_context(str(profile), **kwargs)
+        except Exception as e:
+            last = e
+            if attempt == 0 and "TargetClosed" in type(e).__name__:
+                time.sleep(1.2)
+                _clear_stale_chrome_locks(profile)
+                continue
+            raise
+    raise last  # pragma: no cover
 
 
 def cmd_check(_a) -> int:
@@ -446,6 +589,11 @@ def cmd_check(_a) -> int:
                 print("❌ 未安装浏览器内核（playwright install chromium）"); ok = False
     except Exception as e:
         print(f"❌ playwright/内核不可用：{e}"); ok = False
+    cloak = _cloak_executable()
+    if cloak:
+        print(f"✅ CloakBrowser 内核：{cloak}")
+    else:
+        print("⚠️ 未找到 CloakBrowser（~/.cloakbrowser）；小红书登录可能被 300012")
     print(f"登录态目录：{_profile_dir(None)}")
     return 0 if ok else 3
 
@@ -492,91 +640,120 @@ def cmd_login(a) -> int:
     qr_out = Path(a.qr_out).expanduser() if a.qr_out else DEFAULT_QR_OUT
     timeout_s = a.timeout or 180
     sf = getattr(a, "status_file", None)
-    login_state.write_status(sf, "starting")
+    login_state.write_status(sf, "starting", "正在启动…")
+    lock = _ProfileLock(_profile_dir(a.profile_base))
+    try:
+        lock.acquire(90)
+    except TimeoutError:
+        login_state.write_status(sf, "error", "账号页正在校验小红书，登录目录被占用。请关闭弹窗，等 10 秒再点登录。")
+        _die("小红书登录目录正被占用（多半是后台 whoami）", 1)
 
-    with sync_playwright() as p:
-        ctx = _launch(p, headed=a.headed, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            page.goto(EXPLORE_URL, wait_until="domcontentloaded")
-
-            def _risk_blocked() -> bool:
-                """小红书风险 IP 拦截页（重定向可能晚于 domcontentloaded，须重复查）。"""
-                try:
-                    return ("website-login/error" in page.url
-                            or "安全限制" in (page.title() or ""))
-                except Exception:
-                    return False
-
-            # 等待页面稳定并完成可能的跳转（登录引导 / 风险拦截 / 已登录态）
-            for _ in range(10):
-                page.wait_for_timeout(800)
-                if _risk_blocked():
-                    login_state.write_status(sf, "error", "IP 存在风险，需干净网络/代理")
-                    _die("小红书判定当前网络为风险 IP（安全限制 300012「IP存在风险，请切换可靠网络环境」）——"
-                         "二维码在此环境无法弹出。解决：①用干净/家宽 IP 的代理 `--proxy socks5://...`；"
-                         "②在正常网络的机器上 login 拿到登录态，再把持久化目录 "
-                         f"{_profile_dir(a.profile_base)} 整个拷到本机复用。", 4)
-                try:
-                    if page.query_selector(SELECTORS["login_ok"]) is not None:
-                        break  # 已登录
-                except Exception:
-                    pass
-
-            # 已登录直接返回（页面可能仍在跳转，查询失败按未登录继续走登录流程）
+    try:
+        with sync_playwright() as p:
             try:
-                logged_in = page.query_selector(SELECTORS["login_ok"]) is not None
-            except Exception:
-                logged_in = False
-            if logged_in:
-                print("✅ 已登录（cookie 已在持久化目录），无需扫码")
-                login_state.write_status(sf, "success", "已登录")
-                return 0
-
-            # 抠二维码存 PNG（元素截图，不依赖 src 格式，最稳）
+                ctx = _launch(p, headed=a.headed, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
+            except Exception as e:
+                login_state.write_status(sf, "error", "浏览器没能打开。请关闭弹窗，等 10 秒再点登录，不要连点。")
+                _die(f"启动浏览器失败：{e}", 1)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                qr = _wait_sel(page, SELECTORS["qrcode"], 20000, "登录二维码")
-            except Exception:
-                # 超时后先复查是不是风险拦截页（重定向晚到的情况），别误报「页面结构变了」
-                if _risk_blocked():
-                    login_state.write_status(sf, "error", "IP 存在风险，需干净网络/代理")
-                    _die("小红书判定当前网络为风险 IP（安全限制 300012「IP存在风险，请切换可靠网络环境」）——"
-                         "二维码在此环境无法弹出。解决：①用干净/家宽 IP 的代理 `--proxy socks5://...`；"
-                         "②在正常网络的机器上 login 拿到登录态，再把持久化目录 "
-                         f"{_profile_dir(a.profile_base)} 整个拷到本机复用。", 4)
-                login_state.write_status(sf, "error", "未找到登录二维码")
-                _die("未找到登录二维码（页面结构可能已变，检查 SELECTORS.qrcode），"
-                     "或已弹别的登录方式——可加 --headed 观察")
-            qr_out.parent.mkdir(parents=True, exist_ok=True)
-            qr.screenshot(path=str(qr_out))
-            login_state.write_status(sf, "qr_ready", "二维码已就绪，请扫码", qr=str(qr_out))
-            print(f"📱 二维码已保存：{qr_out}")
-            print(f"   用小红书 App 扫码登录。若走 Easel Web UI，可在 outputs 里查看这张图。")
-            print(f"   （二维码有时效，约几分钟；过期请重跑 login）")
-            print(f"⏳ 等待扫码确认（最长 {timeout_s}s）...", file=sys.stderr)
-
-            # 轮询登录成功（扫码成功瞬间页面会跳转，查询崩了是正常的，重试继续等）
-            deadline = time.time() + timeout_s
-            while time.time() < deadline:
+                if a.headed:
+                    login_state.write_status(
+                        sf, "window_login",
+                        "请在弹出的 CloakBrowser 窗口里扫码，不要关掉那个窗口。")
                 try:
-                    logged_in = page.query_selector(SELECTORS["login_ok"]) is not None
-                except Exception:
-                    logged_in = False
-                if logged_in:
-                    print("✅ 登录成功，cookie 已持久化，下次免登")
-                    login_state.write_status(sf, "success", "登录成功")
+                    page.goto(EXPLORE_URL, wait_until="domcontentloaded", timeout=45000)
+                except Exception as e:
+                    login_state.write_status(sf, "error", f"打不开小红书页面（{type(e).__name__}）")
+                    _die(f"打开 {EXPLORE_URL} 失败：{e}", 1)
+
+                # 等待页面稳定并完成可能的跳转（登录引导 / 风险拦截 / 已登录态）
+                for _ in range(10):
+                    page.wait_for_timeout(800)
+                    if _risk_blocked(page):
+                        if a.headed:
+                            page.goto(CREATOR_LOGIN_URL, wait_until="domcontentloaded", timeout=45000)
+                            login_state.write_status(
+                                sf, "window_login",
+                                "首页被风控拦截了，已改开创作平台。请在弹出的 CloakBrowser 窗口里扫码或短信登录。")
+                            break
+                        login_state.write_status(sf, "error", "IP 存在风险，需干净网络/代理")
+                        _die("小红书判定当前网络为风险 IP（安全限制 300012「IP存在风险，请切换可靠网络环境」）——"
+                             "二维码在此环境无法弹出。解决：①用干净/家宽 IP 的代理 `--proxy socks5://...`；"
+                             "②在正常网络的机器上 login 拿到登录态，再把持久化目录 "
+                             f"{_profile_dir(a.profile_base)} 整个拷到本机复用。", 4)
                     try:
-                        qr_out.unlink()  # 登录成功清掉二维码图，避免误扫过期码
-                    except OSError:
+                        if _is_logged_in(page):
+                            break
+                    except Exception:
                         pass
+
+                if _is_logged_in(page):
+                    print("✅ 已登录（cookie 已在持久化目录），无需扫码")
+                    login_state.write_status(sf, "success", "已登录")
                     return 0
-                page.wait_for_timeout(2000)
-            login_state.write_status(sf, "expired", "二维码超时未扫")
-            print(f"⏱️ {timeout_s}s 内未检测到登录成功（二维码可能已过期）。请重跑 login 再扫。",
-                  file=sys.stderr)
-            return 1
-        finally:
-            ctx.close()
+
+                # 抠二维码存 PNG（元素截图，不依赖 src 格式，最稳）
+                qr = None
+                try:
+                    qr = _wait_sel(page, SELECTORS["qrcode"], 20000, "登录二维码")
+                except Exception:
+                    if _risk_blocked(page) and not a.headed:
+                        login_state.write_status(sf, "error", "IP 存在风险，需干净网络/代理")
+                        _die("小红书判定当前网络为风险 IP（安全限制 300012「IP存在风险，请切换可靠网络环境」）——"
+                             "二维码在此环境无法弹出。解决：①用干净/家宽 IP 的代理 `--proxy socks5://...`；"
+                             "②在正常网络的机器上 login 拿到登录态，再把持久化目录 "
+                             f"{_profile_dir(a.profile_base)} 整个拷到本机复用。", 4)
+                    if not a.headed:
+                        login_state.write_status(sf, "error", "未找到登录二维码")
+                        _die("未找到登录二维码（页面结构可能已变，检查 SELECTORS.qrcode），"
+                             "或已弹别的登录方式——可加 --headed 观察")
+                    login_state.write_status(
+                        sf, "window_login",
+                        "请在弹出的 CloakBrowser 窗口里完成登录（扫码或短信），不要关掉那个窗口。")
+                if qr:
+                    qr_out.parent.mkdir(parents=True, exist_ok=True)
+                    qr.screenshot(path=str(qr_out))
+                    if a.headed:
+                        login_state.write_status(
+                            sf, "window_login",
+                            "请在弹出的 CloakBrowser 窗口里扫码，不要关掉那个窗口。也可以扫下面这张图。",
+                            qr=str(qr_out))
+                    else:
+                        login_state.write_status(sf, "qr_ready", "二维码已就绪，请扫码", qr=str(qr_out))
+                    print(f"📱 二维码已保存：{qr_out}")
+                    print("   用小红书 App 扫码登录。若走 Easel Web UI，可在 outputs 里查看这张图。")
+                    print("   （二维码有时效，约几分钟；过期请重跑 login）")
+                print(f"⏳ 等待扫码确认（最长 {timeout_s}s）...", file=sys.stderr)
+
+                # 轮询登录成功（扫码成功瞬间页面会跳转，查询崩了是正常的，重试继续等）
+                deadline = time.time() + timeout_s
+                while time.time() < deadline:
+                    try:
+                        logged_in = _is_logged_in(page)
+                    except Exception as e:
+                        err = str(e).lower()
+                        if a.headed and ("target" in err or "closed" in err or "has been closed" in err):
+                            login_state.write_status(sf, "error", "登录窗口被关闭，请关闭弹窗后重试")
+                            _die(f"登录窗口已关闭：{e}", 1)
+                        logged_in = False
+                    if logged_in:
+                        print("✅ 登录成功，cookie 已持久化，下次免登")
+                        login_state.write_status(sf, "success", "登录成功")
+                        try:
+                            qr_out.unlink()  # 登录成功清掉二维码图，避免误扫过期码
+                        except OSError:
+                            pass
+                        return 0
+                    page.wait_for_timeout(2000)
+                login_state.write_status(sf, "expired", "二维码超时未扫")
+                print(f"⏱️ {timeout_s}s 内未检测到登录成功（二维码可能已过期）。请重跑 login 再扫。",
+                      file=sys.stderr)
+                return 1
+            finally:
+                ctx.close()
+    finally:
+        lock.release()
 
 
 def _plan_lines(kind: str, title: str, content: str, media: list[str], tags: list[str]) -> list[str]:
@@ -642,37 +819,45 @@ def _publish(a, kind: str) -> int:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     except Exception as e:
         _die(f"需要 playwright：{e}", 3)
-    with sync_playwright() as p:
-        ctx = _launch(p, headed=a.headed, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.set_default_timeout(300000)
-        try:
-            page.goto(PUBLISH_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(1500)
-            # 登录态探测容忍导航竞态：发布页也可能仍在跳转，跳转瞬间裸 query 会抛
-            # context-destroyed；重试几次再据 url 判定「未登录」，避免误报。
-            logged = False
-            for _ in range(4):
-                if _query_safe(page, SELECTORS["login_ok"]) is not None:
-                    logged = True
-                    break
-                page.wait_for_timeout(500)
-            if not logged and "login" in page.url.lower():
-                _die("未登录，请先 `login` 扫码")
-            if kind == "image":
-                _click_publish_tab(page, "上传图文")
-                page.wait_for_timeout(1000)
-                _upload_images(page, media)
-            else:
-                _click_publish_tab(page, "上传视频")
-                page.wait_for_timeout(1000)
-                _upload_video(page, media[0])
-            _fill_and_submit(page, a.title, a.content or "", tags)
-        except PWTimeout as e:
-            _die(f"步骤超时（选择器可能已失效，检查 SELECTORS）：{e}")
-        finally:
-            if not a.keep_open:
-                ctx.close()
+    lock = _ProfileLock(_profile_dir(a.profile_base))
+    try:
+        lock.acquire(90)
+    except TimeoutError:
+        _die("小红书登录目录正被占用，请稍后再发")
+    try:
+        with sync_playwright() as p:
+            ctx = _launch(p, headed=a.headed, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.set_default_timeout(300000)
+            try:
+                page.goto(PUBLISH_URL, wait_until="domcontentloaded")
+                page.wait_for_timeout(1500)
+                # 登录态探测容忍导航竞态：发布页也可能仍在跳转，跳转瞬间裸 query 会抛
+                # context-destroyed；重试几次再据 url 判定「未登录」，避免误报。
+                logged = False
+                for _ in range(4):
+                    if _query_safe(page, SELECTORS["login_ok"]) is not None:
+                        logged = True
+                        break
+                    page.wait_for_timeout(500)
+                if not logged and "login" in page.url.lower():
+                    _die("未登录，请先 `login` 扫码")
+                if kind == "image":
+                    _click_publish_tab(page, "上传图文")
+                    page.wait_for_timeout(1000)
+                    _upload_images(page, media)
+                else:
+                    _click_publish_tab(page, "上传视频")
+                    page.wait_for_timeout(1000)
+                    _upload_video(page, media[0])
+                _fill_and_submit(page, a.title, a.content or "", tags)
+            except PWTimeout as e:
+                _die(f"步骤超时（选择器可能已失效，检查 SELECTORS）：{e}")
+            finally:
+                if not a.keep_open:
+                    ctx.close()
+    finally:
+        lock.release()
     # 发布成功 → 落统一内容日历（对话页自动记录；发布页由 web 设 AUTORECORD=0 跳过防重复）
     try:
         import calendar_ops
@@ -701,6 +886,13 @@ def cmd_whoami(a) -> int:
         print(json.dumps({"loggedIn": False, "name": "", "avatar": "", "error": f"playwright:{e}"}))
         return 0
     result = {"loggedIn": False, "name": "", "avatar": ""}
+    lock = _ProfileLock(_profile_dir(a.profile_base))
+    try:
+        lock.acquire(4)
+    except TimeoutError:
+        result["error"] = "profile-busy"
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
     try:
         with sync_playwright() as p:
             ctx = _launch(p, headed=False, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
@@ -711,7 +903,11 @@ def cmd_whoami(a) -> int:
                     page.wait_for_selector(SELECTORS["login_ok"], timeout=4000)
                 except Exception:
                     pass
-                logged = _query_safe(page, SELECTORS["login_ok"]) is not None
+                logged = _is_logged_in(page)
+                if not logged and _risk_blocked(page):
+                    page.goto(CREATOR_LOGIN_URL, wait_until="domcontentloaded")
+                    page.wait_for_timeout(1500)
+                    logged = _is_logged_in(page)
                 result["loggedIn"] = logged
                 if logged:
                     img = page.query_selector('.main-container .user img.reds-img')
@@ -741,6 +937,8 @@ def cmd_whoami(a) -> int:
                 ctx.close()
     except Exception as e:  # noqa: BLE001 — whoami 永远输出 JSON，异常视作未登录
         result["error"] = str(e)
+    finally:
+        lock.release()
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -766,6 +964,28 @@ def cmd_selftest(_a) -> int:
         pass
     # profile 目录路由
     assert _profile_dir(None).name == PROFILE_NAME
+    assert "cloak-research-profile" not in str(_profile_dir(None))
+    cloak = _cloak_executable()
+    assert cloak is None or cloak.is_file()
+    import shutil
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="easel-xhs-lock-"))
+    try:
+        held = _ProfileLock(tmp)
+        held.acquire(1)
+        blocked = _ProfileLock(tmp)
+        try:
+            blocked.acquire(0.3)
+            raise AssertionError("第二把锁应失败")
+        except TimeoutError:
+            pass
+        finally:
+            blocked.release()
+        held.release()
+        held.acquire(1)
+        held.release()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     # 代理逻辑
     assert _proxy(None, True) is None, "--no-proxy 应禁用"
     assert _proxy("http://x:1", False) == "http://x:1", "显式代理优先"
