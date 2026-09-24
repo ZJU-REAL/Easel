@@ -13,20 +13,17 @@
 from __future__ import annotations
 
 import os
-import re
-import subprocess
 import sys
 import time
 from pathlib import Path
 
-from easel.openclaw_cmd import openclaw_base_cmd
+from easel.runtimes import RunRequest, get_runtime, runtime_env
 from easel.persona import persona_prefix, profile_exists
 from easel.timeouts import TIMEOUT_PRODUCE
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = PROJECT_ROOT / "skills" / "openclaw"
 PROFILES_DIR = PROJECT_ROOT / "profiles"
-OPENCLAW_PROFILE = "easel"
 
 
 def _list_all_skills() -> list[str]:
@@ -87,7 +84,7 @@ def _check_profile_exists(name: str) -> bool:
 
 def _proxy_env() -> dict[str, str]:
     """返回带外网代理的环境变量（保护内网直连）。"""
-    env = os.environ.copy()
+    env = runtime_env()
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
     env.setdefault("http_proxy", os.environ.get("EASEL_PROXY", ""))
     env.setdefault("https_proxy", os.environ.get("EASEL_PROXY", ""))
@@ -95,48 +92,25 @@ def _proxy_env() -> dict[str, str]:
     return env
 
 
-def _run_via_openclaw(message: str, timeout: int = 300) -> int:
-    """统一通过 OpenClaw agent 执行。"""
+def _run_via_agent(message: str, timeout: int = 300) -> int:
+    """通过已选择的 Agent runtime 执行。"""
     session_key = f"skill-{int(time.time() * 1000)}"
-
-    cmd = openclaw_base_cmd() + [
-        "--profile", OPENCLAW_PROFILE,
-        "agent", "--agent", "main",
-        "--session-key", f"agent:main:{session_key}",
-        "--timeout", str(timeout),
-        "--message", message,
-    ]
-
+    handle = None
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
-                                cwd=str(PROJECT_ROOT), timeout=timeout + 30,
-                                env=_proxy_env())
-    except subprocess.TimeoutExpired:
-        print("⏱️ 请求超时", file=sys.stderr)
-        return 124
+        handle = get_runtime().start(RunRequest(
+            message, session_key, timeout, PROJECT_ROOT, _proxy_env(), stream=False,
+        ))
+        chunks = [event.text for event in handle.events() if event.type == "text"]
+        result = handle.wait()
     except Exception as e:  # noqa: BLE001 — 兜底，避免裸崩堆栈（与 web 行为一致）
         print(f"❌ {e}", file=sys.stderr)
         return 1
-
-    if result.stdout:
-        lines = []
-        for line in result.stdout.splitlines():
-            clean = re.sub(r'\x1b\[[0-9;]*m', '', line)
-            if clean.startswith("[") and any(
-                tag in clean[:40] for tag in
-                ["[provider-", "[agents/", "[agent/", "[plugins]", "[tools]",
-                 "[diagnostic]", "[fetch-", "[heartbeat]", "[health-", "[gateway]"]
-            ):
-                continue
-            if clean.strip():
-                lines.append(clean)
-        output = "\n".join(lines).strip()
-        if output:
-            print(output)
-
-    if result.stderr:
-        print(result.stderr, file=sys.stderr)
-
+    finally:
+        if handle is not None:
+            handle.close()
+    output = "".join(chunks) or result.text
+    if output:
+        print(output)
     return result.returncode
 
 
@@ -168,4 +142,4 @@ def cmd_skill(args) -> int:
         print(f"[easel] 画像: {args.profile}")
     print("─" * 50)
 
-    return _run_via_openclaw(message, timeout=timeout)
+    return _run_via_agent(message, timeout=timeout)

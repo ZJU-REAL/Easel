@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model":"opencode-go/deepseek-v4.1-flash",
+  "instructions": [
+    "openclaw/workspace/AGENTS.md",
+    "openclaw/workspace/SOUL.md"
+  ],
+  "skills": {
+    "paths": [
+      "./skills/openclaw"
+    ]
+  }
+}

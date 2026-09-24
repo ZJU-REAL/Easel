@@ -37,33 +37,12 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(PROJECT_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from easel.openclaw_cmd import openclaw_base_cmd
+from easel.runtimes import QuestionAnswer, RunRequest, get_runtime, runtime_env
+from easel.runtimes import openclaw as openclaw_runtime
+from easel.runtimes import opencode_config
+from easel.runtimes.openclaw_config import RESERVED_PROVIDER_KEYS
 from easel.persona import load_profile_text, persona_prefix, chat_turn_message, profile_exists, _FILE_ORDER
 from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
-try:
-    from easel.gateway_questions import (
-        GatewayClient, GatewayQuestionError, GatewayUnsupportedError,
-        question_bridge_supported)
-except Exception:  # 兼容缺失依赖：问答题桥接降级为关闭
-    GatewayClient = None  # type: ignore
-    GatewayQuestionError = None  # type: ignore
-    GatewayUnsupportedError = None  # type: ignore
-    question_bridge_supported = None  # type: ignore
-
-# 问答题桥接的一次性诊断标记：连接失败/旧版本无 question RPC 的告警每进程只打一次，
-# 避免每开一个新会话就在后端刷一行同样的错（用户反馈的噪音）。
-_QBRIDGE_WARNED: set[str] = set()
-# 进程级熔断：一旦确认桥接不可用（旧版本无 question RPC、或 connect 持续失败如
-# NOT_PAIRED/scope-upgrade），就彻底停掉桥接，后续每轮直接跳过——不再连接，也就不再
-# 每轮在网关上触发新的配对/权限申请。恢复需重启 easel web。
-_QBRIDGE_DISABLED = False
-
-
-def _qbridge_warn_once(key: str, message: str) -> None:
-    if key in _QBRIDGE_WARNED:
-        return
-    _QBRIDGE_WARNED.add(key)
-    print(message, file=sys.stderr, flush=True)
 
 PROFILES_DIR = PROJECT_ROOT / "profiles"
 SKILLS_DIR = PROJECT_ROOT / "skills"
@@ -71,21 +50,35 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 REACT_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
-OPENCLAW_PROFILE = "easel"
-# 对话传输层：http＝直连常驻 gateway 的 OpenAI 兼容端点，agent 在 gateway 进程里直接跑，
-# 省掉每轮 spawn `openclaw agent` 瘦客户端的冷启动（本机实测同一句话：CLI 7.1-7.6s/轮，
-# HTTP 4.1-4.5s/轮，差值就是客户端冷启动）；cli＝每轮 spawn 的老路径。
-#
-# 默认 http，但**只对新会话生效**：见 _resolve_transport。同一会话绝不中途换边——两条路径
-# 写的是不同的 transcript，换边等于静默清空整段对话记忆（实测拿 CLI 去续一个 HTTP 起的会话，
-# agent 直接答"无历史"）。设 EASEL_CHAT_TRANSPORT=cli 可整机回到老路径。
-CHAT_TRANSPORT = os.environ.get("EASEL_CHAT_TRANSPORT", "http").strip().lower()
 # 这里曾有个 OPENCLAW_WORKSPACE 常量，写死的是 2026.6.x 布局（~/.openclaw/workspace-<profile>）。
 # 全仓无人引用，但留着迟早会被新代码拿去用，而 OpenClaw 的布局 2026.9.x 起已经变成
 # <state 目录>/workspace（issue #19）。要用 workspace 路径请走 easel.openclaw_workspace.workspace_dir()，
 # 它直接问 openclaw 要运行时真值，不猜版本。
-# OpenClaw 会话历史（transcript）目录：<profile 配置目录>/agents/main/sessions/<session-id>.jsonl
-OPENCLAW_SESSIONS_DIR = Path.home() / f".openclaw-{OPENCLAW_PROFILE}" / "agents" / "main" / "sessions"
+# 对话的 OpenClaw 传输实现（共享 raw 流 tail、HTTP 网关 SSE、ask_user 桥接、收尾诊断）
+# 已收拢到 runtimes/openclaw.py；以下薄别名/薄包装保留上游测试引用（与 doctor 薄别名同一约定），
+# 实现与默认值以 adapter 为准。
+CHAT_TRANSPORT = openclaw_runtime.CHAT_TRANSPORT
+_gateway_http_ready = openclaw_runtime.gateway_http_ready
+_raw_event_for_run = openclaw_runtime.raw_event_for_run
+_openclaw_session_id = openclaw_runtime.stable_session_id
+OPENCLAW_SESSIONS_DIR = openclaw_runtime.OPENCLAW_SESSIONS_DIR
+
+
+def _transport_pin_file(sk: str) -> Path:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    return openclaw_runtime.transport_pin_file(sk, SESSIONS_DIR)
+
+
+def _resolve_transport(sk: str) -> str:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py；路径/开关读 web 侧全局。"""
+    return openclaw_runtime.resolve_transport(
+        sk, pin_dir=SESSIONS_DIR, transcript_dir=OPENCLAW_SESSIONS_DIR,
+        enabled=CHAT_TRANSPORT, probe=_gateway_http_ready)
+
+
+def _pin_transport(sk: str, kind: str) -> None:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    openclaw_runtime.pin_transport(sk, kind, SESSIONS_DIR)
 
 # 思考档位（每轮 --thinking）。前后端已完整支持展示思考：后端把 thinking_delta 转成 SSE
 # `thinking` 事件，前端 MessageBubble 渲染「💭 思考过程」并在流式结束后持久保留。面板里有没有
@@ -93,97 +86,6 @@ OPENCLAW_SESSIONS_DIR = Path.home() / f".openclaw-{OPENCLAW_PROFILE}" / "agents"
 # 实测 transcript 里 assistant 只有 text 块、thinking 恒为 0）面板留空，调高档位也不会有内容。
 # 默认 medium：让支持思考的部署直接显示较完整思考；EASEL_THINKING_LEVEL 可覆盖（low 提速 / high 更详尽）。
 THINKING_LEVEL = (os.environ.get("EASEL_THINKING_LEVEL", "").strip() or "medium")
-
-# gateway 进程把原始事件流（token/thinking/收尾）写到的**单个共享文件**。
-# 关键：`openclaw agent` 只是瘦客户端，没有 --raw-stream 标志——只有常驻 gateway 按它自己
-# 的 OPENCLAW_RAW_STREAM/OPENCLAW_RAW_STREAM_PATH 写这个文件（见 scripts/gateway.sh）。
-# web 侧 tail 它做流式；默认值必须与 gateway.sh 里 EASEL_RAW_STREAM_PATH 的默认一致。
-SHARED_RAW_STREAM = Path(os.environ.get("EASEL_RAW_STREAM_PATH", "/tmp/easel-raw-stream.jsonl"))
-
-
-class _GatewayHttpProc:
-    """HTTP 直连模式下的「伪进程」：给主循环 / 停止逻辑提供 poll/wait/kill 兼容面。"""
-
-    def __init__(self) -> None:
-        self._done = False
-        self._task = None
-
-    def finish(self) -> None:
-        self._done = True
-
-    def poll(self):
-        return 0 if self._done else None
-
-    def terminate(self) -> None:
-        self._done = True
-        if self._task is not None:
-            try:
-                self._task.cancel()
-            except Exception:  # noqa: BLE001
-                pass
-
-    def kill(self) -> None:
-        self.terminate()
-
-    def wait(self, timeout=None):  # 兼容 await asyncio.to_thread(proc.wait, ...)
-        # 必须真的等：主循环拿它来决定「能不能放掉会话双锁」。提前返回会让下一轮在
-        # 上一轮可能还在写同一份 transcript 时就启动 —— 正是双锁要防的并发写。
-        deadline = None if timeout is None else time.monotonic() + timeout
-        while not self._done:
-            if deadline is not None and time.monotonic() >= deadline:
-                raise subprocess.TimeoutExpired("gateway-http-turn", timeout)
-            time.sleep(0.05)
-        return 0
-
-
-_HTTP_READY_CACHE: dict = {"at": -1e9, "ok": False}
-_HTTP_READY_TTL = 60.0          # 探针要打一次真端点，别每轮都付这个 RTT
-
-
-def _gateway_http_ready(force: bool = False) -> bool:
-    """探测 gateway 的 /v1/chat/completions 到底挂没挂上。
-
-    **不能探 /v1/models**：那个路径会被 gateway 控制台 SPA 的 catch-all 接走，端点没开也照样
-    返回 200（body 是 OpenClaw Control 的 HTML 首页）—— 探了等于没探，只要网关活着就恒为 True。
-    这里直接打真端点：openclaw 要求 gateway.http.endpoints.chatCompletions.enabled === true
-    才挂这条路由（默认 false），没开就是 404；开了则因为 body 缺 messages 返回 400。用 400 当
-    "端点在"的证据，既走完整条路由又不消耗一次模型调用。
-    """
-    now = time.monotonic()
-    if not force and now - _HTTP_READY_CACHE["at"] < _HTTP_READY_TTL:
-        return bool(_HTTP_READY_CACHE["ok"])
-    ok = False
-    try:
-        import httpx  # noqa: F401  HTTP 路径全靠它做 SSE；没装就当端点不可用，回退 CLI
-        rq = urllib.request.Request(
-            "http://127.0.0.1:18789/v1/chat/completions", data=b"{}",
-            headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            with urllib.request.urlopen(rq, timeout=3):
-                ok = False       # 空 body 还给 200 说明这不是我们要的端点，不敢用
-        except urllib.error.HTTPError as e:
-            ok = e.code == 400   # 400 Missing user message ⇒ 端点在；404 ⇒ 没开
-    except Exception:  # noqa: BLE001
-        ok = False
-    _HTTP_READY_CACHE.update(at=now, ok=ok)
-    return ok
-
-
-def _heal_openclaw_session(sk: str) -> None:
-    """每轮 spawn openclaw 前，清洗该会话历史里的无签名 thinking 块 + 空消息（自愈防回放失效）。
-
-    best-effort：任何异常都不阻断对话（清洗失败大不了退回原样，仍可 /new）。
-    """
-    try:
-        import session_heal  # scripts/session_heal.py（已加入 sys.path）
-        p = OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(sk)}.jsonl"
-        if p.is_file():
-            st = session_heal.sanitize_history_file(p)
-            if st.get("changed"):
-                print(f"[session-heal] {p.name}: -{st['thinking_removed']} thinking / "
-                      f"-{st['msgs_dropped']} empty", file=sys.stderr, flush=True)
-    except Exception as e:
-        print(f"[session-heal] 跳过（{e}）", file=sys.stderr, flush=True)
 
 
 # 制作层/直接执行层/chat 超时统一走 easel/timeouts.py（CLI/Web/skill 三入口单一真相源）
@@ -520,20 +422,9 @@ def get_skills() -> list[dict]:
     return result
 
 
-def clean_agent_output(raw: str) -> str:
-    lines = []
-    for line in raw.splitlines():
-        c = re.sub(r'\x1b\[[0-9;]*m', '', line)
-        if c.startswith('[') and any(t in c[:40] for t in ('[provider-', '[agents/', '[agent/', '[plugins]', '[tools]', '[diagnostic]', '[fetch-', '[heartbeat]', '[health-', '[gateway]')):
-            continue
-        if c.strip():
-            lines.append(c)
-    return '\n'.join(lines).strip()
-
-
 def _proxy_env() -> dict[str, str]:
     """返回带外网代理的环境变量（保护内网直连）。"""
-    env = os.environ.copy()
+    env = runtime_env()
     env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
     env.setdefault('http_proxy', os.environ.get('EASEL_PROXY', ''))
     env.setdefault('https_proxy', os.environ.get('EASEL_PROXY', ''))
@@ -653,13 +544,8 @@ def _guard_env_values(updates: dict[str, str]) -> None:
 
 
 def _is_local_gateway_base(url: str) -> bool:
-    """这个供应商当前是不是挂在本地模型网关上。
-
-    网关模式下 openclaw.json 里存的 baseUrl 是 127.0.0.1:8890，真实上游在 easel-models.yaml，
-    面板显示/回传的是上游地址 —— 两边天生不相等。凡是拿「baseUrl 变了」当判据的逻辑都得先问过这里，
-    否则网关用户每次保存都被判成「换了地址」。
-    """
-    return str(url or '').startswith('http://127.0.0.1:8890')
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    return get_runtime().is_local_gateway_base(url)
 
 
 # 设置面板里「改了 Base URL 就必须重填 Key」要比对的 .env 键位（槽位 → (base 键, key 键)）。
@@ -764,33 +650,29 @@ def _api_spec_status(skill: str, env: dict[str, str]) -> dict:
 
 def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | None = None) -> str:
     sk = session_id or f'web-{int(time.time() * 1000)}'
-    _heal_openclaw_session(sk)   # 清洗历史里无签名 thinking 块，防回放失效
-    # 钉死 --session-id 让 OpenClaw 每轮续同一 transcript（防跨天空闲后新起空会话丢历史，见 _openclaw_session_id）
-    cmd = openclaw_base_cmd() + ['--profile', OPENCLAW_PROFILE, 'agent', '--agent', 'main',
-           '--session-key', f'agent:main:{sk}', '--session-id', _openclaw_session_id(sk),
-           '--thinking', THINKING_LEVEL,
-           '--timeout', str(timeout), '--message', msg]
+    runtime = get_runtime()
     # 跨进程锁：同一会话同时刻只跑一个 openclaw，防并发 takeover 崩溃（rc=1）
     xlock = _CrossProcLock(sk)
     if not xlock.acquire(timeout=min(timeout, 300)):
         return '⏳ 这个会话正在另一个窗口运行，请稍候再试'
+    handle = None
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=timeout + 30, env=_proxy_env())
-        return clean_agent_output(r.stdout or '') or '（无输出）'
-    except subprocess.TimeoutExpired:
-        return '⏱️ 请求超时'
+        handle = runtime.start(RunRequest(
+            msg, sk, timeout, PROJECT_ROOT, _proxy_env(), SESSIONS_DIR, THINKING_LEVEL, False,
+        ))
+        chunks = [event.text for event in handle.events() if event.type == "text"]
+        result = handle.wait()
+        return ''.join(chunks) or result.text or '（无输出）'
     except Exception as e:
         return f'❌ {e}'
     finally:
+        if handle is not None:
+            handle.close()
         xlock.release()
 
 
 def check_gateway() -> bool:
-    try:
-        with urllib.request.urlopen('http://127.0.0.1:18789/healthz', timeout=3) as response:
-            return response.status == 200
-    except (OSError, urllib.error.URLError):
-        return False
+    return get_runtime().health().ok
 
 
 def _file_kind(name: str) -> str:
@@ -943,7 +825,9 @@ async def static_file(path: str):
 
 @app.get("/api/status")
 async def api_status():
-    return {"gateway": check_gateway(), "skills": get_skills(), "personas": list_personas()}
+    runtime = get_runtime()
+    return {"gateway": runtime.health().ok, "runtime": runtime.descriptor.as_dict(),
+            "skills": get_skills(), "personas": list_personas()}
 
 
 @app.get("/api/personas")
@@ -1197,14 +1081,10 @@ def _mask_key(v: str) -> str:
 
 def _model_channels() -> dict:
     env = _read_env()
-    primary = ""
-    try:
-        oc = Path.home() / ".openclaw-easel" / "openclaw.json"
-        if oc.is_file():
-            primary = str(json.loads(oc.read_text(encoding="utf-8"))
-                          .get("agents", {}).get("defaults", {}).get("model", {}).get("primary", ""))
-    except Exception:  # noqa: BLE001
-        pass
+    # 供应商/主模型来自 runtime：OpenClaw 读 openclaw.json（openclaw_workspace 解析路径），
+    # 其它 runtime 返回空快照 —— 面板不在错误的配置文件上显示/保存。
+    snapshot = get_runtime().config_snapshot()
+    primary = str(snapshot.get("primary") or "")
 
     chat_rows = []
     ob = (env.get("OPENAI_BASE_URL") or "").strip()
@@ -1239,26 +1119,20 @@ def _model_channels() -> dict:
         })
 
     custom_rows = []
-    try:
-        oc = Path.home() / ".openclaw-easel" / "openclaw.json"
-        if oc.is_file():
-            provs = (json.loads(oc.read_text(encoding="utf-8"))
-                     .get("models", {}).get("providers", {})) or {}
-            for pkey, pv in provs.items():
-                if pkey in ("openai", "anthropic", "relay") or not isinstance(pv, dict):
-                    continue
-                models = pv.get("models") if isinstance(pv.get("models"), list) else []
-                mid = models[0].get("id", "") if models and isinstance(models[0], dict) else ""
-                custom_rows.append({
-                    "slot": "custom", "order": 0, "name": pkey, "sub": "自定义",
-                    "type": "openai", "model": mid or "", "baseUrl": pv.get("baseUrl") or "",
-                    "keyMasked": _mask_key(str(pv.get("apiKey") or "")),
-                    "role": "主" if primary == f"{pkey}/{mid}" else "备",
-                    "result": "已配置" if str(pv.get("apiKey") or "").strip() else "缺 key",
-                    "deletable": True,
-                })
-    except Exception:  # noqa: BLE001
-        pass
+    provs = snapshot.get("providers") or {}
+    for pkey, pv in provs.items():
+        if pkey in RESERVED_PROVIDER_KEYS or not isinstance(pv, dict):
+            continue
+        models = pv.get("models") if isinstance(pv.get("models"), list) else []
+        mid = models[0].get("id", "") if models and isinstance(models[0], dict) else ""
+        custom_rows.append({
+            "slot": "custom", "order": 0, "name": pkey, "sub": "自定义",
+            "type": "openai", "model": mid or "", "baseUrl": pv.get("baseUrl") or "",
+            "keyMasked": _mask_key(str(pv.get("apiKey") or "")),
+            "role": "主" if primary == f"{pkey}/{mid}" else "备",
+            "result": "已配置" if str(pv.get("apiKey") or "").strip() else "缺 key",
+            "deletable": True,
+        })
     chat_rows.extend(custom_rows)
 
     sf = bool((env.get("SILICONFLOW_API_KEY") or "").strip())
@@ -1353,71 +1227,15 @@ def _write_env_direct(updates: dict[str, str]) -> None:
     tmp.replace(ENV_FILE)
 
 
-RESERVED_PROVIDER_KEYS = {"openai", "anthropic", "relay"}
-
-
 def _openclaw_provider_creds() -> dict[str, tuple[str, str]]:
-    """读 openclaw.json 里每个 chat 供应商现存的 (baseUrl, apiKey)。读不到就当空表（不阻断保存）。"""
-    try:
-        oc = Path.home() / '.openclaw-easel' / 'openclaw.json'
-        provs = json.loads(oc.read_text(encoding='utf-8')).get('models', {}).get('providers', {})
-        return {k: (str(v.get('baseUrl') or ''), str(v.get('apiKey') or ''))
-                for k, v in provs.items() if isinstance(v, dict)}
-    except Exception:  # noqa: BLE001
-        return {}
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    return get_runtime().provider_creds()
 
 
-def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str], primary_ref: str) -> str:
-    """同步 chat 供应商到 ~/.openclaw-easel/openclaw.json：更新/新增 + 删除多余自定义 + 主模型。
-
-    provider_updates: {pkey: {"model","base","key"}}；keep_custom: 保留的自定义键；primary_ref: 目标主模型（空=不改）。
-    只有确有差异才落盘（改前备份 .bak-web）。
-    """
-    try:
-        oc = Path.home() / '.openclaw-easel' / 'openclaw.json'
-        if not oc.is_file():
-            return ''
-        data = json.loads(oc.read_text(encoding='utf-8'))
-        providers = data.setdefault('models', {}).setdefault('providers', {})
-        changed = False
-        for pkey in [k for k in list(providers.keys())
-                     if k not in RESERVED_PROVIDER_KEYS and k not in keep_custom]:
-            providers.pop(pkey, None)
-            changed = True
-        for pkey, vals in provider_updates.items():
-            prov = providers.setdefault(pkey, {})
-            base, key, model = vals.get('base', ''), vals.get('key', ''), vals.get('model', '')
-            if base and prov.get('baseUrl') != base:
-                if _is_local_gateway_base(prov.get('baseUrl')):
-                    pass  # 本地模型网关模式：保留网关地址（真实上游在 easel-models.yaml），勿改回直连
-                else:
-                    prov['baseUrl'] = base
-                    changed = True
-            if key and prov.get('apiKey') != key:
-                prov['apiKey'] = key
-                changed = True
-            if model:
-                models = prov.get('models') if isinstance(prov.get('models'), list) and prov.get('models') else [{}]
-                if not isinstance(models[0], dict):
-                    models = [{}]
-                if models[0].get('id') != model:
-                    models[0]['id'] = model
-                    changed = True
-                prov['models'] = models
-        if primary_ref:
-            ref = data.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})
-            if ref.get('primary') != primary_ref:
-                ref['primary'] = primary_ref
-                changed = True
-        if not changed:
-            return ''
-        shutil.copy2(oc, oc.parent / (oc.name + '.bak-web'))
-        tmp = oc.parent / (oc.name + '.tmp')
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-        tmp.replace(oc)
-        return 'openclaw 已同步（下一条消息生效）'
-    except Exception as e:  # noqa: BLE001
-        return f'openclaw 同步失败：{e}'
+def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str],
+                        primary_ref: str) -> str:
+    """（薄包装，兼容上游测试）实现已收拢到 runtimes/openclaw.py。"""
+    return get_runtime().sync_chat_providers(provider_updates, keep_custom, primary_ref)
 
 
 class ModelSaveRow(BaseModel):
@@ -1627,6 +1445,64 @@ async def api_models_selftest(req: SelftestRequest):
     return {"channel": channel, "results": results, "testedAt": int(time.time())}
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# 设置面板 · OpenCode 供应商与模型（runtime=opencode；凭证只回状态，不回明文）
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@app.get("/api/settings/opencode")
+async def api_settings_opencode():
+    """OpenCode 供应商/模型快照；server 未就绪时降级为只读状态，不报 5xx。"""
+    return await asyncio.to_thread(opencode_config.snapshot)
+
+
+class OpencodeSaveRequest(BaseModel):
+    primary: str = ""
+    keys: dict[str, str] = Field(default_factory=dict)
+    removals: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/settings/opencode/save")
+async def api_settings_opencode_save(req: OpencodeSaveRequest):
+    """保存 OpenCode 凭证/默认模型：先全部校验，再逐项写入；key 只发往本机 server。"""
+    runtime = get_runtime()
+    if runtime.descriptor.id != "opencode":
+        raise HTTPException(400, f"当前 runtime（{runtime.descriptor.label}）不支持 OpenCode 配置管理")
+    if not req.primary and not req.keys and not req.removals:
+        raise HTTPException(400, "没有可保存的改动")
+    if len(req.keys) > 32 or len(req.removals) > 32:
+        raise HTTPException(400, "一次最多处理 32 个供应商")
+    if not await asyncio.to_thread(opencode_config.server_ready):
+        raise HTTPException(503, "OpenCode server 未就绪；先运行 easel gateway start")
+
+    def _apply() -> None:
+        # 所有校验都是只读；任何一项不合法都不会落盘或发出写请求
+        for pid, key in req.keys.items():
+            opencode_config.validate_provider_key(pid, key)
+        for pid in req.removals:
+            opencode_config.validate_removal(pid)
+        if req.primary:
+            opencode_config.validate_model(req.primary)
+        for pid, key in req.keys.items():
+            opencode_config.set_provider_key(pid, key)
+        for pid in req.removals:
+            opencode_config.remove_provider_key(pid)
+        if req.primary:
+            opencode_config.set_primary_model(req.primary)
+
+    try:
+        await asyncio.to_thread(_apply)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"OpenCode server 操作失败：{type(exc).__name__}: {exc}"[:200]) from exc
+    resp = {"ok": True, "note": "OpenCode 已保存（下一条消息生效）"}
+    resp.update(await asyncio.to_thread(opencode_config.snapshot))
+    return resp
+
+
 class AttachmentRef(BaseModel):
     id: str
     name: str
@@ -1714,62 +1590,14 @@ def _session_lock(sk: str) -> asyncio.Lock:
     return lk
 
 
-# 会话续接：把 web 的 sessionId 确定性映射成一个稳定的 OpenClaw --session-id（transcript 文件名）。
-# 背景（实测根因）：OpenClaw 靠 --session-key 解析 transcript，但空闲超过约 24h（threadBindings
-# 默认 idleHours:24）后该绑定过期，下一条消息会新起一个空 transcript → 历史全丢（用户「关页两天
-# 后再问就忘了」）。同一天内没事，隔天就断。解法：我们自己钉死 --session-id（对同一 web 会话恒定），
-# 让 OpenClaw 每轮都续同一个 transcript 文件，绕开 key→绑定的过期/轮换逻辑。
-_EASEL_SESSION_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # 固定命名空间（uuid5 确定性）
-
-
-def _openclaw_session_id(sk: str) -> str:
-    """web sessionId → 稳定的 OpenClaw session-id（transcript）。同 sk 永远同 id，无需落盘映射。"""
-    return str(uuid.uuid5(_EASEL_SESSION_NS, sk))
+# 会话续接：把 web 的 sessionId 确定性映射成稳定的 OpenClaw --session-id（transcript 文件名）。
+# 该映射与实现已收拢到 easel/runtimes/openclaw.py 的 stable_session_id（web/CLI/HTTP 三条路径
+# 钉死同一个 id，避免 OpenClaw 的 key→绑定空闲过期后另起空 transcript 丢历史）。
 
 
 def _session_flock_path(sk: str) -> Path:
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sk)[:120]
     return SESSIONS_DIR / f"{safe}.lock"
-
-
-def _transport_pin_file(sk: str) -> Path:
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sk)[:120]
-    return SESSIONS_DIR / f"{safe}.transport"
-
-
-def _resolve_transport(sk: str) -> str:
-    """决定这一轮走哪条传输层，并保证同一会话**永不中途换边**。
-
-    换边的代价是静默丢光上下文，不是慢一点：CLI 路径用 `--session-id`（uuid5(sk)）把 transcript
-    钉死，而 /v1/chat/completions **压根不读 x-openclaw-session-id** —— openclaw 2026.6.11 全量
-    实测：该 header 只有 MCP 端点和对上游供应商的出站请求会用，OpenAI 兼容端点只认
-    x-openclaw-session-key，transcript 文件名由网关自己挑。于是同一个 web 会话在两条路径下落在
-    两份不同的 jsonl 上。实测拿 CLI 去续一个已有两轮 HTTP 历史的会话，agent 回答"无历史"。
-
-    所以判定顺序（都不依赖内存态，web 重启后依然成立）：
-      1) uuid5 那份 transcript 已落盘 → 这会话是 CLI 起的，继续 cli；
-      2) 有 http 钉子文件 → 继续 http；
-      3) 两者都没有 → 新会话，按总开关 + 真探针决定。
-    """
-    if (OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(sk)}.jsonl").is_file():
-        return "cli"
-    try:
-        if _transport_pin_file(sk).read_text(encoding="utf-8").strip() == "http":
-            return "http"
-    except OSError:
-        pass
-    return "http" if (CHAT_TRANSPORT == "http" and _gateway_http_ready()) else "cli"
-
-
-def _pin_transport(sk: str, kind: str) -> None:
-    """把会话钉在某条传输层上。只需钉 http —— cli 侧由 uuid5 transcript 文件自证。"""
-    if kind != "http":
-        return
-    try:
-        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-        _transport_pin_file(sk).write_text("http", encoding="utf-8")
-    except OSError:
-        pass
 
 
 class _CrossProcLock:
@@ -1857,31 +1685,6 @@ def _read_job_events(turn_id: str, after: int = 0) -> list[dict]:
     return events
 
 
-def _raw_event_for_run(line: str, expected_run_id: str | None) -> dict | None:
-    """Parse one OpenClaw raw event and reject events from other runs.
-
-    The gateway multiplexes every run into one shared raw-stream file, and its
-    events carry `runId` (not `sessionId`). A turn latches onto its own runId —
-    the first event seen after the turn starts — and must ignore any event with
-    a different runId. `expected_run_id=None` means not-yet-latched → accept, so
-    the caller can latch from `event['runId']`.
-    """
-    line = line.strip()
-    if not line:
-        return None
-    try:
-        event = json.loads(line)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return None
-    if not isinstance(event, dict):
-        return None
-    if expected_run_id is not None:
-        rid = event.get("runId")
-        if rid is not None and rid != expected_run_id:
-            return None
-    return event
-
-
 def _save_turn(sk: str, status: str, text: str, extra: dict | None = None) -> None:
     """持久化本轮结果（running/done），供 SSE 连接中断后前端用 /api/chat/last 取回。
 
@@ -1967,11 +1770,10 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
 async def api_chat_stream(req: ChatRequest):
     """SSE 真流式对话。
 
-    `openclaw agent` CLI 会把整段模型输出缓冲到结束才打印（stdout 无增量）。真正跑模型的是
-    常驻 gateway，它按自己的 OPENCLAW_RAW_STREAM/OPENCLAW_RAW_STREAM_PATH 把「模型原始流」逐
-    token 写到**单个共享 jsonl**（SHARED_RAW_STREAM，见 scripts/gateway.sh）。后端在本轮开始时
-    记下该文件尾偏移、实时 tail 之后追加的行，用 runId 闩锁隔离本轮，把 assistant_text_stream 的
-    token delta 转成 SSE `token`、thinking delta 转成 `thinking`。stdout 仅留作错误/兜底。
+    回合实现由 runtime 适配层负责：OpenClaw 在 adapter 内 tail 常驻 gateway 写出的共享 raw 流
+    （或按 EASEL_CHAT_TRANSPORT=http 直连网关 SSE 端点），见 easel/runtimes/openclaw.py。
+    本函数只负责与 runtime 无关的回合编排：会话锁、事件转发、超时/停止、收尾落盘，
+    供断线后 /api/chat/last 取回完整结果。
     """
     # 每轮末尾追加「先查技能库」提醒，抗长对话指令衰减（对用户不可见）
     message = _chat_message(req)
@@ -2017,108 +1819,7 @@ async def api_chat_stream(req: ChatRequest):
         # 秒级反馈：发出即亮「已收到」，不等 agent 冷启动（首个 SSE 事件，随流回放必达）
         to_client("activity", "⏳ 已收到，正在唤醒 agent…")
 
-        async def _run_gateway_turn(hproc):
-            """HTTP 直连常驻网关跑一轮（OpenAI 兼容端点 /v1/chat/completions，原生 SSE）。
-
-            与 CLI 路径的差异：agent 在常驻 gateway 进程里直接跑，无每轮进程冷启动；
-            正文 token 经 SSE 直接进 q（与 CLI 路径共享同一消费出口）；
-            收尾由主循环统一负责（proc.poll() 兼容面）。
-            """
-            body = {
-                "model": "openclaw/default",
-                "stream": True,
-                "messages": [{"role": "user", "content": message}],
-            }
-            # session-id 必须跟 CLI 路径钉死同一个（见 _openclaw_session_id）：只带 session-key
-            # 的话网关会自己另起一个 transcript —— 跨天空闲后丢历史，且万一本轮回退 CLI，
-            # 两条路径会写进不同的会话文件，对话历史直接劈叉。
-            headers = {"x-openclaw-session-key": f"agent:main:{sk}",
-                       "x-openclaw-session-id": _openclaw_session_id(sk)}
-            tool_noted = False
-            saw_done = False
-            got_text = False
-            try:
-                import httpx as _httpx
-                timeout = _httpx.Timeout(TIMEOUT_CHAT + 60, connect=10)
-                async with _httpx.AsyncClient(timeout=timeout) as client:
-                    async with client.stream(
-                            "POST", "http://127.0.0.1:18789/v1/chat/completions",
-                            json=body, headers=headers) as resp:
-                        if resp.status_code != 200:
-                            raw = (await resp.aread())[:200].decode("utf-8", "replace")
-                            to_client("error", f"❌ 对话失败（HTTP {resp.status_code}）：{raw[:160]}")
-                            return
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data:"):
-                                continue
-                            payload = line[5:].lstrip()   # SSE 允许 `data:{…}`（冒号后无空格）
-                            if payload == "[DONE]":
-                                saw_done = True
-                                break
-                            try:
-                                d = json.loads(payload)
-                            except ValueError:
-                                continue
-                            if isinstance(d.get("error"), dict):   # 200 里夹错误对象：不能当正常流吞掉
-                                to_client("error", f"❌ 网关返回错误：{str(d['error'])[:160]}")
-                                return
-                            delta = (d.get("choices") or [{}])[0].get("delta") or {}
-                            # 思考流的两个可能来源，先到先得（`sse_thinking` 闩锁，防两路都来时重复）：
-                            # ① 这里的 reasoning 增量 —— openclaw 2026.6.11 的 chat/completions
-                            #    实现里 reasoning/thinking 出现 0 次，**不会**给；留着是给别的网关/
-                            #    以后的版本用。② 常驻 gateway 写的共享 raw 流（见下面 _tail），
-                            #    它按自己的 env 写，跟这一轮是谁触发的无关，所以 HTTP 模式照样能读到。
-                            rc = delta.get("reasoning_content") or delta.get("reasoning")
-                            if rc:
-                                run_info["sse_thinking"] = True
-                                run_info["thinking_chars"] += len(rc)
-                                _emit("thinking", rc)
-                            c = delta.get("content")
-                            if c:
-                                got_text = True
-                                _emit("token", c)
-                            if delta.get("tool_calls") and not tool_noted:
-                                tool_noted = True
-                                to_client("activity", "🔧 正在执行操作…")
-                # 流正常结束却既没正文也没 [DONE]：多半是端点没真开或中途断了。
-                # 不报错的话这一轮会静默落一条空回答，还会被 /api/chat/last 原样取回。
-                if not got_text and not saw_done:
-                    to_client("error", "❌ 网关流异常结束：没有收到任何内容（检查 "
-                                       "gateway.http.endpoints.chatCompletions 是否开启，"
-                                       "或设 EASEL_CHAT_TRANSPORT=cli 回退）")
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                to_client("error", f"❌ 网关连接失败：{str(e)[:140]}")
-            finally:
-                # 先把 SENTINEL 排进 q（FIFO 保证它排在本轮所有 token 之后），再标记完成：
-                # 主循环读到它时，前面的 token 必然已全部消费过。
-                q.put_nowait(SENTINEL)
-                hproc.finish()
-
-        _heal_openclaw_session(sk)       # 清洗历史里无签名 thinking 块，防回放失效
-        # 原始事件流由常驻 gateway 写到共享文件（见 SHARED_RAW_STREAM / scripts/gateway.sh），
-        # 不是 agent 客户端写的。本轮开始时记下文件当前尾偏移：只读此偏移之后追加的行，
-        # 再用首个新事件的 runId 闩锁本轮，隔离其它并发会话的事件。
-        try:
-            raw_start_offset = SHARED_RAW_STREAM.stat().st_size
-        except OSError:
-            raw_start_offset = 0
-
-        cmd = openclaw_base_cmd() + [
-            "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
-            "--session-key", f"agent:main:{sk}", "--session-id", _openclaw_session_id(sk),
-            "--thinking", THINKING_LEVEL,
-            "--timeout", str(TIMEOUT_CHAT), "--message", message,
-        ]
-        env = _proxy_env()
-        # 注意：不要在客户端 env 上设 OPENCLAW_RAW_STREAM*——`agent` 客户端不写 raw 流，
-        # 设了也没用；raw 流开关在 gateway 侧（scripts/gateway.sh）。
-        # 告诉 skill：本部署的 ask_user 选项卡片是否可用。卡片依赖 gateway 的
-        # question.* RPC（仅 2026.9.x 有），2026.6.11 上桥接不可用 → skill 改用
-        # 「文字问答跨轮等待」拿短信验证码，而不是空等卡片超时。
-        _cards_ok = question_bridge_supported is not None and question_bridge_supported()
-        env["EASEL_ASKUSER_CARDS"] = "1" if _cards_ok else "0"
+        runtime = get_runtime()
 
         # 会话级串行：同一会话若已有请求在跑，先提示排队，等它结束再开
         # （否则两个 openclaw 进程并发写同一 session 文件 → 崩溃 rc=1 / 会话串味）。
@@ -2140,293 +1841,87 @@ async def api_chat_stream(req: ChatRequest):
             client_q.put_nowait(CLIENT_DONE)
             return
 
-        # _resolve_transport 里既有 stat 又有阻塞 urllib 探针（最多 3s），必须丢线程：
-        # 直接在协程里调会把整个事件循环——连同其它会话正在推的 SSE——一起卡住。
-        is_http = (await asyncio.to_thread(_resolve_transport, sk)) == "http"
-        if is_http:
-            # HTTP 直连常驻网关：无进程冷启动（agent 在 gateway 进程里跑）
-            proc = _GatewayHttpProc()
-        else:
-            try:
-                proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    cwd=str(PROJECT_ROOT), text=True, bufsize=1, env=env,
-                )
-            except BaseException:
-                lock.release()
-                xlock.release()
-                _save_turn(pk, "done", "❌ 启动失败，请重试", {
-                    "turn_id": turn_id, "clean_end": False, "stop_reason": "spawn_failed",
-                })
-                to_client("error", "❌ 启动失败，请重试")
-                to_client("done", sessionKey=sk)
-                client_q.put_nowait(CLIENT_DONE)
-                return
-        _RUNNING_CHAT[sk] = proc         # 注册运行中进程（HTTP 模式为伪进程），供 /api/chat/stop
-        # 经 gateway 后客户端 stdout 没有 model-fetch 标记（那是独立跑 agent 才有），先立刻
-        # 给一个「正在思考」活动指示，随后 token 从共享 raw stream 流进来接管显示。
-        to_client("activity", "🧠 正在思考…")
-
-        q = asyncio.Queue()
-        SENTINEL = object()
-        stdout_lines = []
-        run_info: dict = {"stop_reason": None, "last_ev": None, "saw_message_end": False,
-                          "run_id": None,
-                          "fetch_count": 0, "token_chars": 0, "thinking_chars": 0,
-                          "delegated": False, "ignored_foreign_events": 0}
-
-        def _drain_stdout():
-            try:
-                for line in proc.stdout:
-                    stdout_lines.append(line)
-                    c = re.sub(r"\x1b\[[0-9;]*m", "", line)
-                    if "model-fetch] start" in c:
-                        run_info["fetch_count"] += 1
-                        fc = run_info["fetch_count"]
-                        _emit("activity", "🧠 正在思考…" if fc == 1 else f"🔧 调用工具后继续推理（第 {fc} 步）…")
-                    elif "[agent]" in c and "delegat" in c.lower():
-                        run_info["delegated"] = True
-                        _emit("activity", "🛠️ 制作中…")
-                    m = re.search(r"ended with stopReason=(\S+)", c)
-                    if m:
-                        run_info["stop_reason"] = m.group(1)
-            except Exception:
-                pass
-
-        def _emit(kind: str, text: str):
-            loop.call_soon_threadsafe(q.put_nowait, {"t": kind, "text": text})
-
-        # 必须等 q / run_info / _emit 都就位后再起这一轮：_run_gateway_turn 闭包引用它们，
-        # 早一步 create_task 就只能靠「中间没有 await」来侥幸，改一行同步代码就会崩。
-        if is_http:
-            proc._task = loop.create_task(_run_gateway_turn(proc))
-
-        # ---- ask_user 问答题桥接：轮询 gateway 的 pending question，推给前端渲染 ----
-        # 背景：OpenClaw 的 ask_user 注册到 gateway 进程内，Easel 前端不消费 question RPC → 选项不可见。
-        # 这里在 agent 运行期间每 2s 轮询一次，把新出现的 pending question 以 SSE `question` 事件推送，
-        # 前端渲染选项卡片；用户点击后经 /api/chat/question/answer 调 question.resolve 完成回答。
-        if GatewayClient is not None and not _QBRIDGE_DISABLED:
-            def _question_poll():
-                global _QBRIDGE_DISABLED
-                if _QBRIDGE_DISABLED:
-                    return
-                # 版本能力门：旧版本 OpenClaw（<2026.9.x）没有 question.* RPC，连都不连——
-                # 否则每轮 connect 都在网关上触发新的 scope-upgrade 配对申请。只提示一次，走文字问答。
-                if question_bridge_supported is not None and not question_bridge_supported():
-                    _QBRIDGE_DISABLED = True
-                    _qbridge_warn_once(
-                        "unsupported",
-                        "[question-bridge] 当前 OpenClaw 版本无 question RPC（需 2026.9.x+），"
-                        "已跳过 ask_user 选项卡片桥接，改用文字问答。")
-                    return
-                client = None
-                pushed: set[str] = set()
-                try:
-                    client = GatewayClient()
-                    client.connect()
-                except Exception as e:
-                    # connect 失败（如 NOT_PAIRED/scope-upgrade，或网关不可达）：熔断整个桥接，
-                    # 不再每轮重试——否则每轮都会在网关上堆一个新的配对/权限申请。每进程只告警一次。
-                    _QBRIDGE_DISABLED = True
-                    _qbridge_warn_once(
-                        "connect",
-                        f"[question-bridge] connect gateway failed，已停用桥接（本进程），"
-                        f"ask_user 改用文字问答: {e}")
-                    return
-                try:
-                    while proc.poll() is None:
-                        try:
-                            items = client.list_questions(
-                                session_key=f"agent:main:{sk}", status="pending")
-                        except GatewayUnsupportedError as e:
-                            # 连上了但没有 question RPC（版本判断漏网时的兜底）：熔断，安静退出。
-                            _QBRIDGE_DISABLED = True
-                            _qbridge_warn_once(
-                                "unsupported",
-                                f"[question-bridge] 当前 OpenClaw 版本无 question RPC，"
-                                f"已停用 ask_user 选项卡片桥接（需 2026.9.x+）: {e}")
-                            return
-                        except Exception:
-                            time.sleep(2)
-                            continue
-                        for it in items:
-                            qid = it.get("id")
-                            if qid and qid not in pushed:
-                                pushed.add(qid)
-                                _emit("question", json.dumps({
-                                    "id": qid,
-                                    "questions": it.get("questions", []),
-                                    "expiresAtMs": it.get("expiresAtMs"),
-                                }, ensure_ascii=False))
-                        time.sleep(2)
-                finally:
-                    try:
-                        if client is not None:
-                            client.close()
-                    except Exception:
-                        pass
-            loop.run_in_executor(None, _question_poll)
-
-        def _handle(line: str):
-            o = _raw_event_for_run(line, run_info["run_id"])
-            if o is None:
-                # 属其它并发 run 的事件（或无法解析）：绝不混入本轮可见流/收尾诊断，仅计数。
-                try:
-                    parsed = json.loads(line)
-                    rid = parsed.get("runId") if isinstance(parsed, dict) else None
-                    if rid is not None and run_info["run_id"] is not None and rid != run_info["run_id"]:
-                        run_info["ignored_foreign_events"] += 1
-                except Exception:
-                    pass
-                return
-            # 首个带 runId 的事件闩锁本轮 run（之后 _raw_event_for_run 只放行这个 run）。
-            if run_info["run_id"] is None:
-                rid = o.get("runId")
-                if rid is None:
-                    return          # 还没拿到 runId，等下一条带 runId 的事件再闩锁
-                run_info["run_id"] = rid
-            ev, et, delta = o.get("event"), o.get("evtType"), o.get("delta") or ""
-            # 记录最后一个 raw 事件：正常收尾 last_ev == assistant_message_end；
-            # 若停在 text_delta/thinking_delta 说明输出或思考流被中断、没正常收尾（本次排查关键信号）。
-            if ev:
-                run_info["last_ev"] = ev
-            if ev == "assistant_message_end":
-                run_info["saw_message_end"] = True
-            if not delta:
-                return
-            if ev == "assistant_text_stream" and et == "text_delta":
-                if is_http:
-                    # HTTP 模式正文以 SSE 为准（那条才是本请求自己的响应流）。这里再发一遍
-                    # 就是同一段内容进两次队列 —— 前端会看到每个字重复。
-                    return
-                run_info["token_chars"] += len(delta)
-                run_info["text_tail"] = (run_info.get("text_tail", "") + delta)[-160:]
-                _emit("token", delta)
-                return
-            if ev == "assistant_thinking_stream" and et == "thinking_delta":
-                if run_info.get("sse_thinking"):
-                    return      # SSE 已经在供思考流了，别叠第二份
-                run_info["thinking_chars"] += len(delta)
-                _emit("thinking", delta)
-                return
-
-        def _tail():
-            try:
-                f = None
-                # gateway 刚起或本轮还没产生事件时文件可能暂不存在：轮询等它出现（进程先退出则收尾）。
-                while f is None:
-                    try:
-                        f = open(SHARED_RAW_STREAM, "r", encoding="utf-8")
-                    except OSError:
-                        if proc.poll() is not None:
-                            return
-                        time.sleep(0.04)
-                with f:
-                    f.seek(raw_start_offset)   # 只读本轮开始后追加的行，跳过历史轮次
-                    buf = ""
-                    while True:
-                        chunk = f.readline()
-                        if chunk == "":
-                            if proc.poll() is not None:
-                                buf += f.read()
-                                for ln in buf.split("\n"):
-                                    _handle(ln)
-                                break
-                            time.sleep(0.04)
-                            continue
-                        buf += chunk
-                        while "\n" in buf:
-                            ln, buf = buf.split("\n", 1)
-                            _handle(ln)
-            except Exception:
-                pass
-            finally:
-                loop.call_soon_threadsafe(q.put_nowait, SENTINEL)
-
-        stdout_fut = None
-        if is_http:
-            # 正文走 SSE，但思考流**不走**：openclaw 2026.6.11 的 chat/completions 实现里
-            # reasoning/thinking 一次都没出现，不回传任何思考增量。思考只存在于常驻 gateway
-            # 写的那份共享 raw 流里（它按 gateway 自己的 env 写，与谁触发无关）。所以这条路径
-            # 照样 tail 它——_handle 里 text_delta 在 is_http 下直接丢弃，只取 thinking_delta，
-            # 正文不会进两次。不 tail 的话「💭 思考过程」在 HTTP 模式下永远是空的。
-            loop.run_in_executor(None, _tail)
-        else:
-            stdout_fut = loop.run_in_executor(None, _drain_stdout)
-            loop.run_in_executor(None, _tail)
-
-        deadline = time.monotonic() + TIMEOUT_CHAT + 30
-        emitted = False
-        # 两条路径都靠「队列里读到 SENTINEL」收尾。HTTP 模式若改用带外标志（一开始就置 True），
-        # 最后一批还排在 q 里没被消费的 token 会随 poll() 转为已完成而被直接丢掉——答案尾巴被截。
-        tail_finished = False
+        handle = None
+        result = None
+        event_q: asyncio.Queue = asyncio.Queue()
+        EVENT_DONE = object()
         try:
+            # runtime.start 可能含阻塞探测（如 OpenClaw 的网关端点探测），丢线程避免卡事件循环
+            request = RunRequest(
+                message, sk, TIMEOUT_CHAT, PROJECT_ROOT, _proxy_env(),
+                SESSIONS_DIR, THINKING_LEVEL, True,
+            )
+            handle = await asyncio.to_thread(runtime.start, request)
+            _RUNNING_CHAT[sk] = handle
+            to_client("activity", "🧠 正在思考…")
+
+            def drain_events():
+                try:
+                    for event in handle.events():
+                        loop.call_soon_threadsafe(event_q.put_nowait, event)
+                finally:
+                    loop.call_soon_threadsafe(event_q.put_nowait, EVENT_DONE)
+
+            loop.run_in_executor(None, drain_events)
+            deadline = time.monotonic() + TIMEOUT_CHAT + 30
+            emitted = False
             while True:
-                # A raw-stream reader failure must not be mistaken for model
-                # completion. Keep the session lock until the process exits.
-                if tail_finished and proc.poll() is not None:
-                    break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     timed_out = True
+                    handle.cancel()
                     to_client("error", "⏱️ 请求超时")
                     break
                 try:
-                    item = await asyncio.wait_for(q.get(), timeout=min(10, remaining))
+                    event = await asyncio.wait_for(event_q.get(), timeout=min(10, remaining))
                 except asyncio.TimeoutError:
-                    continue
-                if item is SENTINEL:
-                    tail_finished = True
-                    if proc.poll() is not None:
+                    if handle.poll() is not None:
                         break
                     continue
-                if item["t"] == "token":
+                if event is EVENT_DONE:
+                    break
+                if event.type == "text":
                     emitted = True
-                    full_text.append(item["text"])
-                    to_client("token", item["text"])
-                elif item["t"] == "thinking":
-                    to_client("thinking", item["text"])
-                elif item["t"] == "activity":
-                    to_client("activity", item["text"])
-                elif item["t"] == "question":
-                    to_client("question", item["text"])
-            rc = proc.poll()
-            # 等 stdout 读完（stopReason 行在进程收尾时才打印，避免 _tail 先发 SENTINEL 时漏读）
-            if stdout_fut is not None:
-                try:
-                    await asyncio.wait_for(stdout_fut, timeout=2)
-                except Exception:
-                    pass
-            sr = run_info.get("stop_reason")
-            if not emitted:
-                clean = clean_agent_output("".join(stdout_lines))
-                if clean:
-                    emitted = True
-                    full_text.append(clean)
-                    to_client("token", clean)
-                elif rc not in (0, None):
-                    err = clean_agent_output("".join(stdout_lines))[:200]
-                    to_client("error", f"❌ 执行失败（退出码 {rc}）{' — ' + err if err else ''}")
-            # 收尾检测：即使已吐了内容，只要不是「正常收尾」就显式告知——
+                    full_text.append(event.text)
+                    to_client("token", event.text)
+                elif event.type == "question":
+                    to_client("question", json.dumps(event.data or {}, ensure_ascii=False))
+                else:
+                    to_client(event.type, event.text)
+            result = await asyncio.to_thread(handle.wait)
+            if not emitted and result.text:
+                emitted = True
+                full_text.append(result.text)
+                to_client("token", result.text)
+            diag = result.diagnostics or {}
+            if result.returncode and sk not in _STOPPED_CHAT and not timed_out:
+                detail = diag.get("error") or f"执行失败（退出码 {result.returncode}）"
+                # OpenClaw 已产出内容时，由下方收尾提示说明中断原因，不重复报错
+                if not (emitted and "last_ev" in diag):
+                    error_text = f"❌ {detail}"
+                    full_text.append("\n\n" + error_text if full_text else error_text)
+                    to_client("error", error_text)
+            # 收尾检测（OpenClaw 诊断带 last_ev）：即使已吐了内容，只要不是「正常收尾」就显式告知——
             # 否则被截断（触顶）/被杀（负载）/流被中断，都会被当成「清晰地答完了」，
             # 用户看到的就是「答一半突然停、也不说做完」（本 bug 根因）。
             # 正常收尾的唯一标志：raw 流最后一个事件是 assistant_message_end。
             # 用户显式「停止」不是异常中断 → 不报「被中断」告警（前端已就地标注「已停止」）。
-            if (emitted or run_info["thinking_chars"]) and sk not in _STOPPED_CHAT:
+            if "last_ev" in diag and (emitted or diag.get("thinking_chars")) and sk not in _STOPPED_CHAT:
                 note = None
+                sr = result.stop_reason
                 if sr and sr in ("max_tokens", "length", "model_length"):
                     note = (f"\n\n---\n⚠️ 上面这条**被截断**了（stopReason={sr}，单条回复触顶）。"
                             f"回我「继续」我接着写完，或让我把任务拆小一点。")
-                elif rc not in (0, None):
-                    note = (f"\n\n---\n⚠️ 生成**被中断**（退出码 {rc}，多半是超时或系统负载过高把进程杀了），"
+                elif result.returncode not in (0, None):
+                    note = (f"\n\n---\n⚠️ 生成**被中断**（退出码 {result.returncode}，多半是超时或系统负载过高把进程杀了），"
                             f"不是正常收尾。可以让我重试。")
                 elif sr == "tool_use":
                     note = ("\n\n---\n⚠️ 我刚做完这一步、**正要执行下一步操作时中断了**"
                             "（本轮以工具调用结尾却没能继续，前端把它当成答完了）。回我「继续」我接着做。")
-                elif run_info.get("last_ev") not in (None, "assistant_message_end"):
+                elif diag.get("last_ev") not in (None, "assistant_message_end"):
                     note = ("\n\n---\n⚠️ 这条**可能没写完**——模型的输出/思考流被中断、没有正常收尾"
                             "（多为网络或模型代理把长回复的流掐断了）。回我「继续」，或重试。")
-                elif run_info.get("text_tail", "").rstrip()[-1:] in ("：", ":"):
+                elif (diag.get("text_tail") or "").rstrip()[-1:] in ("：", ":"):
                     # 正常收尾但正文停在冒号 = 模型"我要做X："后没接着做（多为要接工具/下一步却断了）。
                     # 用户实测「所有莫名停止都停在冒号」——这一条兜住这个模式。
                     note = ("\n\n---\n⚠️ 我似乎停在了冒号处、没接着把后面的内容/操作做出来。"
@@ -2434,64 +1929,51 @@ async def api_chat_stream(req: ChatRequest):
                 if note:
                     full_text.append(note)
                     to_client("token", note)
+            # 诊断日志（OpenClaw）：每次对话流收尾都记一行，供事后定位「莫名停下」到底是哪种情况。
+            if "last_ev" in diag:
+                try:
+                    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+                    with (DEBUG_DIR / "chat-stream.jsonl").open("a", encoding="utf-8") as lf:
+                        lf.write(json.dumps({
+                            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                            "session": sk,
+                            "rc": result.returncode,
+                            "stop_reason": result.stop_reason,
+                            "last_ev": diag.get("last_ev"),
+                            "clean_end": result.clean_end,
+                            "saw_message_end": diag.get("saw_message_end"),
+                            "fetch_count": diag.get("fetch_count"),
+                            "token_chars": diag.get("token_chars"),
+                            "thinking_chars": diag.get("thinking_chars"),
+                            "delegated": diag.get("delegated"),
+                            "ignored_foreign_events": diag.get("ignored_foreign_events"),
+                            "text_tail": diag.get("text_tail", ""),
+                            "stdout_tail": diag.get("stdout_tail", ""),
+                        }, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
+        except Exception as exc:
+            to_client("error", f"❌ 启动失败：{exc}")
         finally:
-            # 只有真的在 HTTP 上跑出了内容，才把这个会话钉到 http 上。钉早了（比如选路时就钉）
-            # 会把一个其实没跑成的会话锁死在 http，之后每轮都往一条不通的路上撞；而钉住之后
-            # 就绝不能再换回 cli —— 网关那份 transcript 我们按名字找不回来，换边即丢历史。
-            if is_http and emitted:
-                _pin_transport(sk, "http")
             user_stopped = sk in _STOPPED_CHAT
             _STOPPED_CHAT.discard(sk)
-            # Reaching finally while the child is alive means timeout, explicit
-            # stop, cancellation, or an internal stream failure. Never release
-            # the session locks while such a process can still write history.
-            if proc.poll() is None:
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
-                try:
-                    await asyncio.to_thread(proc.wait, timeout=5)
-                except subprocess.TimeoutExpired:
-                    try:
-                        proc.kill()
-                        await asyncio.to_thread(proc.wait, timeout=2)
-                    except (OSError, subprocess.TimeoutExpired):
-                        pass
-            # 诊断日志：每次对话流收尾都记一行，供事后定位「莫名停下」到底是哪种情况。
-            try:
-                DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-                tail = clean_agent_output("".join(stdout_lines))[-800:]
-                with (DEBUG_DIR / "chat-stream.jsonl").open("a", encoding="utf-8") as lf:
-                    lf.write(json.dumps({
-                        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                        "session": sk,
-                        "rc": proc.poll(),
-                        "stop_reason": run_info["stop_reason"],
-                        "last_ev": run_info["last_ev"],
-                        "clean_end": run_info["last_ev"] == "assistant_message_end",
-                        "saw_message_end": run_info["saw_message_end"],
-                        "fetch_count": run_info["fetch_count"],
-                        "token_chars": run_info["token_chars"],
-                        "thinking_chars": run_info["thinking_chars"],
-                        "delegated": run_info["delegated"],
-                        "ignored_foreign_events": run_info["ignored_foreign_events"],
-                        "text_tail": run_info.get("text_tail", ""),
-                        "stdout_tail": tail,
-                    }, ensure_ascii=False) + "\n")
-            except Exception:
-                pass
+            # 释放会话锁前必须确保回合进程/请求已终止；close() 里含 5s 等待，丢线程别卡事件循环。
+            if handle is not None:
+                await asyncio.to_thread(handle.close)
             # 落盘完整结果：后端跑完整轮不依赖客户端连接，断线后前端用 /api/chat/last 取回
             _save_turn(pk, "done", "".join(full_text), {
                 "turn_id": turn_id,
-                "clean_end": run_info.get("last_ev") == "assistant_message_end",
-                "stop_reason": "user_stopped" if user_stopped else run_info.get("stop_reason"),
+                "clean_end": bool(result and result.clean_end),
+                "stop_reason": "user_stopped" if user_stopped else (
+                    "timeout" if timed_out else (result.stop_reason if result else "spawn_failed")
+                ),
             })
+            _RUNNING_CHAT.pop(sk, None)
             xlock.release()
             lock.release()
-            _RUNNING_CHAT.pop(sk, None)
             to_client("done", sessionKey=sk)
             client_q.put_nowait(CLIENT_DONE)
+        return
 
     # 把 run 跑在独立后台任务里（持强引用防 GC）——客户端断开不取消它。
     task = asyncio.create_task(supervisor())
@@ -2561,17 +2043,13 @@ class QuestionAnswerRequest(BaseModel):
 @app.post("/api/chat/question/answer")
 async def api_question_answer(req: QuestionAnswerRequest):
     """前端点击 ask_user 选项后调用：转发 gateway question.resolve，让等待的 agent 拿到答案。"""
-    if GatewayClient is None:
-        return {"ok": False, "error": "gateway question bridge unavailable"}
-    client = GatewayClient()
-    try:
-        client.connect()
-        result = client.resolve(req.questionId, req.answers or {}, req.resolvedBy)
-        return {"ok": True, "result": result}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-    finally:
-        client.close()
+    result = await asyncio.to_thread(
+        get_runtime().answer_question,
+        QuestionAnswer(req.questionId, req.answers or {}, req.resolvedBy),
+    )
+    if result.code == 2:
+        raise HTTPException(409, result.reason)
+    return {"ok": result.ok, **result.data, **({"error": result.reason} if result.reason else {})}
 
 
 class QuestionStatusRequest(BaseModel):
@@ -2581,27 +2059,10 @@ class QuestionStatusRequest(BaseModel):
 @app.post("/api/chat/question/status")
 async def api_question_status(req: QuestionStatusRequest):
     """批量查 question 状态（重放旧事件时过滤已解决的题）。"""
-    if GatewayClient is None:
-        return {"ok": False, "questions": {}}
-    client = GatewayClient()
-    try:
-        client.connect()
-        out = {}
-        for qid in req.questionIds:
-            try:
-                q = client.get_question(qid)
-                # QUESTION_NOT_FOUND 抛异常捕获后报 not_found；正常返回则按 status
-                out[qid] = {"status": q.get("status") if q else "not_found"}
-            except GatewayQuestionError as e:
-                # gateway 明确错：问题已清理/不存在 = 已答或已过期，一律 not_found
-                out[qid] = {"status": "not_found"}
-            except Exception:
-                out[qid] = {"status": "unknown"}   # 网络/连接异常：保持 unknown（前端保留显示，宁不缺题）
-        return {"ok": True, "questions": out}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "questions": {}}
-    finally:
-        client.close()
+    result = await asyncio.to_thread(get_runtime().question_status, req.questionIds)
+    if result.code == 2:
+        raise HTTPException(409, result.reason)
+    return {"ok": result.ok, **result.data, **({"error": result.reason} if result.reason else {})}
 
 
 class StopRequest(BaseModel):
@@ -2613,24 +2074,21 @@ async def api_chat_stop(req: StopRequest):
     """用户显式停止当前会话正在跑的对话 agent：终止进程 → supervisor 收尾释放会话锁 →
     下一句立刻能发（不再卡「上一条还在跑」）。仅此显式入口会杀进程；客户端断线不经此路径。"""
     sk = (req.sessionId or "").strip()
-    proc = _RUNNING_CHAT.get(sk) if sk else None
-    if proc is not None and proc.poll() is None:
+    handle = _RUNNING_CHAT.get(sk) if sk else None
+    if handle is not None and handle.poll() is None:
         _STOPPED_CHAT.add(sk)          # 标记为用户停止，供 supervisor 正常收尾（不报「被中断」）
         try:
-            proc.terminate()
+            if hasattr(handle, "cancel"):
+                await asyncio.to_thread(handle.cancel)
+            else:
+                handle.terminate()
+                await asyncio.to_thread(handle.wait, timeout=3)
         except OSError:
             pass
-        try:
-            await asyncio.to_thread(proc.wait, timeout=3)
-        except subprocess.TimeoutExpired:
-            try:
-                proc.kill()
-            except OSError:
-                pass
         # supervisor removes the running marker only after persisting the final
         # snapshot and releasing both session locks.
         deadline = time.monotonic() + 5
-        while _RUNNING_CHAT.get(sk) is proc and time.monotonic() < deadline:
+        while _RUNNING_CHAT.get(sk) is handle and time.monotonic() < deadline:
             await asyncio.sleep(0.05)
         return {"stopped": True}
     return {"stopped": False}          # 没有在跑（可能已结束）→ 前端照常清理即可
@@ -3670,18 +3128,9 @@ def _write_baseline_profile(name: str, form: dict) -> None:
 
 @app.delete("/api/session/{session_key}")
 async def api_delete_session(session_key: str):
-    """删除 OpenClaw 本地的 session 记录。"""
-    sessions_file = Path.home() / '.openclaw-easel' / 'agents' / 'main' / 'sessions' / 'sessions.json'
-    if not sessions_file.is_file():
-        return {'deleted': False, 'reason': 'sessions file not found'}
-    data = json.loads(sessions_file.read_text(encoding="utf-8"))
-    full_key = f'agent:main:{session_key}' if not session_key.startswith('agent:') else session_key
-    for key in (full_key, session_key):
-        if key in data:
-            del data[key]
-            sessions_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            return {'deleted': True}
-    return {'deleted': False, 'reason': 'session not found'}
+    """删除当前 Agent runtime 的 session 记录。"""
+    result = await asyncio.to_thread(get_runtime().delete_session, session_key, SESSIONS_DIR)
+    return {"deleted": result.ok, **result.data, **({"reason": result.reason} if result.reason else {})}
 
 
 TREND_SOURCES: dict[str, tuple[str, str | None]] = {

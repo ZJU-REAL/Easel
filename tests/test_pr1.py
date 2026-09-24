@@ -31,39 +31,6 @@ from easel.commands import skill as cli_skill  # noqa: E402
 
 
 # ============================================================
-# f2p: H2 — easel chat 走 openclaw_base_cmd()
-# ============================================================
-
-def test_chat_cmd_uses_openclaw_base_cmd_not_literal(monkeypatch):
-    """easel chat 组装的命令必须以 openclaw_base_cmd() 的返回开头，
-    而不是写死的字面量 "openclaw"（后者在 Windows 上是 .cmd shim，CreateProcess 跑不了）。"""
-    base = ["node", "/fake/path/openclaw.mjs"]
-    monkeypatch.setattr(cli, "openclaw_base_cmd", lambda: base)
-
-    cmd = cli._build_chat_cmd("sess-1")
-
-    assert cmd[: len(base)] == base, "命令应以 openclaw_base_cmd() 的返回开头"
-    assert "openclaw" not in cmd[: len(base)], "不应出现裸 PATH 字面量 'openclaw'"
-    # 关键参数仍在
-    assert "--profile" in cmd and "easel" in cmd
-    assert "tui" in cmd, "必须用 tui 子命令（chat 别名会强制本地模式，与 gateway 冲突）"
-    assert "--session" in cmd and "sess-1" in cmd
-    assert "--timeout-ms" in cmd
-
-
-def test_chat_cmd_attaches_message_only_when_prefix_present(monkeypatch):
-    """画像前缀非空时挂 --message；为空时不挂（与原 cmd_chat 行为一致）。"""
-    monkeypatch.setattr(cli, "openclaw_base_cmd", lambda: ["node", "/fake/oc.mjs"])
-
-    without = cli._build_chat_cmd("s", "")
-    assert "--message" not in without
-
-    with_prefix = cli._build_chat_cmd("s", "我当前使用的画像是「测试」。")
-    assert "--message" in with_prefix
-    assert "我当前使用的画像是「测试」。" in with_prefix
-
-
-# ============================================================
 # f2p: M6 — easel web 传播返回码
 # ============================================================
 
