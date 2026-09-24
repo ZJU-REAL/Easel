@@ -38,8 +38,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "ENV_FILE", env_file)
     monkeypatch.setattr(web, "_openclaw_provider_creds",
                         lambda: {"myproxy": ("https://good.example.com/v1", "sk-fake-custom")})
-    monkeypatch.setattr(web, "_sync_openclaw_chat", lambda *a, **k: "")
-    with TestClient(web.app) as c:
+    # local_write_guard 会把「非本机写请求」判 403。设置为本机来源。
+    local = "http://127.0.0.1:7860"
+    with TestClient(web.app, base_url=local, client=('127.0.0.1', 51234),
+                    headers={'Origin': local}) as c:
         c.env_file = env_file          # 用例里用来断言「.env 一个字节都没变」
         yield c
 
