@@ -113,6 +113,12 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 - **商业产品**（分析维度参考）：Metricool、Iconosquare、SocialBee、SocialBlade、Later、Mention、Brand24、Taskade、ZBrain、新榜/飞瓜/蝉妈妈/千瓜/微播易/克劳锐、巨量/千川
 - **学术**：ACL 2022 文本风格迁移、arXiv 2025 抖音 vs TikTok、WikiProject AI Cleanup
 
+## 集成版本
+
+| 项目 | 用于模块 | 说明与许可 |
+|------|---------|-----------|
+| Seal 私人运营顾问 V3 / 小红书运营中台 V4（sealamla，2026） | `integrations/codex/seal-private-operations-v3` | Codex 原生运行时、可恢复运营任务和小红书闭环工作流；V4 原作者将本次融合与改编内容作为 Easel 贡献，按 Apache-2.0 提交，详见集成目录 `NOTICE`。 |
+
 ---
 
 *若有遗漏或标注有误，欢迎指正。所有原库版权归各自作者所有。*

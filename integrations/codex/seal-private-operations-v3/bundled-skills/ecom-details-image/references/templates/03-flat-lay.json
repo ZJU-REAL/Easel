@@ -1,0 +1,47 @@
+{
+  "id": "flat-lay",
+  "name": "平铺图",
+  "keywords": ["平铺图", "flat lay", "俯拍", "top-down", "flatlay", "俯视图"],
+  "trigger_phrases": ["平铺图", "flat lay", "俯拍", "top-down view", "产品平铺"],
+  "prompt_template": {
+    "type": "flat lay photography, top-down view",
+    "subject": "{product_description} as hero at bottom center",
+    "props": "{prop_list}",
+    "background": "{background_material}",
+    "color_palette": "{color_scheme}",
+    "lighting": "soft natural window light from top-left at 45 degrees",
+    "quality": "8K, editorial photography, no text, no watermark"
+  },
+  "defaults": {
+    "props": "carefully curated complementary objects",
+    "background": "ivory linen texture",
+    "color_palette": "ivory, blush, champagne gold, sage green"
+  },
+  "variants": {
+    "luxury": {
+      "description": "奢华仪式感",
+      "overrides": { "props": "gold foil flakes, pearl beads, dried flowers, silk ribbon, leather journal", "background": "ivory linen with subtle shadow from sheer curtains", "color_palette": "ivory, blush pink, champagne gold, soft cream" }
+    },
+    "minimal": {
+      "description": "极简风格",
+      "overrides": { "props": "only 2-3 essential items, clean lines", "background": "clean white surface", "color_palette": "white, gray, one accent color" }
+    },
+    "seasonal": {
+      "description": "季节主题",
+      "overrides": { "props": "seasonal elements matching theme", "color_palette": "season-appropriate color scheme" }
+    }
+  },
+  "category_tips": {
+    "beauty": "skincare ritual flat lay, open product showing formula, botanical elements",
+    "food": "ingredients spread, fresh produce, kitchen tools",
+    "fashion": "clothing + accessories + shoes arranged aesthetically, fabric textures",
+    "home": "decor items, textures, materials spread showing lifestyle"
+  },
+  "examples": [
+    "Luxurious {category} ritual flat lay, top-down photography. {product} with lid open showing texture as hero at bottom center. Surrounding: gold-tone palette, crystal bottle, dried lavender with silk ribbon, gold foil flakes, pearl beads. Background: ivory linen. Color: ivory, blush, champagne gold. Soft window light top-left at 45 degrees. 8K, no text, no watermark",
+    "{product} flat lay top-down as hero. Surrounding: {props}. {background} background. Color: {colors}. Soft window light top-left. Clean aesthetic, 8K",
+    "Professional {category} flat lay, top-down editorial. {product} centered with curated objects. {background} background. Strict color control. 8K, magazine quality, no text"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

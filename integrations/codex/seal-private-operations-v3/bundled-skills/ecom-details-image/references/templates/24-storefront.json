@@ -1,0 +1,39 @@
+{
+  "id": "storefront",
+  "name": "店铺门面/空间摄影",
+  "keywords": ["店铺", "门面", "店面", "storefront", "空间摄影", "室内设计", "零售空间", "咖啡店", "实体店"],
+  "trigger_phrases": ["店铺门面", "店面摄影", "空间摄影", "零售空间", "咖啡店外观", "实体店", "storefront", "室内摄影", "店铺设计"],
+  "prompt_template": {
+    "type": "retail/storefront architectural photography",
+    "subject": "{business_description}",
+    "exterior": "clean facade with signage and window display",
+    "interior": "curated display shelving, consultation area, ambient lighting",
+    "lighting": "golden hour exterior or warm ambient interior",
+    "quality": "8K, editorial architectural photography, wide-angle sharp"
+  },
+  "defaults": {
+    "exterior": "large glass windows, signage, entrance details, potted plants",
+    "lighting": "late afternoon warm golden light, interior already glowing",
+    "camera": "wide-angle lens, f/8-f/11 for full sharpness"
+  },
+  "variants": {
+    "exterior": { "description": "门面外观", "overrides": { "exterior": "full storefront view with window display, entrance, street context", "interior": "visible through glass windows only" } },
+    "interior": { "description": "室内空间", "overrides": { "interior": "wide-angle interior showing product displays, furniture, lighting design", "exterior": "not visible" } },
+    "corner-detail": { "description": "角落细节", "overrides": { "interior": "close-up vignette of a curated corner: consultation table, product samples, single flower" } },
+    "aerial-plan": { "description": "俯视平面", "overrides": { "camera": "top-down bird's eye view showing full floor plan layout" } }
+  },
+  "category_tips": {
+    "coffee_shop": "espresso machine visible, warm wood tones, latte art, pastry display",
+    "beauty_store": "illuminated niches, marble counter, product wall, consultation area",
+    "fashion_boutique": "minimalist racks, curated display, premium flooring, mirror accents",
+    "restaurant": "table setting, kitchen pass visible, ambient lighting, menu display",
+    "gym_studio": "modern equipment, branded wall, natural light, motivational signage",
+    "pop_up": "temporary creative installation, bold graphics, unique display fixtures"
+  },
+  "examples": [
+    "Storefront photography. Modern {business} with glass windows showing warm interior. Entrance with potted plants. Golden hour light. Architectural photography, 8K",
+    "Premium interior photography of {business}. Wide-angle shot showing product displays, consultation area, herringbone floor. Warm ambient lighting throughout. Architectural Digest quality, 8K, 1536x1024px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

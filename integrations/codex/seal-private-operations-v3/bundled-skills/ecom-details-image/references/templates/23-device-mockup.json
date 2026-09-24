@@ -1,0 +1,41 @@
+{
+  "id": "device-mockup",
+  "name": "设备界面模型",
+  "keywords": ["设备模型", "界面模型", "mockup", "UI展示", "APP截图", "设备展示", "屏幕展示", "device mockup", "SaaS"],
+  "trigger_phrases": ["设备模型", "界面展示", "mockup", "APP展示", "网站展示", "SaaS展示", "UI mockup", "产品截图", "屏幕展示"],
+  "prompt_template": {
+    "type": "product device mockup photography",
+    "subject": "{product_description} displayed on device screen",
+    "device": "laptop or smartphone on desk",
+    "screen_content": "modern clean app/dashboard interface",
+    "desk_accessories": "coffee cup, plant, notebook, natural work environment",
+    "lighting": "natural window light with warm fill",
+    "quality": "8K, tech product photography, screen content tack-sharp"
+  },
+  "defaults": {
+    "device": "latest laptop on clean desk",
+    "desk_accessories": "coffee cup, small plant, wireless mouse, notebook",
+    "lighting": "soft window light from left, warm overhead fill",
+    "background": "modern minimal office environment"
+  },
+  "variants": {
+    "single-laptop": { "description": "单笔记本", "overrides": { "device": "MacBook Pro showing product interface, shallow depth of field on screen" } },
+    "multi-device": { "description": "多设备联动", "overrides": { "device": "iPad center + iPhone left + smartwatch right, all showing consistent app UI" } },
+    "phone-only": { "description": "手机展示", "overrides": { "device": "iPhone held at slight angle in hand, lifestyle background, screen clearly visible" } },
+    "office-lifestyle": { "description": "办公场景", "overrides": { "desk_accessories": "Aesop hand cream, Muji pen holder, latte with art, hardcover notebook, trailing plant on shelf", "background": "Scandinavian home office with white bookshelf" } }
+  },
+  "category_tips": {
+    "saas": "show dashboard with charts, KPI cards, data visualizations",
+    "mobile_app": "show app interface on phone, notification visible, clean UI",
+    "ecommerce_platform": "show store admin dashboard with product listings and analytics",
+    "fintech": "show financial dashboard with graphs, portfolio summary",
+    "health_app": "show workout tracker, health metrics, progress charts",
+    "ai_product": "show chat interface, AI responses, modern dark or light theme"
+  },
+  "examples": [
+    "Product mockup on laptop. Silver laptop on white desk, screen showing modern dashboard with charts. Coffee cup and small plant nearby. Natural window light. Clean product photography, 8K",
+    "Multi-device mockup. iPad with keyboard showing {product} app, iPhone showing notification, Apple Watch showing widget. All screens consistent UI in sage green. Scandinavian desk, 8K, 1536x1024px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

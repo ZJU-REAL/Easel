@@ -1,0 +1,46 @@
+{
+  "id": "packaging",
+  "name": "包装设计展示",
+  "keywords": ["包装", "packaging", "礼盒", "gift box", "包装设计", "unboxing", "开箱"],
+  "trigger_phrases": ["包装设计", "包装展示", "礼盒图", "packaging design", "开箱图", "gift box"],
+  "prompt_template": {
+    "type": "packaging design visualization",
+    "subject": "{product_description}",
+    "display": "{packaging_components}",
+    "surface": "premium marble surface",
+    "decorative": "scattered luxury elements",
+    "lighting": "soft directional with metallic reflections",
+    "quality": "premium design presentation, 8K"
+  },
+  "defaults": {
+    "display": "full spread: product, outer box, tissue, ribbon, brand card",
+    "decorative": "gold foil, pearls, dried petals, silk fabric"
+  },
+  "variants": {
+    "luxury-gift": {
+      "description": "奢华礼盒",
+      "overrides": { "display": "gift box opened: outer box, inner tray, product, ribbon, brand card", "decorative": "gold foil, pearls, dried roses, silk scarf" }
+    },
+    "minimal-eco": {
+      "description": "极简环保",
+      "overrides": { "display": "sustainable packaging: recycled paper, soy ink, simple label", "decorative": "natural elements, dried leaves, twine" }
+    },
+    "unboxing": {
+      "description": "开箱体验",
+      "overrides": { "display": "unboxing sequence: box opening, tissue reveal, product discovery" }
+    }
+  },
+  "category_tips": {
+    "beauty": "label design, ingredient preview, formula through transparent elements",
+    "food": "nutritional info area, ingredient imagery, freshness seals",
+    "fashion": "branded tissue, garment tag, care instructions, shopping bag",
+    "electronics": "box design, inner foam, cable organization, quick-start guide"
+  },
+  "examples": [
+    "Luxury {category} packaging concept. Full spread: (1) product with lid, label visible, (2) outer gift box: embossed pattern, gold logo, magnetic closure, (3) tissue with subtle watermark, (4) satin ribbon with monogram, (5) brand card gold foil, (6) sustainable fill. On marble with gold foil, pearls, dried petals. Soft directional lighting, metallic reflections. Premium presentation, 8K, 1080x1620px",
+    "Premium packaging showcase. {product} in gift box open, tissue, ribbon, brand card, luxury unboxing. Professional photography, 1080x1080px",
+    "{category} packaging concept on white. Multiple angles, clean presentation, design mockup, 1080x1080px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

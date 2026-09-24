@@ -1,0 +1,53 @@
+{
+  "id": "ugc-style",
+  "name": "UGC风格/买家秀",
+  "keywords": ["UGC", "买家秀", "用户生成", "真实用户", "user generated", "GRWM", "真实感"],
+  "trigger_phrases": ["UGC图", "买家秀", "用户图", "真实买家", "GRWM", "user-generated", "真实分享"],
+  "prompt_template": {
+    "type": "authentic UGC snapshot",
+    "subject": "{product_description}",
+    "style": "smartphone front camera selfie, casual snapshot, NOT professional photography",
+    "environment": "real lived-in space, slightly messy, NOT styled",
+    "lighting": "indoor lighting with warm yellow cast, uneven",
+    "imperfection": "visible noise/grain, imperfect framing, off-center, slightly tilted",
+    "quality": "raw phone photo with natural imperfections, NOT AI-generated look, NOT studio quality"
+  },
+  "defaults": {
+    "style": "iPhone front camera, candid snapshot",
+    "environment": "real bathroom or bedroom, lived-in details",
+    "lighting": "warm indoor overhead lighting, slight yellow cast",
+    "imperfection": "noise in shadows, not oversharpened, slight highlight overexposure"
+  },
+  "variants": {
+    "mirror-selfie": {
+      "description": "浴室镜自拍",
+      "overrides": { "style": "iPhone front camera mirror selfie", "environment": "bathroom mirror, slight condensation and fog marks", "imperfection": "phone case at edge, finger smudge on mirror" }
+    },
+    "ccd-retro": {
+      "description": "CCD复古胶片感",
+      "overrides": { "style": "vintage 2005 CCD digicam photo, direct flash, cheap camera aesthetic", "lighting": "harsh direct on-camera flash, strong warm yellow-green color shift, blown-out highlights", "imperfection": "heavy film grain, overexposed skin on forehead and nose, flash hotspot, chromatic aberration at edges, red date stamp bottom-right corner" }
+    },
+    "grwm": {
+      "description": "GRWM跟我一起准备",
+      "overrides": { "style": "Get Ready With Me video thumbnail, morning routine", "environment": "vanity mirror, slightly messy counter" }
+    },
+    "unboxing": {
+      "description": "开箱分享",
+      "overrides": { "style": "casual unboxing photo on bed or desk", "environment": "bed with wrinkled sheets or cluttered desk" }
+    }
+  },
+  "category_tips": {
+    "beauty": "product in use on real skin, visible pores, bathroom setting",
+    "food": "phone snap on table, casual restaurant or home",
+    "fashion": "mirror selfie wearing item, bedroom or fitting room",
+    "electronics": "desk setup with product in use, realistic cables",
+    "home": "product in actual living space, not perfectly styled"
+  },
+  "examples": [
+    "Bathroom mirror selfie, iPhone front camera. Person with {product}. Mirror has slight condensation. Warm yellowish indoor lighting. {product} label recognizable but not centered. Skin: visible pores, slight redness, NOT flawless. Warm yellow cast, phone noise, natural unposed, NOT AI-generated look, authentic UGC, 1080x1350px",
+    "Vintage 2005 CCD digicam photo, harsh direct flash. Heavy film grain, blown-out highlights on face, strong yellow-green color cast, chromatic aberration at edges. Person holding {product} with casual peace sign. Genuine candid expression. Dim bedroom with string lights, unmade bed. Off-center, slightly tilted composition. Red date stamp '06.12.25' in bottom-right corner. Low resolution, NOT sharp, NOT AI-generated look, raw snapshot, 1080x1350px",
+    "Authentic GRWM photo. Person in casual setting showing {product}. Natural imperfect lighting, slightly messy background. Phone selfie angle. Genuine expression. Warm tones, candid smartphone photography, NOT AI-generated look, 1080x1620px"
+  ],
+  "anti_ai_tips": "CRITICAL: (1) Specify phone model (iPhone 14 Pro/15), (2) Add imperfection (pores, noise, warm cast, off-center), (3) Candid language (NOT professional), (4) Real environment (slightly messy), (5) Avoid AI words (no perfect, flawless, stunning), (6) State 'NOT AI-generated look', (7) Reference Kodak Portra 400 tone",
+  "supports_image_reference": true
+}
