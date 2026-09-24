@@ -960,12 +960,22 @@ def cmd_login(a) -> int:
                  else qr_out.parent / "douyin.code")
     login_state.read_sms_code(str(code_file))  # 清理陈旧验证码文件
     login_state.write_status(sf, "starting")
+    if a.headed:
+        login_state.write_status(sf, "window_login",
+                               "请在弹出的浏览器窗口里用抖音 App 扫码，不要关掉那个窗口。")
 
     with sync_playwright() as p:
         ctx = _launch(p, headed=a.headed, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            page.goto(HOME_URL, wait_until="domcontentloaded")
+            try:
+                page.goto(HOME_URL, wait_until="domcontentloaded", timeout=45000)
+            except Exception as e:
+                login_state.write_status(
+                    sf, "error",
+                    f"打不开抖音页面（{type(e).__name__}）。常见原因：网络，或与「校验账号」抢同一个登录目录。",
+                )
+                _die(f"打开 {HOME_URL} 失败：{e}", 1)
             page.wait_for_timeout(1000)
             if _logged_in(page):
                 login_state.write_status(sf, "success", "已登录")
@@ -999,12 +1009,23 @@ def cmd_login(a) -> int:
                             pass
                         return 0
                     return 4
-                login_state.write_status(sf, "error", "未找到二维码")
-                _die("未找到登录二维码（登录页可能改版；可加 --headed 观察）", 1)
-            qr_out.parent.mkdir(parents=True, exist_ok=True)
-            _shot_qr(page, qr, qr_out)
-            login_state.write_status(sf, "qr_ready", "扫码登录抖音", qr=str(qr_out))
-            print(f"📱 二维码已保存：{qr_out}（抖音 App 扫码）", file=sys.stderr)
+                if not a.headed:
+                    login_state.write_status(sf, "error", "未找到二维码")
+                    _die("未找到登录二维码（登录页可能改版；可加 --headed 观察）", 1)
+                login_state.write_status(
+                    sf, "window_login",
+                    "请在弹出的浏览器窗口里完成登录，不要关掉那个窗口。")
+            if qr:
+                qr_out.parent.mkdir(parents=True, exist_ok=True)
+                _shot_qr(page, qr, qr_out)
+                if a.headed:
+                    login_state.write_status(
+                        sf, "window_login",
+                        "请在弹出的浏览器窗口里用抖音 App 扫码，不要关掉那个窗口。",
+                        qr=str(qr_out))
+                else:
+                    login_state.write_status(sf, "qr_ready", "扫码登录抖音", qr=str(qr_out))
+                print(f"📱 二维码已保存：{qr_out}（抖音 App 扫码）", file=sys.stderr)
             print(f"⏳ 等待扫码（最长 {timeout_s}s）...", file=sys.stderr)
 
             deadline = time.time() + timeout_s
@@ -1041,7 +1062,13 @@ def cmd_login(a) -> int:
                     q = _find_qr(page)
                     if q:
                         _shot_qr(page, q, qr_out)
-                        login_state.write_status(sf, "qr_ready", "扫码登录抖音（已刷新）", qr=str(qr_out))
+                        if a.headed:
+                            login_state.write_status(
+                                sf, "window_login",
+                                "请在弹出的浏览器窗口里用抖音 App 扫码，不要关掉那个窗口。",
+                                qr=str(qr_out))
+                        else:
+                            login_state.write_status(sf, "qr_ready", "扫码登录抖音（已刷新）", qr=str(qr_out))
                     last_shot = time.time()
                 page.wait_for_timeout(1500)
             login_state.write_status(sf, "expired", "二维码超时未扫")
@@ -1224,7 +1251,8 @@ def _publish(a, kind: str) -> int:
                     _dump_publish_fail(page, "tail-anomaly")   # 点击后现场留档（诊断「发布未跳转」）
                     published = None
             # 读回对账（权威判定）：界面判定只说明「提交动作被接受」，以平台侧作品列表为准。
-            if not a.keep_open and readback is None:
+            # keep_open 也必须就地读回：同一 user-data-dir 不能再开第二个 context。
+            if readback is None:
                 try:
                     readback = platform_readback.verify_douyin_publish(
                         page, title=a.title, since_ms=started_ms,
@@ -1245,8 +1273,10 @@ def _publish(a, kind: str) -> int:
                     ctx.close()
             except Exception:
                 pass
-        # 就地读回没拿到结论（崩溃/超时/通道错）→ 重开干净 context 读回核验
-        if readback is None or readback.outcome == "readback_error":
+        # 就地读回没拿到结论（崩溃/超时/通道错）→ 重开干净 context。
+        # --keep-open 时窗口还占着 profile，禁止再 launch_persistent_context。
+        if (not a.keep_open
+                and (readback is None or readback.outcome == "readback_error")):
             readback = _readback_verify(p, a, a.title, since_ms=started_ms,
                                         snapshot_ids=snapshot_ids)
     # 结算：以读回对账为权威（四档），界面判定仅作旁证。
