@@ -56,5 +56,39 @@ class MpLoginTests(unittest.TestCase):
                 self.assertEqual(module.cmd_login(args), 1)
             self.assertEqual(module.login_state.read_status(args.status_file)['state'], 'error')
 
+    def test_weixin_resolve_content_image_maps_api_media(self):
+        script = ROOT / 'skills/shared/scripts/weixin_mp_stats.py'
+        spec = importlib.util.spec_from_file_location('mp_stats_test', script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as d:
+            tmp_path = Path(d)
+            module.PROJECT_ROOT = tmp_path
+            image = tmp_path / "outputs" / "gallery" / "a.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"png")
+            html = tmp_path / "outputs" / "articles" / "a.html"
+            html.parent.mkdir(parents=True)
+            html.write_text("<p></p>", encoding="utf-8")
+            self.assertEqual(module.resolve_content_image("/api/media/gallery/a.png", html), image.resolve())
+            self.assertEqual(module.resolve_content_image("https://127.0.0.1:7860/api/media/gallery/a.png", html), image.resolve())
+            self.assertIsNone(module.resolve_content_image("https://cdn.example/x.png", html))
+            self.assertIsNone(module.resolve_content_image("/api/media/_login/secret.png", html))
+
+    def test_weixin_profile_lock_rejects_second_holder(self):
+        script = ROOT / 'skills/shared/scripts/weixin_mp_stats.py'
+        spec = importlib.util.spec_from_file_location('mp_stats_test2', script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as d:
+            prof = Path(d) / "WeixinMpProfile"
+            holder = module._lock_profile(prof)
+            try:
+                with self.assertRaises(RuntimeError):
+                    module._lock_profile(prof)
+            finally:
+                module._unlock_profile(holder)
+
 if __name__ == '__main__':
     unittest.main()
+
