@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ChatMessage } from '../lib/store';
 import { renderMarkdown } from '../lib/sanitize';
+import { linkifyOutputs, externalizeMediaLinks } from '../lib/linkifyOutputs';
 import { IconCopy, IconCheck, IconRetry } from './icons';
 
 export interface BubbleActions {
@@ -40,7 +41,8 @@ function ActionBar({ actions }: { actions: BubbleActions }) {
 export default function MessageBubble({ message, isStreaming, thinking, activity, stillWorking, actions }: MessageBubbleProps) {
   const html = useMemo(() => {
     if (message.role === 'user') return '';
-    return renderMarkdown(message.content);
+    // 助手正文里裸露的产物路径先转成前端可用链接（文件直开、图片内联、目录跳内容库）
+    return externalizeMediaLinks(renderMarkdown(linkifyOutputs(message.content)));
   }, [message.content, message.role]);
 
   // ---- 用户消息 ----
