@@ -73,7 +73,13 @@ function Thumb({ f, big }: { f: OutputNode | null; big?: boolean }) {
   return <div className="gcard-ph">{kindIcon(f?.kind, big ? 34 : 30)}</div>;
 }
 
-export default function OutputsPage() {
+interface OutputsPageProps {
+  /** 从对话跳转进来的目录（outputs 相对路径，不含 outputs/ 前缀）；消费后由父层清空 */
+  jumpPath?: string;
+  onJumpHandled?: () => void;
+}
+
+export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProps) {
   const [roots, setRoots] = useState<OutputNode[]>([]);
   const [treeError, setTreeError] = useState('');
   const [stack, setStack] = useState<string[]>([]);   // 当前所在的文件夹名称路径
@@ -88,6 +94,14 @@ export default function OutputsPage() {
     fetchOutputs().then(setRoots).catch(() => setTreeError('加载产物列表失败'));
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // 对话里的目录路径跳转：展开到对应层级（路径失效时 resolvePath 自动停在能到的层）
+  useEffect(() => {
+    if (!jumpPath) return;
+    setStack(jumpPath.split('/').filter(Boolean));
+    setFilter('all');
+    onJumpHandled?.();
+  }, [jumpPath, onJumpHandled]);
 
   const currentNodes = useMemo(() => resolvePath(roots, stack), [roots, stack]);
   const dirs = useMemo(

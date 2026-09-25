@@ -55,6 +55,25 @@ export default function App() {
   const [showWizard, setShowWizard] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // 对话里的「产物路径 → 内容库」跳转：linkifyOutputs 把目录路径生成为
+  // `#/outputs/<路径>` 锚点，这里监听 hashchange 切页并带上下文，随后清掉 hash
+  // （不污染地址栏与前进/后退历史）。
+  const [outputsJump, setOutputsJump] = useState('');
+  useEffect(() => {
+    const onHash = () => {
+      const m = window.location.hash.match(/^#\/outputs\/(.+)$/);
+      if (!m) return;
+      let path = m[1];
+      try { path = decodeURIComponent(path); } catch { /* 保留原样 */ }
+      setOutputsJump(path);
+      setCurrentPage('outputs');
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const clearOutputsJump = useCallback(() => setOutputsJump(''), []);
+
   // 挂载时决定进哪个会话。规则：
   //  - 同一标签刷新（sessionStorage 记着本标签的会话）→ 直接续上（同标签不算冲突）。
   //  - 新开标签/窗口 → 若「上次活跃会话」正被另一个存活标签占用（跨标签 BroadcastChannel 探测），
@@ -713,7 +732,7 @@ export default function App() {
       case 'skills':
         return <SkillPage persona={selectedPersona} />;
       case 'outputs':
-        return <OutputsPage />;
+        return <OutputsPage jumpPath={outputsJump} onJumpHandled={clearOutputsJump} />;
       case 'accounts':
         return <AccountsPage />;
       case 'profile':
