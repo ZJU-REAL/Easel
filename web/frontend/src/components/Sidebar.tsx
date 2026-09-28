@@ -20,7 +20,6 @@ interface SidebarProps {
   onNewProfile: () => void;
   sessions: ChatSession[];
   activeSessionId: string | null;
-  activeSessionHasMessages: boolean;
   onSessionSelect: (id: string) => void;
   onSessionDelete: (id: string) => void;
   onSessionRename: (id: string, title: string) => void;
@@ -49,7 +48,6 @@ export default function Sidebar({
   onNewProfile,
   sessions,
   activeSessionId,
-  activeSessionHasMessages,
   onSessionSelect,
   onSessionDelete,
   onSessionRename,
@@ -125,8 +123,7 @@ export default function Sidebar({
             if (e.target.value === '__new__') { onNewProfile(); return; }
             onPersonaChange(e.target.value);
           }}
-          disabled={activeSessionHasMessages}
-          title={activeSessionHasMessages ? '当前对话已绑定画像，切换画像将新建对话' : '选择用户画像'}
+          title="选择用户画像"
         >
           <option value="">通用模式</option>
           {personas.map((p) => (

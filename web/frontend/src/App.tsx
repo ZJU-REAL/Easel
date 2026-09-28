@@ -70,7 +70,8 @@ export default function App() {
       setSessions(sess);
       setActiveSessionId(id);
       const s = sess.find((x) => x.id === id);
-      if (s) setSelectedPersona(s.persona || '');
+      // 只在会话确实绑了画像时才覆盖：恢复一个老的无画像会话不该把已选画像清掉
+      if (s && s.persona) setSelectedPersona(s.persona);
       try { sessionStorage.setItem(TAB_SESSION_KEY, id); } catch { /* ignore */ }
       ch?.postMessage({ type: 'claim', sessionId: id });
     };
@@ -142,7 +143,13 @@ export default function App() {
   useEffect(() => {
     fetchStatus()
       .then((data) => {
-        setPersonas(data.personas || []);
+        const list = data.personas || [];
+        setPersonas(list);
+        // 自动选中画像：当前未选（或所选画像已不存在）时默认用第一个。
+        // 否则会话恢复会把 selectedPersona 清成 ''，画像页永远显示"还没有选择画像"。
+        setSelectedPersona((prev) =>
+          prev && list.some((p) => p.name === prev) ? prev : list[0]?.name || '',
+        );
         setGatewayStatus(data.gateway ? 'connected' : 'disconnected');
         // 首次使用：没有任何个性化画像 且 未看过引导 → 推荐配置
         if ((data.personas || []).length === 0 && !onboardingSeen()) {
@@ -577,8 +584,8 @@ export default function App() {
   const handleSessionSelect = useCallback((id: string) => {
     setActiveSessionId(id);
     const target = sessions.find(s => s.id === id);
-    if (target) {
-      setSelectedPersona(target.persona || '');
+    if (target && target.persona) {
+      setSelectedPersona(target.persona);
     }
     setCurrentPage('chat');
   }, [sessions]);
@@ -755,7 +762,6 @@ export default function App() {
         onNewProfile={() => setShowWizard(true)}
         sessions={sessions}
         activeSessionId={activeSessionId}
-        activeSessionHasMessages={activeSession ? activeSession.messages.length > 0 : false}
         onSessionSelect={handleSessionSelect}
         onSessionDelete={handleSessionDelete}
         onSessionRename={handleSessionRename}
