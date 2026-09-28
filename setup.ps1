@@ -80,6 +80,13 @@ print(json.dumps(p))
 }
 
 Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta
+$AgentRuntime = $env:EASEL_AGENT_RUNTIME
+if ([string]::IsNullOrWhiteSpace($AgentRuntime)) {
+    $runtimeChoice = Read-Host 'Agent runtime：1 OpenClaw（默认）/ 2 OpenCode [1]'
+    $AgentRuntime = if ($runtimeChoice -eq '2') { 'opencode' } else { 'openclaw' }
+}
+if ($AgentRuntime -notin @('openclaw', 'opencode')) { Fail 'EASEL_AGENT_RUNTIME 仅支持 openclaw 或 opencode' }
+Info "Agent runtime：$AgentRuntime"
 Info '检查系统环境...'
 Ensure-Command 'git' 'Git.Git' '请安装 Git for Windows 并加入 PATH。'
 Ensure-Command 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.16+ 并加入 PATH。'
@@ -88,8 +95,11 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue) -and -not (Get-Comma
 Ensure-Command 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH。'
 # 跟随 openclaw@latest 的引擎要求（当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0，25.x/26.0 被排除）。
 $nodeParts = (& node -p 'process.versions.node').Split('.') | ForEach-Object { [int]$_ }
-$nodeOk = ($nodeParts[0] -eq 24 -and $nodeParts[1] -ge 16) -or ($nodeParts[0] -eq 26 -and $nodeParts[1] -ge 1) -or ($nodeParts[0] -ge 27)
-if (-not $nodeOk) { Fail 'Node.js 24.16+（24.x）或 26.1+ 是必需依赖（openclaw@latest 要求）；winget 的 LTS 若仍是 22.x，请手动安装 Node 24。' }
+$nodeOk = if ($AgentRuntime -eq 'opencode') { ($nodeParts[0] -gt 20) -or ($nodeParts[0] -eq 20 -and $nodeParts[1] -ge 10) } else { ($nodeParts[0] -eq 24 -and $nodeParts[1] -ge 16) -or ($nodeParts[0] -eq 26 -and $nodeParts[1] -ge 1) -or ($nodeParts[0] -ge 27) }
+if (-not $nodeOk) {
+    if ($AgentRuntime -eq 'opencode') { Fail 'OpenCode 需要 Node.js 20.10+。' }
+    Fail 'Node.js 24.16+（24.x）或 26.1+ 是必需依赖（openclaw@latest 要求）；winget 的 LTS 若仍是 22.x，请手动安装 Node 24。'
+}
 $pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
 if ($pythonCommand) { & $pythonCommand --version *> $null; if ($LASTEXITCODE -ne 0) { $pythonCommand = $null } }
 if (-not $pythonCommand -and (Get-Command py -ErrorAction SilentlyContinue)) { $pythonCommand = (Get-Command py).Source; $pythonArgs = @('-3') } else { $pythonArgs = @() }
@@ -100,9 +110,9 @@ if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & $pythonCom
 if (-not (Test-Path $Python)) { Fail 'Python venv 创建失败。' }
 Ok '系统环境检查完成'
 
-Info '安装 OpenClaw...'
-if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) { & npm install -g openclaw@latest --loglevel warn; if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 安装失败。' } }
-Require-Command 'openclaw' '请确认 npm 全局 bin 已加入 PATH。'
+$env:EASEL_AGENT_RUNTIME = $AgentRuntime
+& $Python -m easel runtime-setup
+if ($LASTEXITCODE -ne 0) { Fail 'Agent runtime 初始化失败。' }
 Info '安装 Easel Python 依赖...'
 & $Python -m pip install --upgrade pip --progress-bar on
 if ($LASTEXITCODE -ne 0) { Fail 'pip 升级失败。' }
@@ -121,6 +131,7 @@ Info '安装 Playwright Chromium...'
 & $Python -m playwright install chromium
 if ($LASTEXITCODE -ne 0) { Fail 'Playwright Chromium 安装失败。' }
 
+if ($AgentRuntime -eq 'openclaw') {
 Info '准备 Easel OpenClaw profile...'
 $onboardHelp = (& openclaw onboard --help 2>&1 | Out-String)
 $onboardArgs = @('--profile','easel','onboard','--non-interactive','--mode','local','--accept-risk')
@@ -193,9 +204,15 @@ if (Test-Path $outputs) {
     $outputsItem = Get-Item $outputs -Force
     if ($outputsItem.LinkType -ne 'Junction') { Fail "$outputs 已存在但不是项目 outputs Junction，请移走后重试。" }
 } else { New-Item -ItemType Junction -Path $outputs -Target (Join-Path $Root 'outputs') | Out-Null }
+} else {
+    Info 'OpenCode 使用项目 opencode.json 与现有 skills/openclaw/'
+}
 
 $envPath = Join-Path $Root '.env'
 if (-not (Test-Path $envPath)) { Copy-Item (Join-Path $Root '.env.example') $envPath }
+$envLines = @(Get-Content $envPath | Where-Object { $_ -notmatch '^EASEL_AGENT_RUNTIME=' })
+$envLines += "EASEL_AGENT_RUNTIME=$AgentRuntime"
+Set-Content -Path $envPath -Value $envLines -Encoding UTF8
 $envValues = Read-EnvFile $envPath
 function Is-UsableKey($Value) { return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch 'REPLACE_ME|your[-_ ]?api[-_ ]?key' }
 if (-not (Is-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Is-UsableKey $envValues['OPENAI_API_KEY']) -and -not (Is-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and -not (Is-UsableKey $envValues['EASEL_LLM_API_KEY']) -and -not (Is-UsableKey $envValues['OPENAI_MAAS_API_KEY'])) {
@@ -205,6 +222,7 @@ if (-not (Is-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Is-UsableKey 
 }
 $envValues = Read-EnvFile $envPath
 
+if ($AgentRuntime -eq 'openclaw') {
 # 部分 OpenClaw 版本执行 config unset 后会把字段留成 null 而非真正删除该键，
 # 一旦落盘就再也无法通过 config set/doctor --fix 修复（每次校验都先失败）。
 # 这里在写入任何配置前，先把 models.providers.* 下残留的 null 叶子节点原地清空。
@@ -306,7 +324,7 @@ if ($embeddingKey -and $embeddingUrl -and $embeddingModel) {
     if (($embeddingKeyNames + $embeddingUrlNames + $embeddingModelNames | Where-Object { $envValues.ContainsKey($_) }).Count -gt 0) { Write-Warning '向量 API 配置不完整，已关闭向量检索；需要同时设置向量 API key、Base URL 和模型名' } else { Info '未配置独立向量 API，使用关键词记忆检索' }
 }
 OpenClaw-Config 'agents.defaults.timeoutSeconds' '7200'; OpenClaw-Config 'gateway.mode' 'local'; OpenClaw-Config 'gateway.bind' 'loopback'; OpenClaw-Config 'gateway.auth.mode' 'none'
-# 对话直连常驻网关（web/app.py 的 http 传输层）要用 OpenAI 兼容端点，而 openclaw 默认不挂这条
+# 对话直连常驻网关（http 传输层，见 easel/runtimes/openclaw.py）要用 OpenAI 兼容端点，而 openclaw 默认不挂这条
 # 路由（chatCompletions.enabled 默认 false），不开则 POST /v1/chat/completions 一律 404、只能
 # 退回每轮 spawn 客户端的老路径。端点只绑 loopback + auth.mode=none 的本机网关，不扩暴露面。
 # 走尽力而为版：老版本没这个 key 时只是拿不到提速，不该让整个安装失败。
@@ -322,7 +340,12 @@ if ($anthropicSynced) {
 }
 & openclaw --profile easel config validate
 if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 配置校验失败。' }
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\gateway.ps1') start
+} else {
+    & opencode models *> $null
+    if ($LASTEXITCODE -ne 0) { Write-Warning 'OpenCode 尚未配置模型；请运行 opencode 后使用 /connect' }
+}
+$env:EASEL_AGENT_RUNTIME = $AgentRuntime
+& $Python -m easel gateway start
 if ($LASTEXITCODE -ne 0) { Fail 'Easel Gateway 启动失败。' }
 Ok 'Easel Windows 安装完成'
 Write-Host "启动 Web：$Venv\Scripts\easel.exe web" -ForegroundColor Cyan

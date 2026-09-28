@@ -197,7 +197,12 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ## 🚀 快速开始
 
-环境要求：Linux、macOS 或 Windows 10/11、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
+Easel 支持 **OpenClaw** 与 **OpenCode** 两种 Agent runtime。安装向导会让你选择；已有安装或未设置 `EASEL_AGENT_RUNTIME` 时继续默认使用 OpenClaw。选择结果写入项目 `.env`，CLI、Web、gateway、ping 与 doctor 共用。
+
+- OpenClaw：使用隔离的 `easel` profile，保持原有完整兼容。
+- OpenCode：使用项目 `opencode.json` 直接发现 `skills/openclaw/`，并由 `easel gateway` 管理本地 headless server。供应商与默认模型在 Web 设置面板「对话与脚本」里管理：API Key 存 OpenCode 原生凭证（`opencode auth`），默认模型写入项目 `opencode.json`；也可运行 `opencode` 通过 `/connect` 配置。
+
+环境要求：Linux、macOS 或 Windows 10/11、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会按 runtime 检查 Node.js（OpenClaw 需要 24.16+ 或 26.1+，OpenCode 需要 20.10+）、FFmpeg 与 Playwright/Chromium。
 
 ```bash
 git clone https://github.com/ZJU-REAL/Easel.git
@@ -316,7 +321,7 @@ CLAUDE_MODEL=你的模型名
 | `easel skill <name> -i "..." [-p <画像>]` | 直接运行指定 Skill；输入也可以是文件路径 |
 | `easel doctor` | 检查 Python、Node.js、OpenClaw 和关键配置 |
 | `easel ping` | 检查 gateway 与 Agent 连通性 |
-| `easel gateway start\|stop\|restart\|status\|logs` | 管理 OpenClaw gateway |
+| `easel gateway start\|stop\|restart\|status\|logs` | 管理当前 Agent runtime 服务 |
 
 所有技能都通过 Easel 的 Agent 执行。Agent 会读取对应 `SKILL.md`，调用脚本和工具，并把产物保存到 `outputs/`。
 

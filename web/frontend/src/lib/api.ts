@@ -26,6 +26,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export interface StatusResponse {
   gateway: boolean;
+  runtime: {
+    id: string;
+    label: string;
+    install_hint: string;
+    capabilities: string[];
+  };
   skills: SkillItem[];
   personas: PersonaItem[];
 }
@@ -815,5 +821,46 @@ export function runChannelSelftest(channel: string): Promise<{ channel: string; 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel }),
+  });
+}
+
+// ═══ 设置面板 · OpenCode 供应商与模型（runtime=opencode） ═══
+
+export interface OpencodeProvider {
+  id: string;
+  name: string;
+  source: string;       // env / config / api / custom
+  hasKey: boolean;
+  modelCount: number;
+}
+
+export interface OpencodeModel { id: string; providerID: string; name: string }
+
+export interface OpencodeSettings {
+  serverReady: boolean;
+  primary: string;      // 项目 opencode.json 的 model
+  providers: OpencodeProvider[];
+  models: OpencodeModel[];
+  authMethods: Record<string, string[]>;   // provider -> ['oauth'|'api', ...]
+  message: string;
+}
+
+export interface OpencodeSavePayload {
+  primary?: string;
+  keys?: Record<string, string>;
+  removals?: string[];
+}
+
+export interface OpencodeSaveResponse extends OpencodeSettings { ok: boolean; note?: string }
+
+export function fetchOpencodeSettings(): Promise<OpencodeSettings> {
+  return request('/api/settings/opencode');
+}
+
+export function saveOpencodeSettings(payload: OpencodeSavePayload): Promise<OpencodeSaveResponse> {
+  return request('/api/settings/opencode/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
 }

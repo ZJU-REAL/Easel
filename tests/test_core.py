@@ -32,6 +32,102 @@ import gemini_maas_adapter as gemini_adapter  # noqa: E402
 
 # ---- 媒体模型注册表：脚本与 Web 共用同一真相源 ----
 
+@pytest.mark.parametrize("model_error", [False, True])
+def test_opencode_stream_does_not_require_openclaw(tmp_path, monkeypatch, model_error):
+    from types import SimpleNamespace
+    from easel.runtimes import RuntimeEvent, RunResult
+    from easel.runtimes import openclaw as openclaw_runtime
+
+    class Handle:
+        def events(self):
+            if not model_error:
+                yield RuntimeEvent("text", "opencode reply")
+
+        def poll(self):
+            return 0
+
+        def wait(self):
+            if model_error:
+                return RunResult(1, clean_end=False, stop_reason="runtime_error",
+                                 diagnostics={"error": "subscription required"})
+            return RunResult(0, "opencode reply")
+
+        def close(self):
+            pass
+
+    def forbidden():
+        raise AssertionError("OpenCode must not resolve the OpenClaw CLI")
+
+    monkeypatch.setattr(web, "SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(openclaw_runtime, "openclaw_base_cmd", forbidden)
+    monkeypatch.setattr(web, "get_runtime", lambda: SimpleNamespace(
+        descriptor=SimpleNamespace(id="opencode"), start=lambda request: Handle()))
+
+    async def run():
+        response = await web.api_chat_stream(web.ChatRequest(message="hello", sessionId="merge-check"))
+        events = [event async for event in response.body_iterator]
+        if model_error:
+            assert any(event.get("event") == "error" and "subscription required" in event["data"] for event in events)
+            saved = json.loads(web._turn_file("web:merge-check").read_text())
+            assert not saved["clean_end"]
+            assert "subscription required" in saved["text"]
+        else:
+            assert any(event.get("event") == "token" and "opencode reply" in event["data"] for event in events)
+        assert any(event.get("event") == "done" for event in events)
+        assert "merge-check" not in web._RUNNING_CHAT
+
+    asyncio.run(run())
+
+def test_openclaw_stream_runs_through_adapter(tmp_path, monkeypatch):
+    """OpenClaw 的 SSE 回合由 adapter 驱动（共享 raw 流），web 只做转发与落盘。"""
+    from easel.runtimes import openclaw as openclaw_runtime
+
+    raw = tmp_path / "raw.jsonl"
+    raw.write_text("", encoding="utf-8")   # 偏移在 spawn 前取，事件由「进程」在其后写入
+
+    class Proc:
+        stdout = iter(())
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+    def popen(*_args, **_kwargs):
+        raw.write_text("\n".join(json.dumps(event) for event in [
+            {"event": "assistant_text_stream", "evtType": "text_delta",
+             "runId": "run-x", "delta": "来自 adapter 的回答"},
+            {"event": "assistant_message_end", "runId": "run-x"},
+        ]) + "\n", encoding="utf-8")
+        return Proc()
+
+    monkeypatch.setattr(web, "SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(openclaw_runtime, "SHARED_RAW_STREAM", raw)
+    monkeypatch.setattr(openclaw_runtime, "_heal_session", lambda _sk: None)
+    monkeypatch.setattr(openclaw_runtime, "openclaw_base_cmd", lambda: ["/bin/openclaw"])
+    monkeypatch.setattr(openclaw_runtime.subprocess, "Popen", popen)
+    monkeypatch.setattr(openclaw_runtime, "askuser_cards_enabled", lambda: False)
+    monkeypatch.setattr(web, "get_runtime", lambda: openclaw_runtime.OpenClawAdapter())
+
+    async def run():
+        response = await web.api_chat_stream(web.ChatRequest(message="hello", sessionId="adapter-e2e"))
+        events = [event async for event in response.body_iterator]
+        assert any(event.get("event") == "token" and "来自 adapter 的回答" in event["data"] for event in events)
+        saved = json.loads(web._turn_file("web:adapter-e2e").read_text())
+        assert saved["clean_end"] is True
+        assert "来自 adapter 的回答" in saved["text"]
+        assert "adapter-e2e" not in web._RUNNING_CHAT
+
+    asyncio.run(run())
+
+
 def test_media_provider_registry_reaches_web():
     assert provider_ids("video") == tuple(
         provider["id"] for provider in web.SKILL_API_REQUIREMENTS["ai-video-gen"]["providers"])

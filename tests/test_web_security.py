@@ -30,6 +30,16 @@ ORIGINAL_ENV = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_openclaw_runtime(monkeypatch):
+    """本文件的契约是 openclaw.json 侧的行为（供应商读取/同步/网关放行）。
+
+    运行时选择会读开发机 .env 的 EASEL_AGENT_RUNTIME（可能是 opencode），钉死它，
+    用例才不随本机配置漂移。
+    """
+    monkeypatch.setenv("EASEL_AGENT_RUNTIME", "openclaw")
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """把 .env 与 openclaw.json 同步都换成沙箱，绝不碰用户真配置。"""
@@ -343,17 +353,24 @@ def test_pin_transport_never_pins_cli(_tp):
 
 
 def test_http_mode_drops_raw_text_delta():
-    """HTTP 模式正文以 SSE 为准；raw 流里的 text_delta 必须丢弃，否则每个字进两次队列。"""
+    """HTTP 模式正文以 SSE 为准；raw 流里的 text_delta 必须丢弃，否则每个字进两次队列。
+
+    实现已收拢到 adapter，白盒检查改指 runtimes/openclaw.py 的 raw 事件分流。
+    """
     import inspect
-    src = inspect.getsource(web.api_chat_stream)
+    from easel.runtimes import openclaw
+    src = inspect.getsource(openclaw.OpenClawRunHandle._handle_raw_line)
     seg = src.split('et == "text_delta"')[1][:220]
-    assert "is_http" in seg, "HTTP 模式没有屏蔽 raw 流的正文，前端会看到重复内容"
+    assert "http" in seg, "HTTP 模式没有屏蔽 raw 流的正文，前端会看到重复内容"
 
 
 def test_http_mode_still_tails_raw_stream_for_thinking():
     """openclaw 的 chat/completions 不回传任何 reasoning 增量（实测该实现里 thinking/reasoning
-    出现 0 次），思考只在共享 raw 流里。HTTP 模式不 tail 它，思考面板就永远是空的。"""
+    出现 0 次），思考只在共享 raw 流里。HTTP 模式不 tail 它，思考面板就永远是空的。
+
+    实现已收拢到 adapter：raw 流 tail 在两种传输下都要启动。
+    """
     import inspect
-    src = inspect.getsource(web.api_chat_stream)
-    seg = src.split("stdout_fut = None")[1][:600]
-    assert seg.count("_tail") >= 2, "HTTP 分支没有启动 raw 流 tail，思考流会整个丢失"
+    from easel.runtimes import openclaw
+    src = inspect.getsource(openclaw.OpenClawRunHandle.__init__)
+    assert "_tail_shared_raw" in src, "HTTP 模式没有启动 raw 流 tail，思考流会整个丢失"

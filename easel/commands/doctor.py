@@ -2,27 +2,22 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
 import shutil
 import subprocess
-import urllib.request
-import urllib.error
 from pathlib import Path
 
-from easel.openclaw_cmd import openclaw_base_cmd
+from easel.runtimes import get_runtime
+# OpenClaw 专属检查已收拢进 runtimes/openclaw.py；这三个名字保留为兼容别名 ——
+# easel/openclaw_workspace.py 的版本回退与上游测试仍从 doctor 取用它们。
+from easel.runtimes.openclaw import (
+    openclaw_version as _openclaw_version,
+    skills_synced as _skills_synced,
+)
+from easel.runtimes.openclaw_config import primary_model_routable as _primary_model_routable
 
 # 项目根目录（Easel/）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-# OpenClaw 已验证的稳定下限（= 我们实测跑通过的最老版本）。低于它会命中 anthropic provider 必须
-# 原子写入、models.providers.*.timeoutSeconds 被判 Unrecognized key 等破坏性变更（见 issue #9/#11）。
-#
-# 别拿「记忆检索 memory.search.*」当抬高下限的理由：2026.6.11 **没有** memory.search（实测
-# `config set memory.search.…` 报 Unrecognized key），那是 2026.9.x 才有的 schema，setup.sh:613
-# 已经按「先试新的、失败退回 agents.defaults.memorySearch」探测处理，不需要版本下限兜。
-MIN_OPENCLAW = (2026, 6, 11)
 
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
@@ -38,14 +33,11 @@ def _check(label: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
-def _node_version_ok(strict: bool) -> bool:
-    """检查 Node.js 版本。
+def _node_version_ok(strict: bool, floor: tuple[int, int]) -> bool:
+    """检查 Node.js 版本是否满足 runtime 给出的引擎要求。
 
     strict=True 对齐 openclaw@latest（2026.9.x）的引擎：>=24.16.0 <25 || >=26.1.0（25.x/26.0 被排除）。
-    strict=False 用于已装较旧 OpenClaw（我们支持的下限 2026.6.11）。**下限是 22.19**，不是 20.10：
-    实测 openclaw@2026.6.11 的 package.json engines 就是 `">=22.19.0"`，且其 openclaw.mjs 里还有
-    一道硬运行时检查（MIN_NODE_MAJOR=22 / MIN_NODE_MINOR=19，不满足直接 process.exit(1)）。
-    写 20.10 的后果是：Node 20.10–22.18 上 doctor 报绿，而每一条 openclaw 命令都起不来。
+    strict=False 只做下限比较，floor 由 runtime 决定（旧 OpenClaw 22.19、OpenCode 20.10）。
     """
     try:
         result = subprocess.run(
@@ -61,31 +53,9 @@ def _node_version_ok(strict: bool) -> bool:
         major, minor = int(m.group(1)), int(m.group(2))
         if strict:
             return (major == 24 and minor >= 16) or (major == 26 and minor >= 1) or major >= 27
-        return (major, minor) >= (22, 19)
+        return (major, minor) >= floor
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
-
-
-def _openclaw_version() -> tuple[int, int, int] | None:
-    """解析 `openclaw --version`，返回 (year, month, patch)；无法确定时返回 None。"""
-    try:
-        # 不能裸调 ["openclaw", ...]：Windows 上它是 npm 装的 `.cmd` shim，
-        # CreateProcess 不按 PATHEXT 解析、裸名找不到文件 → FileNotFoundError
-        # → 版本被误判「未知」。统一走 openclaw_cmd 的解析（Windows 上解析为
-        # node + openclaw.mjs，Unix 上为直接可执行路径）。
-        result = subprocess.run(
-            openclaw_base_cmd() + ["--version"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode != 0:
-            return None
-        # e.g. "OpenClaw 2026.9.4 (3a9d69d)"
-        m = re.search(r"(\d+)\.(\d+)\.(\d+)", result.stdout)
-        if not m:
-            return None
-        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return None
 
 
 def _python_version_ok() -> bool:
@@ -114,167 +84,34 @@ def _chromium_available() -> bool:
         return False
 
 
-def _gateway_healthy() -> bool:
-    """Check OpenClaw gateway is running via healthz endpoint."""
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:18789/healthz", timeout=5) as response:
-            return response.status == 200
-    except (OSError, urllib.error.URLError):
-        return False
-
-
-def _skills_synced() -> tuple[bool, str]:
-    """检查 agent 真正读取的那个 workspace 里有没有 skills。
-
-    这里的目标目录**不能**硬编码：OpenClaw 的默认布局在 2026.6.x / 2026.9.x 之间变过
-    （见 easel/openclaw_workspace.py）。以前这里写死了旧布局，而 sync.sh 写的是新布局，
-    于是同步脚本报 "synced"、doctor 报绿，agent 却读不到任何技能（issue #19）。
-    """
-    from easel.openclaw_workspace import workspace_dir
-
-    ws = workspace_dir()
-    skills_dir = ws / "skills"
-    try:
-        ok = skills_dir.is_dir() and any(skills_dir.iterdir())
-    except OSError:
-        ok = False
-    return ok, f"agent 实际读取的 workspace 是 {ws}，其中 skills/ 为空或不存在"
-
-
-def _env_key_valid() -> bool:
-    """Check .env 配置了可用的认证。
-
-    以下任一通道满足即可：
-    - 标准 API key：ANTHROPIC_API_KEY
-    - Anthropic-compatible 服务：EASEL_LLM_API_KEY + EASEL_LLM_BASE_URL
-
-    ping 才是权威连通性测试；这里只做静态配置存在性检查。
-    """
-    env_file = PROJECT_ROOT / ".env"
-    if not env_file.is_file():
-        return False
-
-    # 认证变量 → 是否已填入非占位值
-    auth_vars: dict[str, str] = {}
-    try:
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key, value = key.strip(), value.strip().strip('"').strip("'")
-            if key in (
-                "ANTHROPIC_API_KEY", "EASEL_LLM_API_KEY", "EASEL_LLM_BASE_URL",
-                "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
-                "OPENAI_API_KEY", "OPENAI_BASE_URL",
-                "OPENAI_MAAS_API_KEY", "OPENAI_MAAS_ENDPOINT",
-            ):
-                auth_vars[key] = value
-    except OSError:
-        return False
-
-    def _set(name: str) -> bool:
-        v = auth_vars.get(name, "")
-        return bool(v) and "REPLACE_ME" not in v
-
-    # 标准 key 通道
-    if _set("ANTHROPIC_API_KEY"):
-        return True
-    # Anthropic-compatible 服务：key + base_url 同时配好
-    if _set("EASEL_LLM_API_KEY") and _set("EASEL_LLM_BASE_URL"):
-        return True
-    if _set("ANTHROPIC_AUTH_TOKEN") and _set("ANTHROPIC_BASE_URL"):
-        return True
-    if _set("OPENAI_API_KEY"):
-        return True
-    if _set("OPENAI_MAAS_API_KEY") and _set("OPENAI_MAAS_ENDPOINT"):
-        return True
-    return False
-
-
-def _openclaw_config_path() -> Path:
-    """easel 用独立 profile，不碰用户本机的 OpenClaw 配置（与 gateway_questions 同一约定）。"""
-    state = os.environ.get("EASEL_OPENCLAW_STATE_DIR")
-    return (Path(state) if state else Path.home() / ".openclaw-easel") / "openclaw.json"
-
-
-def _primary_model_routable() -> tuple[bool, str]:
-    """检查 agents.defaults.model.primary 指向的 provider 在 openclaw 里真的配了认证。
-
-    上面的 `.env (API Key)` 只查 .env 静态有没有填值，查不出 setup 有没有真把 provider
-    写进 openclaw.json。两边脱节时（例如认证判定被占位符卡住、provider 一个字没写却照样
-    设了 primary），doctor 会全绿而对话直接报
-    "No route-compatible authentication source is configured for <provider>"。
-    这条就是补上 openclaw 侧的对账。
-
-    返回 (是否可路由, 失败提示)。拿不准的情况一律放行，不制造假告警。
-    """
-    cfg_path = _openclaw_config_path()
-    if not cfg_path.is_file():
-        return False, f"{cfg_path} 不存在 — 先跑 bash setup.sh（Windows: setup.ps1）"
-    try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return False, f"{cfg_path} 读不出来（{exc}）"
-
-    primary = (((cfg.get("agents") or {}).get("defaults") or {})
-               .get("model") or {}).get("primary") or ""
-    if not primary:
-        return False, "未设置 agents.defaults.model.primary — 重新跑 setup 脚本"
-    if "/" not in primary:
-        # 不是 provider/model 形式，解析不出 provider，交给 `easel ping` 去判，不在这里猜。
-        return True, ""
-
-    provider = primary.split("/", 1)[0]
-    providers = (cfg.get("models") or {}).get("providers") or {}
-    entry = providers.get(provider)
-    if not isinstance(entry, dict):
-        return False, (f"primary 是 {primary}，但 models.providers.{provider} 不存在 —— "
-                       "在 .env 填好真实 key 后重新跑 setup 脚本")
-    # apiKey / 本地适配器 / OAuth 任一即可。字段名随 OpenClaw 版本变过，这里从宽认。
-    has_auth = bool(str(entry.get("apiKey") or "").strip()) or bool(entry.get("localService")) \
-        or any(k for k, v in entry.items() if "oauth" in k.lower() and v)
-    if not has_auth:
-        return False, (f"models.providers.{provider} 没有 apiKey —— "
-                       "在 .env 填好真实 key 后重新跑 setup 脚本")
-    return True, ""
-
-
 def cmd_doctor(_args) -> int:
     print("Easel — 环境检查\n")
     all_ok = True
+    try:
+        runtime = get_runtime()
+    except ValueError as exc:
+        _check("Agent runtime config", False, str(exc))
+        return 1
 
     # 1. Runtime prerequisites
     all_ok &= _check("Python >= 3.10", _python_version_ok(),
                       "请安装 Python 3.10 或更高版本")
     all_ok &= _check("Python venv module", _venv_available(),
                       "Debian/Ubuntu 请安装 python3-venv")
-    # openclaw 版本决定 Node 引擎要求：2026.9.x 需要 Node 24.16+，2026.6.x 需要 22.19+（实测其
-    # engines，见 _node_version_ok 的说明）。未装 openclaw 时按 setup 的默认安装目标
-    # （openclaw@latest）从严要求 24.16+。
-    oc_ver = _openclaw_version()
-    node_strict = oc_ver is None or oc_ver >= (2026, 9, 0)
-    node_floor = "24.16" if node_strict else "22.19"
+    # Node 引擎要求由 runtime 给出：OpenClaw 2026.9.x → 24.16 / 2026.6.x → 22.19；OpenCode → 20.10。
+    # （见 runtimes/openclaw.py 的 node_requirement 说明）
+    node_strict, node_floor = runtime.node_requirement()
     has_node = shutil.which("node") is not None
-    node_ok = _node_version_ok(node_strict)
+    node_ok = _node_version_ok(node_strict, tuple(map(int, node_floor.split("."))))
     node_detail = (f"请安装 Node.js >= {node_floor}: https://nodejs.org/" if not has_node
-                   else f"Node.js 版本不满足当前 OpenClaw 要求，请升级到 >= {node_floor}: https://nodejs.org/")
+                   else f"Node.js 版本不满足当前 {runtime.descriptor.label} 要求，请升级到 >= {node_floor}: https://nodejs.org/")
     all_ok &= _check(f"Node.js >= {node_floor}", node_ok, node_detail)
     all_ok &= _check("FFmpeg", shutil.which("ffmpeg") is not None,
                       "媒体处理需要 FFmpeg；请安装后重试")
 
-    # 2. openclaw command + 版本
-    has_openclaw = shutil.which("openclaw") is not None
-    all_ok &= _check("openclaw command", has_openclaw,
-                      "请安装 openclaw: npm i -g openclaw")
-    if has_openclaw:
-        min_str = ".".join(map(str, MIN_OPENCLAW))
-        ver_str = ".".join(map(str, oc_ver)) if oc_ver else "未知"
-        oc_ver_ok = oc_ver is not None and oc_ver >= MIN_OPENCLAW
-        all_ok &= _check(
-            f"OpenClaw >= {min_str}", oc_ver_ok,
-            f"当前 {ver_str}，过旧会有 provider/schema 兼容问题；请升级：npm i -g openclaw@latest",
-        )
+    # 2. selected Agent CLI
+    for diagnostic in runtime.diagnose():
+        all_ok &= _check(diagnostic.label, diagnostic.ok, diagnostic.detail)
 
     for module in ("fastapi", "uvicorn", "sse_starlette", "multipart"):
         all_ok &= _check(f"Python package: {module}", _module_available(module),
@@ -286,32 +123,9 @@ def cmd_doctor(_args) -> int:
     all_ok &= _check("Playwright Chromium", _chromium_available(),
                       "运行 python3 -m playwright install chromium")
 
-    # 3. .env file with valid key
-    env_ok = _env_key_valid()
-    all_ok &= _check(".env (API Key)", env_ok,
-                      "填 ANTHROPIC_API_KEY，或 EASEL_LLM_API_KEY + EASEL_LLM_BASE_URL")
-
-    # .env 填了 ≠ setup 真的把 provider 写进了 openclaw；不对账就会「doctor 全绿但对话报错」。
-    route_ok, route_detail = _primary_model_routable()
-    all_ok &= _check("OpenClaw model routing", route_ok, route_detail)
-
-    # 4. OpenClaw gateway running
-    gw_ok = _gateway_healthy()
-    all_ok &= _check("OpenClaw gateway (localhost:18789)", gw_ok,
-                      "运行 python -m easel gateway start")
-
-    # 5. Skills synced
-    synced, synced_detail = _skills_synced()
-    all_ok &= _check("Skills synced", synced,
-                      f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash openclaw/sync.sh（Linux/macOS）")
-
-    # 6. Key project files
-    gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"
-    gateway_path = PROJECT_ROOT / "scripts" / ("gateway.ps1" if os.name == "nt" else "gateway.sh")
+    # 3. Key Easel-owned files
     key_files = [
-        ("openclaw/openclaw.json5", PROJECT_ROOT / "openclaw" / "openclaw.json5"),
         ("skills/openclaw/", PROJECT_ROOT / "skills" / "openclaw"),
-        (gateway_label, gateway_path),
     ]
     for label, path in key_files:
         all_ok &= _check(label, path.exists())
