@@ -19,6 +19,7 @@ def up(monkeypatch, tmp_path):
     monkeypatch.setenv("UPLOAD_POST_API_KEY", "test-key-not-real")
     monkeypatch.setenv("UPLOAD_POST_USER", "creator")
     monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    mod.real_http_post = mod.http_post
     monkeypatch.setattr(mod, "http_get", _fail("unexpected GET"))
     monkeypatch.setattr(mod, "http_post", _fail("unexpected POST"))
     recorded: list[tuple] = []
@@ -155,3 +156,93 @@ def test_status_queries_job_id_first_for_job_shaped_ids(up, monkeypatch):
 
 def test_selftest(up, monkeypatch):
     assert run(up, monkeypatch, "selftest") == 0
+
+
+# ── 不确定的提交结果：绝不当成确定失败，也绝不重发 ───────────────────────────
+def _httpx_post(monkeypatch, up, response_or_exc):
+    """只替换 httpx.post，走真实的 http_post / 响应解析。"""
+    import httpx
+    sent = []
+
+    def fake(url, **kw):
+        sent.append(kw["headers"]["Idempotency-Key"])
+        if isinstance(response_or_exc, Exception):
+            raise response_or_exc
+        return response_or_exc
+    monkeypatch.setattr(httpx, "post", fake)
+    monkeypatch.setattr(up, "http_post", up.real_http_post)
+    return sent
+
+
+def test_503_on_submit_then_server_has_it_is_success_without_resend(up, monkeypatch, video):
+    import httpx
+    sent = _httpx_post(monkeypatch, up, httpx.Response(503, text="Service Unavailable"))
+    gets = []
+    monkeypatch.setattr(up, "http_get", lambda path, key, params=None:
+                        gets.append(params) or completed("tiktok"))
+    rc = run(up, monkeypatch, "publish", "--platforms", "tiktok", "--media", str(video),
+             "--title", "Hi", "--exec")
+    assert rc == 0 and len(sent) == 1
+    assert gets and all(g == {"request_id": sent[0]} for g in gets)
+    assert [k.get("status", "published") for _a, k in up.recorded] == ["published"]
+
+
+@pytest.mark.parametrize("failure", ["503", "timeout"])
+def test_ambiguous_submit_and_not_found_is_unknown_not_failure(up, monkeypatch, video, capsys,
+                                                               failure):
+    import httpx
+    err = (httpx.Response(503) if failure == "503"
+           else httpx.ReadTimeout("timed out"))
+    sent = _httpx_post(monkeypatch, up, err)
+    monkeypatch.setattr(up, "http_get", lambda *a, **k: {"status": "not_found"})
+    rc = run(up, monkeypatch, "publish", "--platforms", "tiktok,youtube", "--media", str(video),
+             "--title", "Hi", "--exec")
+    out = capsys.readouterr().out
+    assert rc == up.EXIT_UNKNOWN and len(sent) == 1
+    assert f"status --id {sent[0]}" in out and "不要重跑 --exec" in out
+    statuses = [(a[0], k["status"]) for a, k in up.recorded]
+    assert statuses == [("TikTok", "unknown"), ("YouTube", "unknown")]
+    assert all(sent[0] in k["note"] for _a, k in up.recorded)
+
+
+def test_empty_2xx_body_is_treated_as_accepted_after_checking(up, monkeypatch, video):
+    import httpx
+    sent = _httpx_post(monkeypatch, up, httpx.Response(200, content=b""))
+    monkeypatch.setattr(up, "http_get", lambda *a, **k: completed("x"))
+    rc = run(up, monkeypatch, "publish", "--platforms", "x", "--media", str(video),
+             "--title", "Hi", "--exec")
+    assert rc == 0 and len(sent) == 1
+
+
+@pytest.mark.parametrize("code", [400, 401, 403, 422])
+def test_explicit_4xx_rejection_is_definitive_and_not_polled(up, monkeypatch, video, code):
+    import httpx
+    _httpx_post(monkeypatch, up, httpx.Response(code, json={"message": "rejected"}))
+    rc = run(up, monkeypatch, "publish", "--platforms", "x", "--media", str(video),
+             "--title", "Hi", "--exec")  # http_get 仍是 _fail：若去轮询会直接报错
+    assert rc == 3 and up.recorded == []
+
+
+def test_status_poll_errors_end_as_unknown(up, monkeypatch, video):
+    monkeypatch.setattr(up, "http_post", lambda *a, **k: {"request_id": "r"})
+    monkeypatch.setattr(up, "http_get", _fail("connection reset"))
+    rc = run(up, monkeypatch, "publish", "--platforms", "x", "--media", str(video),
+             "--title", "Hi", "--exec")
+    assert rc == up.EXIT_UNKNOWN
+    assert [k["status"] for _a, k in up.recorded] == ["unknown"]
+
+
+def test_calendar_unknown_is_recorded_but_not_forwarded_to_publish_log(monkeypatch, tmp_path):
+    shared = Path(__file__).resolve().parents[3] / "shared" / "scripts"
+    sys.path.insert(0, str(shared))
+    import calendar_ops
+    monkeypatch.delenv("EASEL_CALENDAR_AUTORECORD", raising=False)
+    forwarded = []
+    monkeypatch.setattr(calendar_ops, "_forward_publish_log", lambda *a: forwarded.append(a))
+    data = tmp_path / "_schedule.json"
+    assert calendar_ops.record_publish("TikTok", "t", note="request_id=abc", data_path=data,
+                                       status="unknown")
+    assert calendar_ops.record_publish("TikTok", "t", data_path=data)
+    items = calendar_ops.load(data)
+    assert [i["status"] for i in items] == ["unknown", "published"]
+    assert len(forwarded) == 1  # 只有 published 进 publish-log

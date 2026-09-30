@@ -64,9 +64,13 @@ python skills/openclaw/skill-upload-post-publisher/scripts/upload_post_publish.p
 - 上传异步：提交后按 `request_id` 轮询，逐平台输出 ✅ 链接 / ❌ 平台原因 / ⏭️ 跳过（profile 未连该平台）。
 - 私密发布没有公开链接：YouTube 仍给出本人可见的链接，其他平台给 post id。
 - TikTok 若显示"已进收件箱草稿"，需在 TikTok App 内手动点发布。
-- `request_id` 同时作为 `Idempotency-Key`；网络中断时脚本**不会重发**，而是查询同一 request_id。
-  **等待超时或网络报错后不要重跑 publish**（会生成新的 request_id，可能重复发布），用 `status` 查。
-- `--exec` 成功的平台自动写入内容日历（`_schedule.json`）并转发 skill-publish-log，无需手动补记。
+- `request_id` 同时作为 `Idempotency-Key`。只有 400/401/403/422（服务端明确拒收，内容没发出）
+  算确定失败（退出码 3，可修正后重试）。5xx、超时 / 连接中断、2xx 但响应无效都**不算失败**：脚本
+  不重发，只查同一 request_id——查到就继续跟踪，查不到就判为 **unknown（待确认）**，退出码 4。
+- **出现 unknown（或等待超时）后绝不再跑 `--exec`**（新 request_id 会重复发布），只用
+  `status --id <request_id>` 核对；脚本会把这条命令打印出来。
+- `--exec` 成功的平台自动写入内容日历（`_schedule.json`）并转发 skill-publish-log；unknown 的平台
+  只在日历记 `unknown`（备注带 request_id），不进 publish-log，核对后再补记。
 
 ## Profile 感知
 
@@ -88,8 +92,11 @@ Publishes video, images or text to TikTok, Instagram, YouTube, LinkedIn, X, Face
 Pinterest and Bluesky in one call through the Upload-Post API — no browser, no cookies. Set
 `UPLOAD_POST_API_KEY` and `UPLOAD_POST_USER` (the Upload-Post profile with your accounts connected)
 in `.env`. `publish` is a dry-run by default and only posts with `--exec`; uploads are async and
-polled per platform; the client-side `request_id` is also the `Idempotency-Key`, so a dropped
-connection is never re-sent. YouTube defaults to `private`. Free plan: 10 uploads/month on every
+polled per platform; the client-side `request_id` is also the `Idempotency-Key`. Only an explicit
+400/401/403/422 is a definitive failure. A 5xx, a timeout or an invalid 2xx is never re-sent: the
+script checks the same `request_id` and, if it can't confirm, reports **unknown** (exit 4) and
+records it in the calendar with the `request_id`. After an unknown, never re-run `--exec`, only
+`status --id <request_id>`. YouTube defaults to `private`. Free plan: 10 uploads/month on every
 platform except TikTok, which needs a paid plan.
 
 ## 参考来源

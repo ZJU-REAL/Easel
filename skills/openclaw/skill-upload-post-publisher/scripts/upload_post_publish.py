@@ -13,8 +13,10 @@ Threads、Pinterest、Bluesky。纯 API：不开浏览器、不用 cookie，无�
 
 发布判定：上传是异步的——提交后按 request_id 轮询状态接口，逐平台给结论
 （completed 带链接 / failed 带平台原因 / skipped = 该 profile 没连这个平台）。
-客户端自己生成 request_id 并作为 Idempotency-Key 发送：网络中断时**不重发文件**，
-改为轮询同一个 request_id 确认是否已到达，避免重复发布。
+客户端自己生成 request_id 并作为 Idempotency-Key 发送。只有 400/401/403/422（服务端明确
+拒收）算确定失败；5xx、超时 / 连接中断、2xx 但响应体无效都是「不确定」——**绝不重发**，
+改查同一个 request_id：查到就继续，查不到就记为 unknown（待确认，不是失败），
+提示用 `status --id <request_id>` 核对。unknown 之后不要重跑 `--exec`。
 
 子命令：
     platforms  列出支持平台与内容类型
@@ -72,6 +74,11 @@ YOUTUBE_PRIVACY = ("private", "unlisted", "public")
 TIKTOK_PRIVACY = ("PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR",
                   "SELF_ONLY")
 FINAL_STATUSES = {"completed", "failed", "not_found"}
+# 只有这些是「服务端明确拒收、内容没进去」；其余（5xx / 超时 / 无效 2xx）都可能已被接收
+DEFINITIVE_REJECT = {400, 401, 403, 422}
+PLATFORM_FINAL = {"completed", "failed", "skipped"}
+EXIT_UNKNOWN = 4
+ARRIVAL_CHECKS = 4          # 不确定时查几次 request_id（4×10s 覆盖服务端对 not_found 的 30s 缓存）
 
 POLL_INTERVAL = 10          # 状态接口有缓存，10s 一次足够
 DEFAULT_WAIT = 600          # 默认最多等 10 分钟；超时不取消，服务端继续
@@ -120,6 +127,8 @@ def _json_or_raise(resp) -> dict:
         body = resp.json()
     except ValueError:
         body = {"message": resp.text[:300]}
+        if resp.status_code < 400:
+            body["_invalid_body"] = True  # 2xx 但不是 JSON / 空响应：不能据此判断是否已接收
     if resp.status_code >= 400:
         msg = body.get("message") or body.get("error") or body if isinstance(body, dict) else body
         raise ApiError(f"HTTP {resp.status_code}: {msg}", resp.status_code)
@@ -271,11 +280,34 @@ def summarize(status: dict) -> list[dict]:
     return out
 
 
+def confirm_arrival(key: str, request_id: str) -> dict | None:
+    """提交结果不确定时：查同一 request_id 是否已被服务端接收。查到返回状态，查不到返回 None。"""
+    for i in range(ARRIVAL_CHECKS):
+        try:
+            st = http_get("/api/uploadposts/status", key, {"request_id": request_id})
+            if st.get("status") != "not_found":
+                return st
+        except Exception as e:  # noqa: BLE001 — 查询本身失败同样算「未确认」
+            print(f"  状态查询失败（{e}）", file=sys.stderr)
+        if i < ARRIVAL_CHECKS - 1:
+            time.sleep(POLL_INTERVAL)
+    return None
+
+
 def wait_for(key: str, request_id: str, wait: int) -> dict:
     deadline = time.monotonic() + wait
     last = None
+    errors = 0
     while True:
-        st = http_get("/api/uploadposts/status", key, {"request_id": request_id})
+        try:
+            st = http_get("/api/uploadposts/status", key, {"request_id": request_id})
+            errors = 0
+        except Exception as e:  # noqa: BLE001 — 轮询失败不等于发布失败
+            errors += 1
+            if errors >= 3 or time.monotonic() >= deadline:
+                return {"status": "unknown", "error": str(e)}
+            time.sleep(POLL_INTERVAL)
+            continue
         cur = (st.get("status"), st.get("completed"), st.get("total"))
         if cur != last:
             print(f"  状态：{cur[0]}（{cur[1] or 0}/{cur[2] or '?'} 个平台完成）", file=sys.stderr)
@@ -288,18 +320,31 @@ def wait_for(key: str, request_id: str, wait: int) -> dict:
         time.sleep(POLL_INTERVAL)
 
 
-def record(results: list[dict], a, kind: str) -> None:
-    """发布成功的平台落内容日历 + skill-publish-log（record_publish 内部转发）。"""
+def record(results: list[dict], a, kind: str, request_id: str) -> list[str]:
+    """成功的平台落内容日历 + skill-publish-log；结果未定的平台记 unknown（只进日历，
+    不进 publish-log，备注带 request_id），避免看起来像失败而被重发。返回 unknown 平台列表。"""
+    final = {r["platform"] for r in results if r["status"] in PLATFORM_FINAL}
+    unknown = [p for p in a.platform_list if p not in final]
     try:
         import calendar_ops
     except Exception:
-        return
+        return unknown
     ptype = {"video": "视频", "image": "图文", "text": "文字"}[kind]
+    name = lambda p: PLATFORMS.get(p, {}).get("name", p)  # noqa: E731
     for r in results:
         if r["status"] == "completed":
-            calendar_ops.record_publish(PLATFORMS.get(r["platform"], {}).get("name", r["platform"]),
-                                        a.title, url=r["url"], ptype=ptype,
+            calendar_ops.record_publish(name(r["platform"]), a.title, url=r["url"], ptype=ptype,
                                         tags=a.tags or "", note=a.desc or "", source="chat")
+    for p in unknown:
+        calendar_ops.record_publish(name(p), a.title, ptype=ptype, tags=a.tags or "",
+                                    note=f"结果待确认，request_id={request_id}；用 status --id 核对，"
+                                         f"勿重新发布", source="chat", status="unknown")
+    return unknown
+
+
+def report_unknown(request_id: str, unknown: list[str]) -> None:
+    print(f"  ❓ 结果待确认（不是失败）：{', '.join(unknown)}。内容可能已发出，**不要重跑 --exec**。")
+    print(f"     核对：python {Path(__file__).as_posix()} status --id {request_id}")
 
 
 def report(status: dict, results: list[dict]) -> int:
@@ -320,6 +365,9 @@ def report(status: dict, results: list[dict]) -> int:
     if status.get("timed_out"):
         print("  ⏳ 等待超时，服务端仍在处理（不要重发）。稍后用 status 子命令查询。")
         return 0 if not failed else 1
+    if status.get("status") == "unknown":
+        print(f"  ❓ 无法查询状态：{status.get('error')}")
+        return EXIT_UNKNOWN
     if status.get("status") == "not_found":
         return 1
     return 0 if done and not failed else 1
@@ -398,6 +446,8 @@ def cmd_publish(a) -> int:
 
     print(f"→ 发布到 {', '.join(a.platform_list)}（profile：{a.user}）...", file=sys.stderr)
     field = {"video": "video", "image": "photos[]", "text": None}[kind]
+    ambiguous = ""
+    resp: dict = {}
     try:
         with ExitStack() as stack:
             files = [(field, (Path(m).name, stack.enter_context(open(Path(m).expanduser(), "rb")),
@@ -405,24 +455,43 @@ def cmd_publish(a) -> int:
                      for m in (a.media or [])] if field else []
             resp = http_post(ENDPOINTS[kind], key, form, files,
                              {"Idempotency-Key": request_id})
+        if resp.get("_invalid_body"):
+            ambiguous = "响应体无效"
     except ApiError as e:
-        _die(str(e), 3)
-    except Exception as e:  # noqa: BLE001 — 网络中断：文件可能已到达，绝不重发
-        print(f"⚠️ 上传时网络异常（{e}），改为查询同一 request_id 是否已到达...", file=sys.stderr)
-        resp = {"request_id": request_id}
+        if e.status in DEFINITIVE_REJECT:
+            _die(f"服务端拒收（内容未发出，可修正后重试）：{e}", 3)
+        ambiguous = str(e)
+    except Exception as e:  # noqa: BLE001 — 超时 / 连接中断：文件可能已到达
+        ambiguous = f"{type(e).__name__}: {e}"
+
+    status = None
+    if ambiguous:
+        # 结果不确定：绝不重发，只查同一个 request_id
+        print(f"⚠️ 提交结果不确定（{ambiguous}），查询 request_id 是否已被接收...", file=sys.stderr)
+        status = confirm_arrival(key, request_id)
+        if status is None:
+            unknown = record([], a, kind, request_id)
+            report_unknown(request_id, unknown)
+            return EXIT_UNKNOWN
+        print("  服务端已接收，继续跟踪。", file=sys.stderr)
 
     if a.schedule:
+        job = resp.get("job_id") or (status or {}).get("job_id")
         print(f"✅ 已排期 {a.schedule}{' ' + a.timezone if a.timezone else ''}"
-              f"（job_id {resp.get('job_id')}）。查询：status --id {request_id}")
+              f"（job_id {job}）。查询：status --id {request_id}")
         return 0
     if a.no_wait:
         print(f"✅ 已提交。查询：status --id {request_id}")
         return 0
 
-    status = wait_for(key, request_id, a.wait_timeout)
+    if status is None or status.get("status") not in FINAL_STATUSES:
+        status = wait_for(key, request_id, a.wait_timeout)
     results = summarize(status)
     rc = report(status, results)
-    record(results, a, kind)
+    unknown = record(results, a, kind, request_id)
+    if unknown:
+        report_unknown(request_id, unknown)
+        rc = EXIT_UNKNOWN  # 有平台结果未定：优先提示「别重发」，失败的平台上面已逐条列出
     print(f"request_id: {request_id}")
     return rc
 

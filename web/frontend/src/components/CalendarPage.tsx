@@ -8,6 +8,7 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   draft: { label: '草稿', color: 'var(--layer-plan)' },
   scheduled: { label: '待发', color: 'var(--layer-attribute)' },
   published: { label: '已发', color: 'var(--layer-publish)' },
+  unknown: { label: '待确认', color: 'var(--text-tertiary)' },
 };
 const EVENT_COLOR = 'var(--layer-discover)';
 const EVENT_TYPES = ['节日', '电商', '平台活动', '行业'];
