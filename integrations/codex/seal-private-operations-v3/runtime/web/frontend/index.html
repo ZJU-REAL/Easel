@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // 子路径代理下必须带结尾斜杠，否则相对资源路径(./assets)会解析到上一级 → 404 白屏。
+      // 若当前路径无结尾斜杠且末段不像文件名(无扩展名)，自动补斜杠后重载。
+      (function () {
+        var p = location.pathname;
+        var last = p.split('/').pop();
+        if (p && !p.endsWith('/') && !/\.[a-z0-9]+$/i.test(last)) {
+          location.replace(p + '/' + location.search + location.hash);
+        }
+      })();
+    </script>
+    <link rel="icon" type="image/svg+xml" href="./static/seal-logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Seal-您的私人运营顾问</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

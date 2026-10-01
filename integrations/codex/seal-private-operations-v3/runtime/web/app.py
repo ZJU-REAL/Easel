@@ -1,0 +1,2385 @@
+"""Easel Web — FastAPI 后端（含 SSE 流式输出）."""
+from __future__ import annotations
+
+import asyncio
+import os
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+import hashlib
+import json
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+import uuid
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
+
+from easel.paths import BUNDLED_SKILLS_DIR, OUTPUTS_DIR, PROFILES_DIR, RUNTIME_ROOT
+
+PROJECT_ROOT = RUNTIME_ROOT
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from easel.persona import load_profile_text, persona_prefix, chat_turn_message, profile_exists, _FILE_ORDER
+from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
+from easel.codex_adapter import run_codex, build_skill_prompt, forget_session
+def _xhs_proxy_args() -> list[str]:
+    """Domestic direct by default; allow explicit proxy mode for XHS."""
+    mode = os.environ.get('EASEL_XHS_PROXY_MODE', 'direct').strip().lower()
+    return [] if mode in {'auto', 'proxy'} else ['--no-proxy']
+
+
+def _xhs_browser_args() -> list[str]:
+    # 本地桌面实测：有头登录正常出码，headless explore 被平台拦截。
+    return [] if os.environ.get('EASEL_XHS_HEADED', '1') == '0' else ['--headed']
+
+# Product capabilities live inside this one V3 Skill. CAPABILITY.md keeps them
+# out of Codex's recursive SKILL.md discovery.
+SKILLS_DIR = BUNDLED_SKILLS_DIR
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+REACT_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
+
+
+# 制作层/直接执行层/chat 超时统一走 easel/timeouts.py（CLI/Web/skill 三入口单一真相源）
+
+SHARED_SCRIPTS = PROJECT_ROOT / "skills" / "shared" / "scripts"
+if str(SHARED_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SHARED_SCRIPTS))
+
+from model_registry import model_group
+from seal_core.tasks import TaskStore, TaskError
+
+# V3 keeps browser profiles inside its own runtime directory.
+BROWSER_PROFILES = Path(os.environ.get("EASEL_BROWSER_PROFILES", str(PROJECT_ROOT / "browser-profiles")))
+LOGIN_DIR = OUTPUTS_DIR / "_login"
+PUBLISH_DIR = OUTPUTS_DIR / "_publish"   # 异步发布的状态/验证码文件（抖音发布可能触发短信墙）
+PROFILE_BUILD_DIR = OUTPUTS_DIR / "_profile_build"   # 异步画像构建的状态文件（避免长请求被代理超时）
+DEBUG_DIR = OUTPUTS_DIR / "_debug"   # 诊断日志（对话流收尾情况等），_ 前缀不进内容库
+SESSIONS_DIR = OUTPUTS_DIR / "_sessions"   # 每会话最近一轮的完整结果，供 SSE 连接中断后前端取回
+# 非 _ 前缀的历史系统目录（归因层数据），内容库不展示（真产物一律在项目目录内）
+SYSTEM_TOPLEVEL_DIRS = {"analytics"}
+LOGIN_TIMEOUT = 240
+LOGIN_PROCESSES: dict[str, subprocess.Popen] = {}
+_ACCOUNT_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _account_lock(platform: str) -> asyncio.Lock:
+    return _ACCOUNT_LOCKS.setdefault(platform, asyncio.Lock())
+
+# whoami 真校验（起 headless 浏览器，数秒）的进程内缓存：避免账号页 + 工作台重复起浏览器。
+WHOAMI_TTL = 600  # 秒
+_WHOAMI_CACHE: dict[str, tuple[float, dict]] = {}
+_WHOAMI_LOCK = threading.Lock()
+
+LOGIN_RUNNERS: dict[str, dict] = {
+    "xiaohongshu": {"name": "小红书", "backend": "xhs", "profile": "XiaohongshuProfile"},
+    "kuaishou": {"name": "快手", "backend": "web", "wp": "kuaishou", "profile": "KuaishouProfile"},
+    "weixin-channels": {"name": "微信视频号", "backend": "web", "wp": "weixin-channels", "profile": "ChannelsProfile"},
+    "zhihu": {"name": "知乎", "backend": "web", "wp": "zhihu", "profile": "ZhihuProfile"},
+    "bilibili": {"name": "B站", "backend": "biliup"},
+    "douyin": {"name": "抖音", "backend": "douyin", "profile": "DouyinProfile"},
+}
+
+
+def _k(env, label, required=True, secret=True, aliases=None):
+    return {"env": env, "label": label, "required": required, "secret": secret, "aliases": aliases or []}
+
+
+def _model_spec(group: str, label: str | None = None) -> dict:
+    spec = model_group(group)
+    return {
+        "label": label or spec["label"],
+        "settings": spec.get("settings", []),
+        "providers": spec["providers"],
+    }
+
+
+def _short_drama_spec() -> dict:
+    """Image is required; video and cloud voice settings remain optional enhancements."""
+    image = model_group("image")
+    optional = []
+    for group_name in ("video", "voice"):
+        group = model_group(group_name)
+        optional.extend({**key, "required": False} for key in group.get("settings", []))
+        for provider in group["providers"]:
+            optional.extend({**key, "required": False} for key in provider["keys"])
+    seen = set()
+    optional = [key for key in optional if not (key["env"] in seen or seen.add(key["env"]))]
+    return {
+        "label": "AI 短剧（生图必需 + 生视频/云配音可选）",
+        "settings": [],
+        "providers": [{
+            "id": "drama",
+            "name": "关键帧生图（必需）+ 视频生成与闭源配音（可选）",
+            "keys": [*image["providers"][0]["keys"], *optional],
+        }],
+    }
+
+SKILL_API_REQUIREMENTS: dict[str, dict] = {
+    "seal-xhs-public-research": {
+        "label": "小红书公开数据研究（RedFox）",
+        "providers": [{"id": "redfox", "name": "RedFox 公开数据接口", "keys": [
+            _k("REDFOX_API_KEY", "RedFox API Key", required=True, secret=True),
+        ]}],
+    },
+    "ai-image-gen": _model_spec("image"),
+    "ecom-details-image": _model_spec("image", "电商配图（AI 生图）"),
+    "ai-video-gen": _model_spec("video"),
+    "ai-music": _model_spec("music"),
+    "voice-clone": _model_spec("voice", "声音克隆 / 云端 TTS"),
+    # AI 短剧：编排 ai-image-gen(关键帧,必需) + ai-video-gen(生视频,可选,缺则退化图片短剧)。
+    # 以生图为「已配置」基线（缺生图无法出关键帧）；生视频 key 同框可选填，也可在 ai-video-gen 卡片配。
+    "short-drama": _short_drama_spec(),
+    # 论文解读：MinerU 与生图均为可选（缺 MinerU 用 pdfplumber 兜底、缺生图用信息图/图表）。
+    # 全 key 可选 → 不误报感叹号；但仍进注册表以便就地填 MINERU_API_TOKEN（无其它叶子 skill 承载它）。
+    "paper-explainer": {
+        "label": "论文解读（MinerU / 生图 均可选）",
+        "providers": [
+            {
+                "id": "paper",
+                "name": "MinerU 解析(可选, 缺则 pdfplumber) + 封面/概念生图(可选)",
+                "keys": [
+                    _k("MINERU_API_TOKEN", "MinerU API Token（可选，缺则用 pdfplumber 兜底）",
+                       required=False),
+                    _k("IMG_API_KEY", "生图 API Key（可选，用于封面/概念图）", required=False,
+                       aliases=["OPENAI_API_KEY", "API_KEY"]),
+                    _k("IMG_BASE_URL", "生图 API 根地址（可选）", required=False, secret=False,
+                       aliases=["OPENAI_BASE_URL", "OPENAI_API_BASE", "BASE_URL"]),
+                ],
+            },
+        ],
+    },
+}
+
+_ENV_ALLOWLIST: set[str] = set()
+for _spec in SKILL_API_REQUIREMENTS.values():
+    for _key in _spec.get("settings", []):
+        _ENV_ALLOWLIST.add(_key["env"])
+        _ENV_ALLOWLIST.update(_key.get("aliases", []))
+    for _prov in _spec["providers"]:
+        for _key in _prov["keys"]:
+            _ENV_ALLOWLIST.add(_key["env"])
+            _ENV_ALLOWLIST.update(_key.get("aliases", []))
+
+ENV_FILE = PROJECT_ROOT / ".env"
+_PLACEHOLDER_RE = re.compile(r"replace_me|your[-_]?api[-_]?key|xxx|^\.{3}$|^<.*>$", re.I)
+
+TEXT_EXTS = {".txt", ".md", ".json", ".csv", ".log", ".py", ".js", ".ts", ".html", ".htm", ".css", ".xml", ".yaml", ".yml", ".srt", ".vtt"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+VIDEO_EXTS = {".mp4", ".mov", ".webm", ".m4v"}
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
+
+app = FastAPI(title="Seal-您的私人运营顾问", docs_url=None, redoc_url=None)
+
+# Operational tasks are isolated under this V3 runtime's outputs directory;
+# they never touch the original Seal/Easel data store.
+OPS_TASKS = TaskStore(OUTPUTS_DIR / "_ops_tasks")
+
+def _validate_task_ref(task_id: str | None) -> str | None:
+    """Validate optional ownership references; null means global scope."""
+    if not task_id:
+        return None
+    try:
+        return OPS_TASKS.get(task_id)["task_id"]
+    except TaskError as exc:
+        raise HTTPException(400, f"任务归属无效: {exc}")
+app.add_middleware(CORSMiddleware, allow_origins=[], allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def local_origin_only(request, call_next):
+    from urllib.parse import urlsplit
+    from fastapi.responses import JSONResponse
+    origin = request.headers.get("origin")
+    if origin and urlsplit(origin).netloc != request.headers.get("host"):
+        return JSONResponse({"detail": "Cross-origin requests are not allowed"}, status_code=403)
+    return await call_next(request)
+
+
+def list_personas() -> list[dict]:
+    if not PROFILES_DIR.is_dir():
+        return []
+    result = []
+    for d in sorted(PROFILES_DIR.iterdir()):
+        if d.is_dir() and d.name.startswith('_'):
+            continue
+        desc = ''
+        identity = d / 'identity.md'
+        if identity.is_file():
+            for line in identity.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith('#') and not line.startswith('<!--'):
+                    desc = line[:80]
+                    break
+        result.append({'name': d.name, 'description': desc})
+    return result
+
+
+def find_skill(name: str) -> str | None:
+    """查找 SKILL，返回完整名或 None。与 CLI skill.py 一致。"""
+    cands = [name, f'skill-{name}'] if not name.startswith('skill-') else [name]
+    for cand in cands:
+        if (SKILLS_DIR / cand / 'CAPABILITY.md').is_file():
+            return cand
+    return None
+
+
+def _parse_capability_md(path: Path) -> tuple[str, str, str]:
+    """解析 CAPABILITY.md → (description, layer, body)。body 为去掉 frontmatter 的正文。
+    正确处理 YAML 块标量 description（`>-` / `>` / `|` 后跟缩进多行）。"""
+    text = path.read_text(encoding='utf-8')
+    desc, layer, body = '', '', text
+    lines = text.splitlines()
+    if not (lines and lines[0].strip() == '---'):
+        return desc, layer, body
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == '---':
+            end = i
+            break
+    if end is None:
+        return desc, layer, body
+    body = '\n'.join(lines[end + 1:]).strip()
+    fm = lines[1:end]
+    i = 0
+    while i < len(fm):
+        st = fm[i].strip()
+        if st.startswith('layer:'):
+            layer = st.split(':', 1)[1].strip().strip('"').strip("'")
+            i += 1
+        elif st.startswith('description:'):
+            val = st.split(':', 1)[1].strip()
+            if val and val[0] in '|>':
+                block = []
+                j = i + 1
+                while j < len(fm):
+                    if fm[j].strip() == '':
+                        block.append('')
+                        j += 1
+                        continue
+                    indent = len(fm[j]) - len(fm[j].lstrip())
+                    if indent == 0:
+                        break
+                    block.append(fm[j].strip())
+                    j += 1
+                desc = ' '.join(x for x in block if x).strip()
+                i = j
+            else:
+                desc = val.strip('"').strip("'")
+                i += 1
+        else:
+            i += 1
+    return desc, layer, body
+
+
+from easel.skill_labels import skill_label
+
+
+def get_skills() -> list[dict]:
+    env = _read_env()
+    result = []
+    sd = SKILLS_DIR
+    if sd.is_dir():
+        for d in sorted(sd.iterdir()):
+            if d.is_dir() and (d / 'CAPABILITY.md').is_file():
+                desc, layer, _ = _parse_capability_md(d / 'CAPABILITY.md')
+                needs_api = d.name in SKILL_API_REQUIREMENTS
+                result.append({
+                    'name': d.name,
+                    'displayName': skill_label(d.name)[0],
+                    'description': desc,
+                    'displayDescription': skill_label(d.name)[1],
+                    'layer': layer,
+                    'needsApi': needs_api,
+                    'apiConfigured': _skill_api_configured(d.name, env) if needs_api else True,
+                })
+    return result
+
+
+def clean_agent_output(raw: str) -> str:
+    lines = []
+    for line in raw.splitlines():
+        c = re.sub(r'\x1b\[[0-9;]*m', '', line)
+        if c.startswith('[') and any(t in c[:40] for t in ('[provider-', '[agents/', '[agent/', '[plugins]', '[tools]', '[diagnostic]', '[fetch-', '[heartbeat]', '[health-', '[runtime]')):
+            continue
+        if c.strip():
+            lines.append(c)
+    return '\n'.join(lines).strip()
+
+
+def _proxy_env() -> dict[str, str]:
+    """返回带外网代理的环境变量（保护内网直连）。"""
+    env = os.environ.copy()
+    env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
+    env.setdefault('SEAL_RUNTIME_ROOT', str(PROJECT_ROOT))
+    env.setdefault('SEAL_SKILL_ROOT', str(PROJECT_ROOT.parent))
+    env.setdefault('SEAL_BUNDLED_SKILLS', str(SKILLS_DIR))
+    env.setdefault('EASEL_BROWSER_PROFILES', str(BROWSER_PROFILES))
+    env.setdefault('REDBOOK_STATE_DIR', str(BROWSER_PROFILES / 'redbook'))
+    env.setdefault('REDBOOK_COOKIE_FILE', str(BROWSER_PROFILES / 'redbook' / 'cookies.json'))
+    from easel.paths import runtime_path_entries
+    env['PATH'] = os.pathsep.join((*runtime_path_entries(), env.get('PATH', '')))
+    env['PYTHONPATH'] = str(SHARED_SCRIPTS) + os.pathsep + env.get('PYTHONPATH', '')
+    env.setdefault('http_proxy', os.environ.get('EASEL_PROXY', ''))
+    env.setdefault('https_proxy', os.environ.get('EASEL_PROXY', ''))
+    env.setdefault('no_proxy', 'localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*')
+    return env
+
+
+def _publish_env() -> dict[str, str]:
+    """发布子进程 env：在 _proxy_env 基础上禁用脚本侧日历自动记录——
+    发布页由 web 自己回流 _schedule.json，脚本再记一次会重复。对话页 Agent 直跑
+    脚本时不经过这里，flag 未设 → 脚本自动记录（见 calendar_ops.record_publish）。"""
+    env = _proxy_env()
+    env['EASEL_CALENDAR_AUTORECORD'] = '0'
+    return env
+
+
+def _persona_prefix(persona: str | None) -> str:
+    """把画像作为消息前缀内联（复用 easel.persona，与 CLI/skill 同源）。"""
+    return persona_prefix(persona)
+
+
+def _read_env() -> dict[str, str]:
+    """宽松解析项目根 .env → {KEY: value}。跳过注释与非 KEY=value 行（容忍多行值残行）。"""
+    result = {}
+    if not ENV_FILE.is_file():
+        return result
+    for line in ENV_FILE.read_text(encoding='utf-8').splitlines():
+        s = line.strip()
+        if not s or s.startswith('#') or '=' not in s:
+            continue
+        key, val = s.split('=', 1)
+        key = key.strip()
+        if key.isidentifier() or key.replace('-', '_').isidentifier():
+            result[key] = val.strip()
+    return result
+
+
+def _is_set(val: str | None) -> bool:
+    """非空且非占位符才算真正配置了。"""
+    if not val or not val.strip():
+        return False
+    return not _PLACEHOLDER_RE.search(val.strip())
+
+
+def _mask(val: str) -> str:
+    """脱敏：只留尾 4 位（短值全遮）。"""
+    v = val.strip()
+    if len(v) <= 4:
+        return '••••'
+    return '••••' + v[-4:]
+
+
+def _key_configured(key: dict, env: dict[str, str]) -> bool:
+    '某个 key（含别名）是否已配置。'
+    if _is_set(env.get(key['env'])):
+        return True
+    return any(_is_set(env.get(a)) for a in key.get('aliases', []))
+
+
+def _skill_api_configured(skill: str, env: dict[str, str] | None = None) -> bool:
+    'SKILL 是否已具备可用配置：任一 provider 的全部 required key 齐全。'
+    spec = SKILL_API_REQUIREMENTS.get(skill)
+    if not spec:
+        return True
+    env = _read_env() if env is None else env
+    for prov in spec['providers']:
+        if all(_key_configured(k, env) for k in prov['keys'] if k['required']):
+            return True
+    return False
+
+
+def _write_env(updates: dict[str, str]) -> None:
+    '就地更新命中的 KEY、其余行原样保留，未命中的追加末尾；空串则删除该行。原子写。'
+    updates = {k: v for k, v in updates.items() if k in _ENV_ALLOWLIST}
+    if not updates:
+        return
+    lines = ENV_FILE.read_text(encoding='utf-8').splitlines() if ENV_FILE.is_file() else []
+    seen = set()
+    out = []
+    for line in lines:
+        s = line.strip()
+        matched = None
+        if s and not s.startswith('#') and '=' in s:
+            k = s.split('=', 1)[0].strip()
+            if k in updates:
+                matched = k
+        if matched is not None:
+            seen.add(matched)
+            val = updates[matched]
+            if val.strip() == '':
+                continue
+            out.append(f'{matched}={val}')
+            continue
+        out.append(line)
+    appended = [f'{k}={v}' for k, v in updates.items() if k not in seen and v.strip() != '']
+    if appended:
+        if out and out[-1].strip() != '':
+            out.append('')
+        out.append('# ---- Easel API keys (added via Web) ----')
+        out.extend(appended)
+    tmp = ENV_FILE.with_suffix('.env.tmp')
+    tmp.write_text('\n'.join(out) + '\n', encoding='utf-8')
+    tmp.chmod(0o600)
+    tmp.replace(ENV_FILE)
+
+
+def _api_spec_status(skill: str, env: dict[str, str]) -> dict:
+    '返回注册表项 + 每个 key 当前配置状态与脱敏值（不回传明文）。'
+    spec = SKILL_API_REQUIREMENTS[skill]
+
+    def key_status(k: dict) -> dict:
+        raw = env.get(k['env'], '')
+        return {
+            'env': k['env'],
+            'label': k['label'],
+            'required': k['required'],
+            'secret': k['secret'],
+            'choices': list(k.get('choices', [])),
+            'configured': _key_configured(k, env),
+            'masked': _mask(raw) if k['secret'] and _is_set(raw) else (raw if not k['secret'] else ''),
+        }
+
+    providers = []
+    for prov in spec['providers']:
+        keys = [key_status(k) for k in prov['keys']]
+        providers.append({'id': prov['id'], 'name': prov['name'], 'keys': keys})
+    return {
+        'label': spec['label'],
+        'settings': [key_status(k) for k in spec.get('settings', [])],
+        'providers': providers,
+    }
+
+
+def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | None = None) -> str:
+    rc, stdout, stderr = run_codex(msg, timeout=timeout, session_key=f"web:{session_id}" if session_id else None)
+    if rc != 0:
+        raise RuntimeError(f"Codex request failed (exit {rc}); run seal ping to diagnose")
+    if stdout.strip():
+        return stdout.strip()
+    if stderr.strip():
+        return f'❌ Codex 执行失败（退出码 {rc}）：{stderr.strip()[-800:]}'
+    return '（无输出）'
+
+
+def check_codex_runtime() -> bool:
+    from easel.codex_adapter import codex_available
+    return codex_available()
+
+
+def _file_kind(name: str) -> str:
+    ext = Path(name).suffix.lower()
+    if ext in IMAGE_EXTS:
+        return 'image'
+    if ext in VIDEO_EXTS:
+        return 'video'
+    if ext in AUDIO_EXTS:
+        return 'audio'
+    if ext in TEXT_EXTS:
+        return 'text'
+    return 'binary'
+
+
+def _file_meta(f: Path, rel: str) -> dict:
+    try:
+        st = f.stat()
+        mtime, size = int(st.st_mtime), st.st_size
+    except OSError:
+        mtime, size = 0, 0
+    return {'name': f.name, 'path': rel, 'kind': _file_kind(f.name), 'mtime': mtime, 'size': size}
+
+
+def _build_output_node(path: Path, rel: str) -> dict:
+    """递归构建产物树节点：文件→file 节点；目录→dir 节点带 children + 递归 fileCount。"""
+    if path.is_dir():
+        children = []
+        for c in sorted(path.iterdir()):
+            if c.name.startswith('.'):   # 嵌套层只跳隐藏文件；_base.mp4 等以 _ 开头的产物要保留
+                continue
+            children.append(_build_output_node(c, f'{rel}/{c.name}'))
+        mtime = max((x['mtime'] for x in children), default=int(path.stat().st_mtime))
+        file_count = sum(x.get('fileCount', 1) if x['type'] == 'dir' else 1 for x in children)
+        return {'name': path.name, 'type': 'dir', 'path': rel, 'mtime': mtime,
+                'children': children, 'fileCount': file_count}
+    m = _file_meta(path, rel)
+    m['type'] = 'file'
+    return m
+
+
+def _read_project_meta(proj: Path) -> dict:
+    """读项目目录的 .easel.json 展示头，附封面/成品的解析路径供前端富展示。
+
+    只取展示相关字段（不含编排 steps）。cover 解析优先级：
+    展示头声明的 cover → 首个成品媒体 → 目录内首张图/视频（兜底）。
+    """
+    mf = proj / ".easel.json"
+    if not mf.is_file():
+        return {}
+    try:
+        data = json.loads(mf.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    meta = {k: data.get(k) for k in
+            ("title", "summary", "platform", "kind", "status", "tags", "deliverables", "task_id")
+            if data.get(k) not in (None, "", [])}
+    if not meta:
+        return {}
+
+    def _rel_if_exists(name: str) -> str:
+        return f"{proj.name}/{name}" if name and (proj / name).is_file() else ""
+
+    # 封面解析
+    cover_rel = ""
+    declared = data.get("cover")
+    if declared and (proj / declared).is_file():
+        cover_rel = f"{proj.name}/{declared}"
+    if not cover_rel:
+        for d in (data.get("deliverables") or []):
+            if _file_kind(d) in ("image", "video") and (proj / d).is_file():
+                cover_rel = f"{proj.name}/{d}"
+                break
+    if cover_rel:
+        meta["cover"] = cover_rel
+    # 成品路径（前端「成品区」高亮用）：解析为 outputs 相对路径，只留真实存在的
+    meta["deliverablePaths"] = [f"{proj.name}/{d}" for d in (data.get("deliverables") or [])
+                                if (proj / d).is_file()]
+    return meta
+
+
+def get_output_tree(task_id: str | None = None) -> list[dict]:
+    if not OUTPUTS_DIR.is_dir():
+        return []
+    items = []
+    for e in sorted(OUTPUTS_DIR.iterdir()):
+        # 内容库只展示「项目目录」：跳过系统目录(_login/_publish/...)、隐藏项、
+        # 以及根目录散文件（按新规约产物必在项目目录内，根散文件=系统状态/残渣）。
+        if e.name.startswith('.') or e.name.startswith('_'):
+            continue
+        if not e.is_dir() or e.name in SYSTEM_TOPLEVEL_DIRS:
+            continue
+        node = _build_output_node(e, e.name)
+        meta = _read_project_meta(e)
+        if task_id:
+            # Task-scoped content is explicit: a project must declare its
+            # task_id in .easel.json. Untagged legacy projects are excluded
+            # instead of being shown as if they belonged to this task.
+            if meta.get("task_id") != task_id:
+                continue
+        if meta:
+            node['meta'] = meta
+        items.append(node)
+    # 按最后修改时间倒序：最近产物排最前（供工作台「最近产物」与内容库时间排序）
+    return sorted(items, key=lambda x: x.get('mtime', 0), reverse=True)
+
+
+def _safe_output_path(rel: str) -> Path:
+    '把相对路径解析到 outputs/ 内，防路径穿越。'
+    full = (OUTPUTS_DIR / rel).resolve()
+    root = OUTPUTS_DIR.resolve()
+    if root != full and root not in full.parents:
+        raise HTTPException(403, '非法路径')
+    if not full.is_file():
+        raise HTTPException(404, '文件不存在')
+    return full
+
+
+@app.get("/")
+async def index():
+    no_cache = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+    react_index = REACT_DIR / "index.html"
+    if react_index.is_file():
+        return FileResponse(react_index, media_type="text/html", headers=no_cache)
+    raise HTTPException(503, 'Seal 前端尚未构建，请在 web/frontend 运行 npm run build')
+
+
+@app.get("/onepage")
+async def onepage():
+    return RedirectResponse('./', status_code=307)
+
+
+@app.get("/assets/{path:path}")
+async def react_assets(path: str):
+    base = (REACT_DIR / "assets").resolve()
+    fp = (REACT_DIR / "assets" / path).resolve()
+    if base != fp and base not in fp.parents:
+        raise HTTPException(403, "非法路径")
+    if not fp.is_file():
+        raise HTTPException(404)
+    return FileResponse(fp, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/static/{path:path}")
+async def static_file(path: str):
+    base = STATIC_DIR.resolve()
+    fp = (STATIC_DIR / path).resolve()
+    if base != fp and base not in fp.parents:
+        raise HTTPException(403, "非法路径")
+    if not fp.is_file():
+        raise HTTPException(404)
+    # HTML entrypoints must not be cached: the intro page is edited in-place during local development.
+    headers = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"} if fp.suffix.lower() in {".html", ".htm"} else {}
+    return FileResponse(fp, headers=headers)
+
+
+@app.get("/api/status")
+async def api_status():
+    return {"runtime": check_codex_runtime(), "skills": get_skills(), "personas": list_personas()}
+
+
+class OpsTaskCreate(BaseModel):
+    title: str
+    platform: str
+    scenario: str = "W1"
+    account_id: str | None = None
+    goal: str = ""
+    conversation_id: str | None = None
+
+@app.post("/api/ops-tasks")
+async def ops_task_create(req: OpsTaskCreate):
+    try:
+        # The client supplies its newly allocated chat id so creation and
+        # binding are one durable operation; no shared/default chat can leak in.
+        return OPS_TASKS.create(req.title, req.platform, req.scenario, req.account_id, req.goal, req.conversation_id)
+    except TaskError as exc: raise HTTPException(400, str(exc))
+
+@app.get("/api/ops-tasks")
+async def ops_task_list():
+    return OPS_TASKS.list()
+
+@app.get("/api/ops-tasks/{task_id}")
+async def ops_task_get(task_id: str):
+    try: return OPS_TASKS.get(task_id)
+    except TaskError as exc: raise HTTPException(404, str(exc))
+
+@app.delete("/api/ops-tasks/{task_id}")
+async def ops_task_delete(task_id: str):
+    try:
+        OPS_TASKS.get(task_id)
+        detached = _detach_task_data(task_id)
+        deleted = OPS_TASKS.delete(task_id)
+        deleted["detached"] = detached
+        cid = deleted.get("conversation_id")
+        if cid:
+            # Remove only the V3 mapping for this task's chat. Codex global
+            # history remains untouched by forget_session.
+            await asyncio.to_thread(forget_session, f"web:{cid}")
+            # 清理该任务会话的 V3 可恢复轮次快照/事件；Codex 全局历史不受影响。
+            for stale in (_turn_file(f"web:{cid}"),):
+                try:
+                    if stale.is_file():
+                        stale.unlink()
+                except OSError:
+                    pass
+            jobs = SESSIONS_DIR / "jobs"
+            if jobs.is_dir():
+                # turn ids are browser generated and do not include the session id;
+                # only remove the deterministic per-session snapshot above. Job logs
+                # are retained for audit/recovery and contain no credentials.
+                pass
+        return deleted
+    except TaskError as exc: raise HTTPException(404, str(exc))
+
+
+def _detach_task_data(task_id: str) -> dict[str, int]:
+    """Preserve task-owned artifacts by moving their ownership to global."""
+    counts = {"ideas": 0, "schedule": 0, "projects": 0}
+
+    ideas = _read_ideas()
+    for item in ideas:
+        if item.get("task_id") == task_id:
+            item["task_id"] = None
+            counts["ideas"] += 1
+    if counts["ideas"]:
+        _write_ideas(ideas)
+
+    schedule = _read_schedule()
+    for item in schedule:
+        if item.get("task_id") == task_id:
+            item["task_id"] = None
+            counts["schedule"] += 1
+    if counts["schedule"]:
+        _write_schedule(schedule)
+
+    if OUTPUTS_DIR.is_dir():
+        for project in OUTPUTS_DIR.iterdir():
+            meta_path = project / ".easel.json" if project.is_dir() else None
+            if not meta_path or not meta_path.is_file():
+                continue
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if meta.get("task_id") != task_id:
+                continue
+            meta["task_id"] = None
+            temp = meta_path.with_suffix(".json.tmp")
+            temp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp.replace(meta_path)
+            counts["projects"] += 1
+
+    return counts
+
+@app.post("/api/ops-tasks/{task_id}/conversation")
+async def ops_task_conversation(task_id: str, body: dict):
+    try:
+        return OPS_TASKS.ensure_conversation(task_id, body.get("conversation_id"))
+    except TaskError as exc: raise HTTPException(400, str(exc))
+
+@app.get("/api/ops-tasks/{task_id}/events")
+async def ops_task_events(task_id: str):
+    try: return OPS_TASKS.events(task_id)
+    except TaskError as exc: raise HTTPException(404, str(exc))
+
+@app.post("/api/ops-tasks/{task_id}/status")
+async def ops_task_status(task_id: str, body: dict):
+    try: return OPS_TASKS.set_status(task_id, body.get("status", ""))
+    except TaskError as exc: raise HTTPException(400, str(exc))
+
+@app.post("/api/ops-tasks/{task_id}/complete-stage")
+async def ops_task_complete_stage(task_id: str, body: dict):
+    try: return OPS_TASKS.complete_stage(task_id, body.get("stage_id", ""), body.get("decision"))
+    except TaskError as exc: raise HTTPException(400, str(exc))
+
+@app.post("/api/ops-tasks/{task_id}/advance")
+async def ops_task_advance(task_id: str, body: dict):
+    try: return OPS_TASKS.advance(task_id, body.get("stage_id", ""), bool(body.get("skip", False)), body.get("reason"))
+    except TaskError as exc: raise HTTPException(400, str(exc))
+
+@app.post("/api/ops-tasks/{task_id}/references")
+async def ops_task_reference(task_id: str, body: dict):
+    try: return OPS_TASKS.add_reference(task_id, body.get("kind", ""), body.get("value", ""))
+    except TaskError as exc: raise HTTPException(400, str(exc))
+
+@app.post("/api/ops-tasks/{task_id}/actions")
+async def ops_task_action(task_id: str, body: dict):
+    """Run a read-only Seal capability in the task context and persist its result link.
+    Publishing remains explicit and is intentionally rejected here."""
+    try:
+        task = OPS_TASKS.get(task_id)
+        action = str(body.get("action", "")).strip()
+        stage_id = body.get("stage_id")
+        if task["status"] in {"paused", "blocked", "cancelled", "completed"}:
+            raise TaskError("当前任务状态禁止调用能力")
+        if action == "account_status":
+            if not task.get("account_id"):
+                result = {"linked": False, "reason": "未绑定账号"}
+            else:
+                pf = task.get("platform")
+                cfg = LOGIN_RUNNERS.get(pf, {})
+                result = await _account_whoami(pf)
+                result.update({"linked": bool(result.get("loggedIn")), "platform": pf,
+                               "account_id": task.get("account_id")})
+        elif action == "analytics":
+            if task.get("platform") not in ANALYTICS_PLATFORMS:
+                raise TaskError("该平台不支持账号数据抓取")
+            result = await api_analytics(task["platform"])
+        elif action == "persona":
+            aid = task.get("account_id")
+            result = {"account_id": aid, "personas": list_personas()}
+            if aid and profile_exists(aid):
+                result["content"] = load_profile_text(aid)
+        elif action == "ideas":
+            result = await api_ideas_list(task_id)
+        elif action == "calendar":
+            result = await api_schedule_list(task_id)
+        elif action == "content_library":
+            result = await api_outputs(task_id)
+        elif action == "chat_context":
+            result = {"conversation_id": task.get("conversation_id"), "task_id": task_id,
+                      "prompt_context": {"platform": task.get("platform"), "goal": task.get("goal"),
+                                          "stage_id": stage_id or task["stages"][task["current_stage_index"]]["id"]}}
+        elif action == "publish_preflight":
+            payload = body.get("publish") or {}
+            req = PublishRequest(**payload)
+            errors=[]
+            if not req.title.strip() and not req.body.strip(): errors.append("标题或正文至少填写一项")
+            imgs=[]; vids=[]
+            for rel in req.media or []:
+                try: full=_safe_output_path(rel)
+                except HTTPException as exc: errors.append(str(exc.detail)); continue
+                if full.suffix.lower() in VIDEO_EXTS: vids.append(rel)
+                elif full.suffix.lower() in IMAGE_EXTS: imgs.append(rel)
+                else: errors.append(f"不支持的媒体格式: {rel}")
+            pf=task.get("platform")
+            if pf in MEDIA_REQUIRED and not imgs and not vids: errors.append("需附带图片或视频")
+            if imgs and vids: errors.append("不能同时使用图片和视频")
+            if pf in VIDEO_ONLY_PUBLISH and not vids: errors.append("该平台只能发布视频")
+            result={"ok": not errors, "errors": errors, "requires_confirmation": not errors,
+                    "platform":pf, "media_count":len(imgs)+len(vids)}
+        elif action == "publish":
+            raise TaskError("运营任务不允许隐式发布，请在发布页明确确认")
+        else:
+            raise TaskError("未知能力；支持 account_status/analytics/persona/ideas/calendar/content_library/chat_context/publish_preflight")
+        OPS_TASKS.add_artifact(task_id, "action_result", {"action": action, "result": result}, stage_id)
+        return {"ok": True, "action": action, "result": result}
+    except TaskError as exc:
+        raise HTTPException(400, str(exc))
+
+@app.get("/api/personas")
+async def api_personas():
+    return list_personas()
+
+
+@app.get("/api/persona/{name}")
+async def api_persona(name: str):
+    text = load_profile_text(name)
+    if not text:
+        raise HTTPException(404, "画像不存在")
+    return {"name": name, "content": text}
+
+
+def _valid_persona_name(name: str) -> bool:
+    return bool(name) and "/" not in name and "\\" not in name and not name.startswith((".", "_"))
+
+
+def _persona_file_path(name: str, filename: str) -> Path:
+    """校验画像名/文件名，返回 profiles/<name>/<filename> 的安全路径。"""
+    if not _valid_persona_name(name):
+        raise HTTPException(400, "画像名非法")
+    if not filename.endswith(".md") or "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(400, "文件名非法")
+    pd = (PROFILES_DIR / name).resolve()
+    fp = (pd / filename).resolve()
+    if pd != fp.parent or PROFILES_DIR.resolve() not in pd.parents:
+        raise HTTPException(403, "非法路径")
+    return fp
+
+
+@app.get("/api/persona/{name}/files")
+async def api_persona_files(name: str):
+    """返回画像六维文件原文（按固定顺序 + 其余 .md），供在线编辑。"""
+    if not profile_exists(name):
+        raise HTTPException(404, "画像不存在")
+    pd = PROFILES_DIR / name
+    ordered = list(_FILE_ORDER) + sorted(f.name for f in pd.glob("*.md") if f.name not in _FILE_ORDER)
+    files = []
+    for fn in ordered:
+        fp = pd / fn
+        files.append({"filename": fn, "content": fp.read_text(encoding="utf-8") if fp.is_file() else ""})
+    return {"name": name, "files": files}
+
+
+class PersonaFileRequest(BaseModel):
+    filename: str
+    content: str
+
+
+@app.put("/api/persona/{name}/file")
+async def api_persona_file_save(name: str, req: PersonaFileRequest):
+    """保存画像单个维度文件（原子写）。"""
+    if not profile_exists(name):
+        raise HTTPException(404, "画像不存在")
+    fp = _persona_file_path(name, req.filename)
+    tmp = fp.with_suffix(".md.tmp")
+    tmp.write_text(req.content, encoding="utf-8")
+    tmp.replace(fp)
+    return {"ok": True, "filename": req.filename}
+
+
+@app.delete("/api/persona/{name}")
+async def api_persona_delete(name: str):
+    """删除整个画像目录。"""
+    if not _valid_persona_name(name):
+        raise HTTPException(400, "画像名非法")
+    pd = (PROFILES_DIR / name).resolve()
+    if PROFILES_DIR.resolve() not in pd.parents or not pd.is_dir():
+        raise HTTPException(404, "画像不存在")
+    import shutil
+    shutil.rmtree(pd)
+    return {"ok": True, "deleted": name}
+
+
+@app.get("/api/skills")
+async def api_skills():
+    return get_skills()
+
+
+@app.get("/api/skill/{name}")
+async def api_skill_detail(name: str):
+    """单个 SKILL 详情：描述 + 正文 + API 需求与当前配置状态（脱敏）。"""
+    full = find_skill(name)
+    if full is None:
+        raise HTTPException(404, f"SKILL '{name}' 不存在")
+    desc, layer, body = _parse_capability_md(SKILLS_DIR / full / "CAPABILITY.md")
+    needs_api = full in SKILL_API_REQUIREMENTS
+    env = _read_env()
+    return {
+        "name": full,
+        "displayName": skill_label(full)[0],
+        "displayDescription": skill_label(full)[1],
+        "layer": layer,
+        "description": desc,
+        "body": body,
+        "needsApi": needs_api,
+        "apiConfigured": _skill_api_configured(full, env) if needs_api else True,
+        "apiSpec": _api_spec_status(full, env) if needs_api else None,
+    }
+
+
+class EnvUpdateRequest(BaseModel):
+    updates: dict[str, str]
+
+
+@app.post("/api/env")
+async def api_env_save(req: EnvUpdateRequest):
+    """写 API key 到项目根 .env（仅允许注册表内 env 名）。返回更新后各 skill 的配置状态。"""
+    bad = [k for k in (req.updates or {}) if k not in _ENV_ALLOWLIST]
+    if bad:
+        raise HTTPException(400, f"不允许写入的变量：{', '.join(bad)}")
+    _write_env(req.updates or {})
+    env = _read_env()
+    return {
+        "ok": True,
+        "skills": {s: _skill_api_configured(s, env) for s in SKILL_API_REQUIREMENTS},
+    }
+
+
+class AttachmentRef(BaseModel):
+    id: str
+    name: str
+    path: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    persona: str | None = None
+    sessionId: str | None = None
+    turnId: str | None = None
+    attachments: list[AttachmentRef] = Field(default_factory=list)
+    task_id: str | None = None
+
+
+def _attachment_scope(session_id: str) -> str:
+    """Map a browser session to a filesystem-safe, non-reversible inbox scope."""
+    value = session_id.strip()
+    if not value or len(value) > 256:
+        raise HTTPException(400, "无效的会话标识")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:20]
+
+
+def _attachment_id(scope: str, path: str) -> str:
+    return hashlib.sha256(f"{scope}\0{path}".encode("utf-8")).hexdigest()[:24]
+
+
+def _attachment_context(req: ChatRequest) -> str:
+    """Validate attachment ownership and build an Agent-only attachment manifest."""
+    if not req.attachments:
+        return ""
+    if not req.sessionId:
+        raise HTTPException(400, "附件必须绑定到会话")
+
+    scope = _attachment_scope(req.sessionId)
+    rows: list[str] = []
+    seen: set[str] = set()
+    for attachment in req.attachments:
+        rel = Path(attachment.path)
+        if rel.is_absolute() or ".." in rel.parts or len(rel.parts) != 4:
+            raise HTTPException(400, "附件路径无效")
+        if rel.parts[0] != "_inbox" or rel.parts[1] != scope:
+            raise HTTPException(403, "附件不属于当前会话")
+        normalized = rel.as_posix()
+        if attachment.id != _attachment_id(scope, normalized):
+            raise HTTPException(403, "附件标识校验失败")
+        full = _safe_output_target(normalized)
+        if not full.is_file():
+            raise HTTPException(404, f"附件不存在：{attachment.name}")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        rows.append(f"- outputs/{normalized}")
+
+    return (
+        "〔系统附件清单，仅供本轮执行，不要向用户复述文件上传过程或内部路径〕\n"
+        "只允许使用下列当前会话附件；禁止扫描、枚举或猜测 outputs/_inbox 中的其他文件：\n"
+        + "\n".join(rows)
+        + "\n需要纳入内容项目时，将清单内文件复制到 outputs/<项目>/assets/ 后再使用；"
+          "保留 inbox 原件，确保重试仍可复现。"
+    )
+
+
+def _chat_message(req: ChatRequest) -> str:
+    context = _attachment_context(req)
+    message = req.message.strip()
+    if context:
+        message = f"{message}\n\n{context}" if message else context
+    if not message:
+        raise HTTPException(400, "消息不能为空")
+    task = OPS_TASKS.by_conversation(req.sessionId) if req.sessionId else None
+    if req.task_id and (not task or task["task_id"] != req.task_id):
+        raise HTTPException(409, "任务与对话不匹配")
+    if task:
+        if task["status"] in {"paused", "blocked", "cancelled", "completed"}:
+            raise HTTPException(409, "当前运营任务已暂停、阻塞或结束，请先恢复")
+        state = {k: task.get(k) for k in ("task_id", "title", "platform", "account_id", "scenario", "goal", "status", "current_stage_index", "stages", "references", "artifacts")}
+        message = "〔当前运营任务上下文，由 Seal 后端核验。只能处理此任务，产物写回此 task_id；外部写操作须再次明确确认。〕\n" + json.dumps(state, ensure_ascii=False) + "\n\n用户消息：" + message
+    return chat_turn_message(message, req.persona)
+
+
+
+
+def _turn_file(sk: str) -> Path:
+    """每会话最近一轮结果的落盘路径（sk 做文件名安全化）。"""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sk)[:120]
+    return SESSIONS_DIR / f"{safe}.json"
+
+
+def _job_event_file(turn_id: str) -> Path:
+    """Per-turn append-only event log used to resume SSE without restarting the agent."""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", turn_id)[:160]
+    return SESSIONS_DIR / "jobs" / f"{safe}.jsonl"
+
+
+def _read_job_events(turn_id: str, after: int = 0) -> list[dict]:
+    path = _job_event_file(turn_id)
+    if not path.is_file():
+        return []
+    events = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            event = json.loads(line)
+            if int(event.get("id", 0)) > after:
+                events.append(event)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return []
+    return events
+
+
+
+
+def _save_turn(sk: str, status: str, text: str, extra: dict | None = None) -> None:
+    """持久化本轮结果（running/done），供 SSE 连接中断后前端用 /api/chat/last 取回。
+
+    后端跑完整轮不依赖客户端连接；长任务时即使客户端 SSE 中断，Codex 仍在后台执行，
+    结果写这里，前端断线后轮询即可拿到完整回答（否则"运行完也不说一声"）。
+    """
+    try:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"status": status, "text": text, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        if extra:
+            payload.update(extra)
+        tmp = _turn_file(sk).with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, _turn_file(sk))
+    except Exception:
+        pass
+
+
+# 后台 supervisor 任务集合：持有强引用防被 GC；每个对话流的 Codex run 跑在这里，
+# 与客户端 SSE 连接解耦（断线不杀 run）。
+_BG_TASKS: set = set()
+
+# Active Codex cancellation events; browser disconnection does not set them.
+_RUNNING_CHAT: dict = {}
+
+
+@app.get("/api/chat/last/{session_id}")
+async def api_chat_last(session_id: str, turn_id: str | None = None):
+    """取某会话最近一轮的完整结果（SSE 断线后前端据此取回，避免丢结果）。"""
+    f = _turn_file(f"web:{session_id}")
+    if not f.is_file():
+        return {"status": "none", "text": ""}
+    try:
+        payload = json.loads(f.read_text(encoding="utf-8"))
+        if turn_id and payload.get("turn_id") != turn_id:
+            return {"status": "stale", "text": "", "turn_id": payload.get("turn_id")}
+        return payload
+    except Exception:
+        return {"status": "none", "text": ""}
+
+
+@app.get("/api/chat/jobs/{turn_id}/stream")
+async def api_chat_job_stream(turn_id: str, after: int = 0):
+    """Replay missed events, then tail this turn until its terminal event arrives."""
+    # A stale browser-side pendingTurnId must fail promptly instead of receiving
+    # heartbeats forever. The frontend can then recover from the final snapshot.
+    if not _job_event_file(turn_id).is_file():
+        raise HTTPException(404, "对话任务记录不存在或已失效")
+
+    async def events():
+        cursor = max(0, after)
+        idle_since = time.monotonic()
+        while True:
+            batch = _read_job_events(turn_id, cursor)
+            if batch:
+                idle_since = time.monotonic()
+                for event in batch:
+                    cursor = int(event["id"])
+                    yield {
+                        "id": str(cursor),
+                        "event": event["event"],
+                        "data": json.dumps(event.get("data"), ensure_ascii=False),
+                    }
+                    if event["event"] in ("done", "error"):
+                        return
+            else:
+                # Keep proxy connections active; reconnecting remains safe if it still drops.
+                if time.monotonic() - idle_since >= 15:
+                    yield {"event": "ping", "data": "{}"}
+                    idle_since = time.monotonic()
+                await asyncio.sleep(0.25)
+
+    return EventSourceResponse(events(), headers={
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Content-Encoding": "identity",
+    })
+
+
+@app.post("/api/chat/stream")
+async def api_chat_stream(req: ChatRequest):
+    """Persistent Codex event job; browser disconnection does not cancel a run."""
+    message = _chat_message(req)
+    sk = req.sessionId or uuid.uuid4().hex
+    turn_id = req.turnId or uuid.uuid4().hex
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,160}", turn_id):
+        raise HTTPException(400, "Invalid turn ID")
+    if _job_event_file(turn_id).exists():
+        return await api_chat_job_stream(turn_id)
+    if sk in _RUNNING_CHAT:
+        raise HTTPException(409, "This session already has a running turn")
+    cancel = threading.Event()
+    _RUNNING_CHAT[sk] = cancel
+    event_path = _job_event_file(turn_id)
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    event_path.touch(exist_ok=False)
+    pk = f"web:{sk}"
+    _save_turn(pk, "running", "", {"turn_id": turn_id})
+    seq = 0
+    text_parts = []
+
+    def emit(kind, data):
+        nonlocal seq
+        seq += 1
+        with event_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"id": seq, "event": kind, "data": data}, ensure_ascii=False) + "\n")
+
+    def receive(event):
+        item = event.get("item") or {}
+        if event.get("type") == "item.completed" and item.get("type") == "agent_message":
+            text = item.get("text", "")
+            if text:
+                if text_parts:
+                    emit("token", "\n")
+                text_parts.append(text)
+                emit("token", text)
+                _save_turn(pk, "running", "\n".join(text_parts), {"turn_id": turn_id})
+        elif event.get("type") == "item.started":
+            # Do not forward raw tool commands, outputs, or reasoning to the UI.
+            emit("activity", f"Codex: {item.get('type', 'working')}")
+
+    async def supervisor():
+        try:
+            rc, output, diagnostics = await asyncio.to_thread(
+                run_codex, message, timeout=TIMEOUT_CHAT, session_key=pk,
+                on_event=receive, cancel=cancel)
+            if rc == 130:
+                status = "stopped"
+                emit("activity", "已停止")
+                emit("done", {"sessionKey": sk})
+            elif rc != 0:
+                status = "error"
+                emit("error", f"Codex 执行失败，退出码 {rc}。请在终端运行 seal ping 检查连接。")
+            else:
+                status = "done"
+                if output and not text_parts:
+                    emit("token", output)
+                emit("done", {"sessionKey": sk})
+            _save_turn(pk, status, output, {"turn_id": turn_id, "returncode": rc})
+        except Exception:
+            _save_turn(pk, "error", "\n".join(text_parts), {"turn_id": turn_id})
+            emit("error", "Codex 后台任务异常，请检查本地服务日志。")
+            import traceback
+            traceback.print_exc()
+        finally:
+            _RUNNING_CHAT.pop(sk, None)
+
+    emit("activity", "Codex 正在执行")
+    task = asyncio.create_task(supervisor())
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return await api_chat_job_stream(turn_id)
+
+
+class StopRequest(BaseModel):
+    sessionId: str | None = None
+
+
+@app.post("/api/chat/stop")
+async def api_chat_stop(req: StopRequest):
+    sk = req.sessionId or ""
+    cancel = _RUNNING_CHAT.get(sk)
+    if cancel is None:
+        return {"stopped": False}
+    cancel.set()
+    deadline = time.monotonic() + 8
+    while sk in _RUNNING_CHAT and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    return {"stopped": sk not in _RUNNING_CHAT, "requested": True}
+
+@app.post("/api/chat")
+async def api_chat(req: ChatRequest):
+    """非流式对话（备选）。"""
+    # 每轮末尾追加「先查技能库」提醒，抗长对话指令衰减（对用户不可见）
+    message = _chat_message(req)
+    loop = asyncio.get_event_loop()
+    # chat 可能中途触发制作层长任务 → 用 TIMEOUT_CHAT，与流式 /api/chat/stream 一致（勿用 300s）
+    result = await loop.run_in_executor(None, run_agent_sync, message, TIMEOUT_CHAT, req.sessionId)
+    return {"response": result}
+
+
+class SkillRequest(BaseModel):
+    skill: str
+    input: str
+    persona: str | None = None
+
+
+@app.post("/api/skill")
+async def api_skill(req: SkillRequest):
+    skill_full = find_skill(req.skill)
+    if skill_full is None:
+        raise HTTPException(404, f"SKILL '{req.skill}' 不存在")
+    message = build_skill_prompt(skill_full, f"{_persona_prefix(req.persona)}{req.input}", req.persona)
+    # 统一给足超时：制作类 SKILL（生视频/多镜合成）可能跑很久，取安全上界
+    timeout = TIMEOUT_PRODUCE
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, run_agent_sync, message, timeout)
+    return {"response": result}
+
+
+@app.get("/api/outputs")
+async def api_outputs(task_id: str | None = None):
+    return get_output_tree(task_id)
+
+class OutputProjectCreate(BaseModel):
+    title: str
+    task_id: str | None = None
+
+@app.post("/api/outputs/project")
+async def api_output_project_create(req: OutputProjectCreate):
+    title = re.sub(r"[^\w\u4e00-\u9fff .-]", "", req.title.strip())[:80]
+    if not title:
+        raise HTTPException(400, "项目名称不能为空")
+    task_ref = _validate_task_ref(req.task_id)
+    base = OUTPUTS_DIR / title
+    if base.exists():
+        raise HTTPException(409, "同名内容项目已存在")
+    base.mkdir(parents=True, exist_ok=False)
+    meta = {"title": title, "summary": "", "platform": "", "kind": "other", "status": "draft", "tags": [], "deliverables": [], "task_id": task_ref}
+    (base / ".easel.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "path": title, "meta": meta}
+
+
+@app.get("/api/output/{path:path}")
+async def api_output(path: str):
+    """文本产物内容。二进制/媒体返回 isBinary=true，前端改用 /api/media。"""
+    full = _safe_output_path(path)
+    kind = _file_kind(full.name)
+    if kind not in ("text",):
+        return {"path": path, "content": "", "kind": kind, "isBinary": True}
+    try:
+        return {"path": path, "content": full.read_text(), "kind": "text", "isBinary": False}
+    except UnicodeDecodeError:
+        return {"path": path, "content": "", "kind": "binary", "isBinary": True}
+
+
+@app.get("/api/media/{path:path}")
+async def api_media(path: str):
+    """原样输出媒体文件（图片/视频/音频/HTML/PDF），供 <img>/<video>/iframe/下载。"""
+    full = _safe_output_path(path)
+    return FileResponse(full)
+
+
+# 系统数据目录/文件——不允许从内容库删除（删了会丢登录态/日历/发布记录）
+PROTECTED_OUTPUTS = {"_login", "_analytics", "_schedule.json", "_ideas.json",
+                     "_publish", "_publish.log"}
+UPLOAD_EXTS = IMAGE_EXTS | VIDEO_EXTS | {
+    ".pdf", ".txt", ".md", ".markdown", ".csv", ".json", ".srt", ".vtt",
+    ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".mp3", ".wav", ".m4a"}
+MAX_UPLOAD_MB = 50
+
+
+def _unique_upload_path(dest: Path, filename: str) -> Path:
+    """同一上传批次内保留所有同名文件，不让后一个静默覆盖前一个。"""
+    target = dest / filename
+    if not target.exists():
+        return target
+    source = Path(filename)
+    index = 2
+    while True:
+        target = dest / f"{source.stem} ({index}){source.suffix}"
+        if not target.exists():
+            return target
+        index += 1
+
+
+def _safe_output_target(rel: str, *, must_exist: bool = True) -> Path:
+    """解析到 outputs/ 内的文件或目录（防穿越）。与 _safe_output_path 不同：允许目录、
+    可要求不必已存在（上传新文件时）。永远拒绝 outputs/ 根本身。"""
+    full = (OUTPUTS_DIR / rel).resolve()
+    root = OUTPUTS_DIR.resolve()
+    if full == root or root not in full.parents:
+        raise HTTPException(403, '非法路径')
+    if must_exist and not full.exists():
+        raise HTTPException(404, '不存在')
+    return full
+
+
+def _is_protected(full: Path) -> bool:
+    """路径的顶层段是否属于受保护的系统项。"""
+    try:
+        rel = full.relative_to(OUTPUTS_DIR.resolve())
+    except ValueError:
+        return True
+    return bool(rel.parts) and rel.parts[0] in PROTECTED_OUTPUTS
+
+
+@app.delete("/api/output/{path:path}")
+async def api_output_delete(path: str):
+    """删除内容库里的单个文件或整个项目目录。系统数据（_login/_analytics/日历/发布记录）受保护。"""
+    full = _safe_output_target(path)
+    if _is_protected(full):
+        raise HTTPException(403, '系统数据受保护，不可从内容库删除')
+    is_dir = full.is_dir()
+    try:
+        if is_dir:
+            shutil.rmtree(full)
+        else:
+            full.unlink()
+    except OSError as e:
+        raise HTTPException(500, f'删除失败：{e}')
+    return {"ok": True, "deleted": path, "kind": "dir" if is_dir else "file"}
+
+
+@app.post("/api/upload")
+async def api_upload(
+    files: list[UploadFile] = File(...),
+    sessionId: str = Form(...),
+):
+    """Store chat attachments in a session-scoped inbox and return opaque refs."""
+    scope = _attachment_scope(sessionId)
+    batch = time.strftime('%Y%m%d-') + uuid.uuid4().hex[:6]
+    dest = OUTPUTS_DIR / "_inbox" / scope / batch
+    dest.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for f in files:
+        name = Path(f.filename or "file").name
+        ext = Path(name).suffix.lower()
+        if ext not in UPLOAD_EXTS:
+            raise HTTPException(400, f'不支持的文件类型：{ext or name}')
+        data = await f.read()
+        if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
+            raise HTTPException(413, f'{name} 超过 {MAX_UPLOAD_MB}MB 上限')
+        target = _unique_upload_path(dest, name)
+        target.write_bytes(data)
+        rel = f"_inbox/{scope}/{batch}/{target.name}"
+        saved.append({"id": _attachment_id(scope, rel), "name": target.name, "path": rel})
+    if not saved:
+        raise HTTPException(400, '没有文件')
+    return {"ok": True, "files": saved}
+
+
+def _write_login_marker(platform: str, state: str, message: str = '') -> None:
+    """回写登录标记 outputs/_login/<平台>.json（与 login_state.write_status 同格式，原子写）。
+    whoami 真校验确认已登录后调用 → _account_logged_in 的快速路径此后自愈并持久。"""
+    LOGIN_DIR.mkdir(parents=True, exist_ok=True)
+    data = {"state": state, "message": message, "qr": "", "ts": int(time.time())}
+    st = LOGIN_DIR / f'{platform}.json'
+    tmp = st.with_suffix('.json.tmp')
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+        os.replace(tmp, st)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _account_logged_in(platform: str, cfg: dict) -> bool:
+    """尽力判断某平台是否已登录。
+    浏览器平台的登录态只有启动浏览器才真能知道（profile 里总有 Cookies 文件，存在≠已登录，
+    会误报），故这里只信「本流程最近一次登录成功」——即 status.json == success。
+    biliup 的 cookies.json 只有登录成功才生成，可直接判。"""
+    backend = cfg['backend']
+    if backend == 'unsupported':
+        return False
+    if backend == 'biliup':
+        return (PROJECT_ROOT / 'cookies.json').is_file()
+    st = LOGIN_DIR / f'{platform}.json'
+    if st.is_file():
+        try:
+            return json.loads(st.read_text()).get('state') == 'success'
+        except Exception:
+            return False
+    return False
+
+
+def _login_status(platform: str) -> dict:
+    """读登录状态文件 + 二维码是否就绪。"""
+    st = LOGIN_DIR / f'{platform}.json'
+    data = {'state': 'unknown', 'message': ''}
+    if st.is_file():
+        try:
+            d = json.loads(st.read_text())
+            data = {'state': d.get('state', 'unknown'), 'message': d.get('message', '')}
+        except Exception:
+            pass
+    # A runner that exits before writing its status must become an actionable error,
+    # never the ambiguous ``unknown`` state shown as an endless spinner in the UI.
+    proc = LOGIN_PROCESSES.get(platform)
+    if data['state'] in ('unknown', 'starting', 'qr_ready', 'scanned', 'verifying', 'sms_required') and proc is not None:
+        code = proc.poll()
+        if code is not None:
+            data = {'state': 'error', 'message': f'登录程序异常退出（退出码 {code}），请查看 outputs/_login/{platform}.log'}
+    qr = LOGIN_DIR / f'{platform}.png'
+    if qr.is_file() and data['state'] == 'qr_ready':
+        data['qr'] = f'_login/{platform}.png'
+        try:
+            data['qrTs'] = int(qr.stat().st_mtime)   # 二维码 mtime 作缓存键：码每刷新一次就变，前端 img 随之刷新
+        except OSError:
+            data['qrTs'] = 0
+    else:
+        data['qr'] = ''
+        data['qrTs'] = 0
+    return data
+
+
+@app.get("/api/accounts")
+async def api_accounts():
+    return [
+        {'platform': pf, 'name': cfg['name'], 'backend': cfg['backend'],
+         'supported': cfg['backend'] != 'unsupported',
+         'loggedIn': _account_logged_in(pf, cfg),
+         'note': cfg.get('note', '')}
+        for pf, cfg in LOGIN_RUNNERS.items()
+    ]
+
+
+@app.post("/api/login/{platform}")
+async def api_login_start(platform: str):
+    async with _account_lock(platform):
+        proc = LOGIN_PROCESSES.get(platform)
+        if proc is not None and proc.poll() is None:
+            return {'mode': 'qr', **_login_status(platform)}
+        return await _login_start(platform)
+
+
+async def _login_start(platform: str):
+    """启动某平台登录：浏览器平台后台跑 QR runner，轮询到二维码就绪即返回。"""
+    cfg = LOGIN_RUNNERS.get(platform)
+    if not cfg:
+        raise HTTPException(404, '未知平台')
+    backend = cfg['backend']
+    if backend == 'unsupported':
+        raise HTTPException(400, f"{cfg['name']} 暂不可用：{cfg.get('note', '')}")
+    LOGIN_DIR.mkdir(parents=True, exist_ok=True)
+    qr = LOGIN_DIR / f'{platform}.png'
+    status = LOGIN_DIR / f'{platform}.json'
+    for f in (qr, status):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+    if backend == 'xhs':
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'xhs_publish.py'), 'login', *_xhs_proxy_args(), *_xhs_browser_args(),
+               '--qr-out', str(qr), '--status-file', str(status), '--timeout', str(LOGIN_TIMEOUT)]
+    elif backend == 'biliup':
+        # B站：TV 端扫码登录 API 生成二维码 + 写 biliup cookie（biliup login 需真终端，前端用不了）
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'bili_login.py'), 'login',
+               '--qr-out', str(qr), '--status-file', str(status),
+               '--cookie', str(PROJECT_ROOT / 'cookies.json'), '--timeout', str(LOGIN_TIMEOUT)]
+    elif backend == 'douyin':
+        code_file = LOGIN_DIR / f'{platform}.code'
+        try:
+            code_file.unlink()
+        except OSError:
+            pass
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'douyin_publish.py'), 'login',
+               '--qr-out', str(qr), '--status-file', str(status),
+               '--sms-code-file', str(code_file), '--timeout', str(LOGIN_TIMEOUT)]
+    else:
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'login-qr',
+               '--platform', cfg['wp'], '--qr-out', str(qr), '--status-file', str(status),
+               '--timeout', str(LOGIN_TIMEOUT)]
+    # 新登录开始 → 清掉旧的 whoami 缓存（登录前可能缓存了「未登录」），避免登录成功后仍读到旧结果
+    with _WHOAMI_LOCK:
+        _WHOAMI_CACHE.pop(platform, None)
+    log_path = LOGIN_DIR / f'{platform}.log'
+    _write_login_marker(platform, 'starting', '正在准备登录页面')
+    try:
+        with log_path.open('a', encoding='utf-8') as log_file:
+            platform_kwargs = ({"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)}
+                               if os.name == "nt" else {"start_new_session": True})
+            proc = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), env=_proxy_env(),
+                                    stdout=log_file, stderr=subprocess.STDOUT,
+                                    **platform_kwargs)
+    except OSError:
+        _write_login_marker(platform, 'error', '无法启动登录程序，请查看本地环境')
+        raise HTTPException(500, '无法启动登录程序')
+    LOGIN_PROCESSES[platform] = proc
+    return {'mode': 'qr', **_login_status(platform)}
+
+
+@app.post("/api/login/{platform}/cancel")
+async def api_login_cancel(platform: str):
+    if platform not in LOGIN_RUNNERS:
+        raise HTTPException(404, '未知平台')
+    async with _account_lock(platform):
+        proc = LOGIN_PROCESSES.get(platform)
+        if proc is not None and proc.poll() is None:
+            if os.name == 'nt':
+                proc.terminate()
+            else:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            try:
+                await asyncio.to_thread(proc.wait, timeout=5)
+            except subprocess.TimeoutExpired:
+                if os.name == 'nt':
+                    proc.kill()
+                else:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                await asyncio.to_thread(proc.wait, timeout=5)
+        if _login_status(platform)['state'] != 'success':
+            _write_login_marker(platform, 'cancelled', '登录已取消，可重新获取二维码')
+        return {'ok': True}
+
+
+@app.get("/api/login/{platform}/status")
+async def api_login_status(platform: str):
+    if platform not in LOGIN_RUNNERS:
+        raise HTTPException(404, '未知平台')
+    s = _login_status(platform)
+    proc = LOGIN_PROCESSES.get(platform)
+    if s.get('state') == 'success' and proc is not None and proc.poll() is None:
+        return {'mode': 'qr', **s, 'state': 'verifying', 'message': '正在保存登录态'}
+    if s.get('state') == 'success':
+        # 登录刚成功 → 清掉登录前缓存的「未登录」whoami 结果，令下次 whoami 重新真校验；
+        # 否则卡片会因 WHOAMI_TTL(600s) 内的旧 false 持续显示「未登录」（本次视频号问题的根因）。
+        # 只清缓存、不改任何登录/检测逻辑。
+        with _WHOAMI_LOCK:
+            _WHOAMI_CACHE.pop(platform, None)
+    return {'mode': 'qr', **s}
+
+
+class SmsCodeRequest(BaseModel):
+    code: str
+
+
+@app.post("/api/login/{platform}/sms")
+async def api_login_sms(platform: str, req: SmsCodeRequest):
+    """回填短信验证码：写入 runner 轮询的一次性验证码文件（见 login_state.read_sms_code）。
+
+    登录 runner 检测到风控短信墙时把状态置 sms_required，前端弹输入框，用户把手机
+    收到的验证码提交到这里，runner 读走后填码提交，继续完成登录。
+    """
+    if platform not in LOGIN_RUNNERS:
+        raise HTTPException(404, '未知平台')
+    code = ''.join(ch for ch in (req.code or '') if ch.isdigit())
+    if not (4 <= len(code) <= 8):
+        raise HTTPException(400, '验证码应为 4-8 位数字')
+    LOGIN_DIR.mkdir(parents=True, exist_ok=True)
+    (LOGIN_DIR / f'{platform}.code').write_text(code, encoding='utf-8')
+    return {'ok': True}
+
+
+@app.get("/api/accounts/{platform}/whoami")
+async def api_account_whoami(platform: str):
+    async with _account_lock(platform):
+        proc = LOGIN_PROCESSES.get(platform)
+        if proc is not None and proc.poll() is None:
+            raise HTTPException(409, '正在扫码登录，完成后再校验账号')
+        return await _account_whoami(platform)
+
+
+async def _account_whoami(platform: str):
+    """真校验登录态 + 读昵称/头像（起 headless 浏览器，数秒）。前端开页后台调用以自愈假阳性。
+    带 TTL 进程内缓存（避免账号页+工作台重复起浏览器）；确认已登录则回写标记，令快速路径自愈。"""
+    cfg = LOGIN_RUNNERS.get(platform)
+    if not cfg:
+        raise HTTPException(404, '未知平台')
+    backend = cfg['backend']
+    if backend == 'unsupported':
+        return {'loggedIn': False, 'name': '', 'avatar': ''}
+    # 命中未过期缓存直接返回
+    with _WHOAMI_LOCK:
+        hit = _WHOAMI_CACHE.get(platform)
+    if hit and (time.time() - hit[0]) < WHOAMI_TTL:
+        return hit[1]
+    if backend == 'biliup':
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'bili_login.py'), 'whoami',
+               '--cookie', str(PROJECT_ROOT / 'cookies.json')]
+    elif backend == 'xhs':
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'xhs_publish.py'), 'whoami', *_xhs_proxy_args(), *_xhs_browser_args()]
+    elif backend == 'douyin':
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'douyin_publish.py'), 'whoami']
+    else:
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'whoami',
+               '--platform', cfg['wp']]
+    try:
+        proc = await asyncio.to_thread(subprocess.run, cmd, cwd=str(PROJECT_ROOT), env=_proxy_env(),
+                                       capture_output=True, text=True, timeout=150)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, '校验超时（浏览器起不来或网络慢）')
+    data = {'loggedIn': False, 'name': '', 'avatar': ''}
+    confident = False   # 是否拿到「可信」校验结论（子进程正常跑出 JSON 且无 error 字段）
+    for line in reversed((proc.stdout or '').strip().splitlines()):
+        line = line.strip()
+        if line.startswith('{'):
+            try:
+                d = json.loads(line)
+                data = {'loggedIn': bool(d.get('loggedIn')), 'name': d.get('name') or '', 'avatar': d.get('avatar') or ''}
+                # 有 error 字段 = 校验本身失败（浏览器起不来/网络抖动/崩溃），不是可信的「未登录」结论
+                confident = not d.get('error')
+                break
+            except Exception:
+                continue
+    if not confident:
+        # 校验失败/无有效输出 → **不缓存、不删标记**，返回「上次已知」登录态（读标记）。
+        # 避免一次校验抖动就把已登录卡片翻成「未登录」并缓存 10 分钟；下次校验(缓存未写)会自动重试恢复。
+        raise HTTPException(503, '账号校验未完成：请检查网络或关闭占用此账号的自动化浏览器；保留上次状态')
+    with _WHOAMI_LOCK:
+        _WHOAMI_CACHE[platform] = (time.time(), data)
+    # 回写标记：确认已登录 → 快速路径（/api/accounts、/api/analytics/platforms）此后也正确；
+    # biliup 走 cookies.json 判定，不用标记文件。
+    if backend != 'biliup':
+        if data['loggedIn']:
+            _write_login_marker(platform, 'success', data.get('name') or '')
+        else:
+            try:
+                (LOGIN_DIR / f'{platform}.json').unlink()
+            except OSError:
+                pass
+    return data
+
+
+@app.post("/api/logout/{platform}")
+async def api_logout(platform: str):
+    """退出登录：删持久化浏览器 profile + 登录状态/二维码/头像文件（biliup 删 cookies.json）。"""
+    cfg = LOGIN_RUNNERS.get(platform)
+    if not cfg:
+        raise HTTPException(404, '未知平台')
+    deleted = []
+    prof_name = cfg.get('profile')
+    if prof_name:
+        pdir = (BROWSER_PROFILES / prof_name).resolve()
+        if BROWSER_PROFILES.resolve() in pdir.parents and pdir.is_dir():
+            shutil.rmtree(pdir, ignore_errors=True)
+            deleted.append(prof_name)
+    if cfg['backend'] == 'biliup':
+        ck = PROJECT_ROOT / 'cookies.json'
+        if ck.is_file():
+            ck.unlink()
+            deleted.append('cookies.json')
+    for suffix in ('.json', '.png', '-me.png', '.code'):
+        f = LOGIN_DIR / f'{platform}{suffix}'
+        try:
+            if f.is_file():
+                f.unlink()
+                deleted.append(f.name)
+        except OSError:
+            pass
+    with _WHOAMI_LOCK:
+        _WHOAMI_CACHE.pop(platform, None)
+    return {'ok': True, 'deleted': deleted}
+
+
+# 归因层：可抓创作数据的平台（走 Playwright 登录态；bilibili 用 biliup cookies 不在此列）
+ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili"}
+
+
+@app.get("/api/analytics/platforms")
+async def api_analytics_platforms():
+    """列出支持抓数据的平台 + 各自登录态（前端据此渲染平台选择器）。"""
+    return [
+        {"platform": pf, "name": LOGIN_RUNNERS.get(pf, {}).get("name", pf),
+         "loggedIn": _account_logged_in(pf, LOGIN_RUNNERS.get(pf, {}))}
+        for pf in LOGIN_RUNNERS if pf in ANALYTICS_PLATFORMS
+    ]
+
+
+@app.get("/api/analytics/{platform}")
+async def api_analytics(platform: str):
+    """抓取某平台已登录账号的创作数据（粉丝/获赞/作品 + 与上次快照的增长）。起 headless 浏览器，数秒。"""
+    if platform not in ANALYTICS_PLATFORMS:
+        raise HTTPException(404, "该平台暂不支持数据抓取")
+    # B站用 cookie 调 API（无浏览器 profile），单独走 bili_login stats；其余走 account_stats（Playwright）
+    if platform == "bilibili":
+        cmd = [sys.executable, str(SHARED_SCRIPTS / "bili_login.py"), "stats",
+               "--cookie", str(PROJECT_ROOT / "cookies.json")]
+    else:
+        # 代理策略由 account_stats.py 按平台自定（xhs 直连、其它走 env），后端照常传 _proxy_env
+        cmd = [sys.executable, str(SHARED_SCRIPTS / "account_stats.py"), "fetch", "--platform", platform]
+    try:
+        proc = await asyncio.to_thread(subprocess.run, cmd, cwd=str(PROJECT_ROOT), env=_proxy_env(),
+                                       capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "抓取超时（浏览器起不来或网络慢）")
+    for line in reversed((proc.stdout or "").strip().splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except Exception:
+                continue
+    detail = (proc.stderr or "").strip().splitlines()[-1:] or ["未取到数据"]
+    raise HTTPException(502, f"未取到数据（可能未登录或平台改版）：{detail[0][:120]}")
+
+
+MEDIA_REQUIRED = {"xiaohongshu", "douyin", "kuaishou", "weixin-channels", "bilibili"}
+VIDEO_ONLY_PUBLISH = {"douyin", "weixin-channels", "bilibili"}   # 只能发视频的平台
+
+
+class PublishRequest(BaseModel):
+    title: str = ''
+    body: str = ''
+    media: list[str] = []
+    tags: str = ''
+
+
+def _write_publish_status(status_file: Path, state: str, message: str = '') -> None:
+    """写异步发布状态（与 login_state 同格式），原子写。"""
+    try:
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = status_file.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'state': state, 'message': message, 'ts': int(time.time())},
+                                  ensure_ascii=False), encoding='utf-8')
+        os.replace(tmp, status_file)
+    except Exception:
+        pass
+
+
+def _read_publish_status(platform: str) -> dict:
+    st = PUBLISH_DIR / f'{platform}.json'
+    if st.is_file():
+        try:
+            d = json.loads(st.read_text(encoding='utf-8'))
+            return {'state': d.get('state', 'unknown'), 'message': d.get('message', '')}
+        except Exception:
+            pass
+    return {'state': 'unknown', 'message': ''}
+
+
+def _run_publish_bg(platform: str, cmd: list, title: str, body: str, cfg: dict,
+                    status_file: Path, code_file: Path) -> None:
+    """后台线程跑发布脚本（脚本自身把 starting/sms_required/verifying/success/error 写进 status_file）。
+    结束后兜底补写终态 + 记 _publish.log + 成功则回流排期。"""
+    ok = False
+    out = err = ''
+    try:
+        proc = subprocess.run(cmd, cwd=str(PROJECT_ROOT), env=_publish_env(),
+                              capture_output=True, text=True, timeout=900)
+        ok = proc.returncode == 0
+        out, err = proc.stdout or '', proc.stderr or ''
+    except subprocess.TimeoutExpired:
+        err = '发布超时（>900s）'
+    except Exception as e:  # noqa: BLE001
+        err = f'发布进程异常：{e}'
+    try:
+        with (OUTPUTS_DIR / '_publish.log').open('a', encoding='utf-8') as lf:
+            lf.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {platform}(async) ok={ok} =====\n")
+            lf.write('CMD: ' + ' '.join(cmd) + '\nSTDOUT:\n' + out[-2000:] + '\nSTDERR:\n' + err[-2000:] + '\n')
+    except Exception:
+        pass
+    # 脚本正常会写终态；异常/超时没写到时兜底补一个
+    if _read_publish_status(platform)['state'] not in ('success', 'error'):
+        _write_publish_status(status_file, 'success' if ok else 'error',
+                              '发布成功' if ok else ('\n'.join((err or out).strip().splitlines()[-4:]) or '发布失败'))
+    try:
+        code_file.unlink()
+    except OSError:
+        pass
+    if ok:
+        try:
+            items = _read_schedule()
+            items.append({'id': uuid.uuid4().hex[:12], 'title': title,
+                          'date': time.strftime('%Y-%m-%d'), 'platform': cfg['name'],
+                          'time': time.strftime('%H:%M'), 'status': 'published', 'note': body[:200],
+                          'kind': 'content', 'source': 'publish-page'})
+            _write_schedule(items)
+        except Exception:
+            pass
+
+
+def _start_async_publish(platform: str, cmd: list, title: str, body: str, cfg: dict,
+                         status_file: Path, code_file: Path) -> dict:
+    """启动异步发布：清旧码/状态 → 起后台线程 → 立即返回。前端轮询 /api/publish/{p}/status，
+    遇 sms_required 弹输入框、提交到 /api/publish/{p}/sms。"""
+    try:
+        code_file.unlink()
+    except OSError:
+        pass
+    _write_publish_status(status_file, 'starting', '发布中…（若触发风控会要求短信验证）')
+    threading.Thread(target=_run_publish_bg,
+                     args=(platform, cmd, title, body, cfg, status_file, code_file),
+                     daemon=True).start()
+    # 关键：**不返回 ok:true**——这只是「已启动」的应答，真正结果要靠轮询 /status。
+    # 若这里给 ok:true，旧前端会把它当「已发布」立刻显示成功（假成功 bug，真机踩过）。
+    return {'async': True, 'pending': True, 'message': '发布已启动，请稍候…'}
+
+
+@app.get("/api/publish/{platform}/status")
+async def api_publish_status(platform: str):
+    """轮询异步发布状态：starting/sms_required/verifying/success/error。"""
+    if platform not in LOGIN_RUNNERS:
+        raise HTTPException(404, '未知平台')
+    return {'mode': 'publish', **_read_publish_status(platform)}
+
+
+@app.post("/api/publish/{platform}/sms")
+async def api_publish_sms(platform: str, req: SmsCodeRequest):
+    """发布触发短信墙时回填验证码（写发布 runner 轮询的一次性验证码文件）。"""
+    if platform not in LOGIN_RUNNERS:
+        raise HTTPException(404, '未知平台')
+    code = ''.join(ch for ch in (req.code or '') if ch.isdigit())
+    if not (4 <= len(code) <= 8):
+        raise HTTPException(400, '验证码应为 4-8 位数字')
+    PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
+    (PUBLISH_DIR / f'{platform}.code').write_text(code, encoding='utf-8')
+    return {'ok': True}
+
+
+@app.post("/api/publish/{platform}")
+async def api_publish(platform: str, req: PublishRequest):
+    """一键发布：分发到对应 publisher 脚本真发（--exec）。二次确认在前端。"""
+    cfg = LOGIN_RUNNERS.get(platform)
+    if not cfg:
+        raise HTTPException(404, '未知平台')
+    backend = cfg['backend']
+    if backend == 'unsupported':
+        raise HTTPException(400, f"{cfg['name']} 暂不支持一键发布")
+    if not req.title.strip() and not req.body.strip():
+        raise HTTPException(400, '标题/正文不能为空')
+    imgs, vids = [], []
+    for rel in req.media or []:
+        full = _safe_output_path(rel)
+        ext = full.suffix.lower()
+        if ext in VIDEO_EXTS:
+            vids.append(str(full))
+        elif ext in IMAGE_EXTS:
+            imgs.append(str(full))
+    if platform in MEDIA_REQUIRED and not imgs and not vids:
+        raise HTTPException(400, f"{cfg['name']} 需附带图片或视频")
+    if imgs and vids:
+        raise HTTPException(400, '同一条内容不能同时发图片和视频，请二选一')
+    if platform in VIDEO_ONLY_PUBLISH and not vids:
+        raise HTTPException(400, f"{cfg['name']} 只能发视频，请附带一个视频文件")
+    title = req.title.strip() or req.body.strip()[:20]
+    tags = req.tags or ''
+    py = sys.executable
+    if platform == 'xiaohongshu':
+        base = [py, str(SHARED_SCRIPTS / 'xhs_publish.py')]
+        cmd = base + ['publish-video', *_xhs_proxy_args(), '--video', vids[0]] if vids else base + ['publish', *_xhs_proxy_args(), '--images', ','.join(imgs)]
+        cmd += _xhs_browser_args()
+        cmd += ['--title', title, '--content', req.body, '--tags', tags, '--exec']
+    elif platform == 'bilibili':
+        # B站投稿：直接调 biliup CLI（需 cookies.json，PATH 上有 biliup）。必须视频；
+        # tid=36「知识」；B站投稿必须≥1 标签，无则兜底「日常」。
+        bili_tag = tags.replace('#', '').replace('，', ',').strip().strip(',') or '日常'
+        cmd = ['biliup', '-u', str(PROJECT_ROOT / 'cookies.json'), 'upload', vids[0],
+               '--title', title[:80], '--tid', '36', '--copyright', '1', '--tag', bili_tag]
+        if req.body.strip():
+            cmd += ['--desc', req.body[:2000]]
+    elif platform == 'douyin':
+        base = [py, str(SHARED_SCRIPTS / 'douyin_publish.py')]
+        cmd = base + ['publish-video', '--video', vids[0]] if vids else base + ['publish', '--images', ','.join(imgs)]
+        cmd += ['--title', title, '--content', req.body, '--tags', tags, '--exec']
+        # 抖音发布可能触发风控短信墙——异步跑 + 状态/验证码文件，前端轮询到 sms_required 时弹输入框
+        PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
+        status_file = PUBLISH_DIR / 'douyin.json'
+        code_file = PUBLISH_DIR / 'douyin.code'
+        cmd += ['--status-file', str(status_file), '--sms-code-file', str(code_file)]
+        return _start_async_publish(platform, cmd, title, req.body, cfg, status_file, code_file)
+    else:
+        cmd = [py, str(SHARED_SCRIPTS / 'web_publisher.py'), 'publish',
+               '--platform', cfg['wp'], '--title', title, '--desc', req.body,
+               '--tags', tags, '--exec']
+        media = vids[0] if vids else (imgs[0] if imgs else None)
+        if media:
+            cmd += ['--media', media]
+    try:
+        proc = await asyncio.to_thread(subprocess.run, cmd, cwd=str(PROJECT_ROOT), env=_publish_env(),
+                                       capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, '发布超时（媒体处理慢或流程卡住）')
+    ok = proc.returncode == 0
+    tail = (proc.stderr or proc.stdout or '').strip().splitlines()
+    detail = '\n'.join(tail[-8:])
+    try:
+        with (OUTPUTS_DIR / '_publish.log').open('a', encoding='utf-8') as lf:
+            lf.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {platform} rc={proc.returncode} ok={ok} =====\n")
+            lf.write('CMD: ' + ' '.join(cmd) + '\n')
+            lf.write('STDOUT:\n' + (proc.stdout or '')[-2000:] + '\n')
+            lf.write('STDERR:\n' + (proc.stderr or '')[-2000:] + '\n')
+    except Exception:
+        pass
+    if ok:
+        try:
+            items = _read_schedule()
+            items.append({'id': uuid.uuid4().hex[:12], 'title': title,
+                          'date': time.strftime('%Y-%m-%d'), 'platform': cfg['name'],
+                          'time': time.strftime('%H:%M'), 'status': 'published',
+                          'note': req.body[:200], 'kind': 'content', 'source': 'publish-page'})
+            _write_schedule(items)
+        except Exception:
+            pass
+    return {'ok': ok, 'message': '发布成功' if ok else '发布失败（见 detail）', 'detail': detail}
+
+
+class ProfileBuildRequest(BaseModel):
+    name: str
+    form: dict
+
+
+@app.post("/api/profile/build")
+async def api_profile_build(req: ProfileBuildRequest):
+    """首次引导：表单 → 写基线画像（确定性，秒可用）→ **后台**跑 agent 分析社媒链接增强。
+
+    改异步：立即返回（基线已写、画像即可用），避免 agent 增强(~2min)阻塞请求被 code-server
+    代理超时掐断（前端曾因此报 API 400）。前端轮询 /api/profile/build/status/{name} 看增强进度。
+    """
+    name = (req.name or '').strip()  # 自动去掉首尾空格
+    if not name:
+        raise HTTPException(400, '画像名不能为空（去掉首尾空格后为空，请输入有效名称）')
+    if '/' in name or '\\' in name:
+        raise HTTPException(400, '画像名不能包含 / 或 \\ 字符，请改掉后重试')
+    if name.startswith(('.', '_')):
+        raise HTTPException(400, '画像名不能以 . 或 _ 开头，请换个开头')
+    pd = PROFILES_DIR / name
+    if pd.exists():
+        raise HTTPException(409, f'画像「{name}」已存在，请换一个名字')
+    _write_baseline_profile(name, req.form or {})
+    instruction = _form_to_instruction(name, req.form or {})
+    msg = (f"请执行 /skill-profile-builder 完善已存在的画像「{name}」。用户已通过表单提供以下信息，我已按此写好 profiles/{name}"
+           f"/ 的基线六维文件。请：①尽力抓取用户给的社媒链接分析已发内容/风格/受众（抓不到就降级，标注[待补充]，勿臆造）②据分析结果润色/补全各维度文件 ③给出一句话完成度摘要。表单信息如下：\n\n{instruction}")
+
+    _write_profile_status(name, 'running', 'AI 正在分析并增强画像…')
+
+    def _enhance() -> None:
+        try:
+            log = run_agent_sync(msg, TIMEOUT_PRODUCE)
+            _write_profile_status(name, 'done', log)
+        except Exception as e:  # noqa: BLE001
+            _write_profile_status(name, 'failed', f'AI 增强失败（基线画像已可用）：{e}')
+
+    threading.Thread(target=_enhance, daemon=True).start()
+    # 基线已写、画像立即可用；增强在后台，前端轮询状态
+    return {'created': pd.is_dir(), 'name': name, 'async': True, 'status': 'running'}
+
+
+def _profile_status_file(name: str) -> Path:
+    return PROFILE_BUILD_DIR / f'{name}.json'
+
+
+def _write_profile_status(name: str, state: str, log: str = '') -> None:
+    """原子写画像增强状态。"""
+    try:
+        PROFILE_BUILD_DIR.mkdir(parents=True, exist_ok=True)
+        f = _profile_status_file(name)
+        tmp = f.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'state': state, 'log': log, 'ts': int(time.time())},
+                                  ensure_ascii=False), encoding='utf-8')
+        os.replace(tmp, f)
+    except Exception:
+        pass
+
+
+@app.get("/api/profile/build/status/{name}")
+async def api_profile_build_status(name: str):
+    """查画像增强进度：running / done / failed / unknown。"""
+    f = _profile_status_file(name)
+    if f.is_file():
+        try:
+            d = json.loads(f.read_text(encoding='utf-8'))
+            return {'state': d.get('state', 'unknown'), 'log': d.get('log', '')}
+        except Exception:
+            pass
+    return {'state': 'unknown', 'log': ''}
+
+
+def _form_to_instruction(name: str, form: dict) -> str:
+    def g(k: str, default: str = '（未填）') -> str:
+        v = form.get(k)
+        if isinstance(v, list):
+            return '、'.join(str(x) for x in v) if v else default
+        return str(v).strip() if v not in (None, '') else default
+    links = form.get('links') or {}
+    links_txt = '\n'.join(f'  - {p}: {u}' for p, u in links.items() if u) or '  （未提供）'
+    return (f"画像名：{name}\n运营平台：{g('platforms')}\n起号状态：{g('accountStage')}"
+            f"\n社媒主页链接：\n{links_txt}\n想做的方向：{g('direction')}"
+            f"\n为什么做/我的优势：{g('reason')}\n运营目标：{g('goal')}"
+            f"\n想产出的形式：{g('formats')}\n喜欢看的内容/对标账号：{g('likes')}"
+            f"\n期望调性：{g('tone')}\n不做的内容/红线：{g('avoid')}\n")
+
+
+def _write_baseline_profile(name: str, form: dict) -> None:
+    """从表单确定性生成六维基线文件。链接派生字段标 [待 AI 分析]。"""
+    pd = PROFILES_DIR / name
+    pd.mkdir(parents=True, exist_ok=True)
+
+    def g(k: str, default: str = '') -> str:
+        v = form.get(k)
+        if isinstance(v, list):
+            return '、'.join(str(x) for x in v)
+        return str(v).strip() if v not in (None, '') else default
+    direction = g('direction') or '[待补充]'
+    reason = g('reason') or '[待补充]'
+    goal = g('goal')
+    formats = g('formats')
+    tone = g('tone') or '[待分析]'
+    likes = g('likes')
+    avoid = g('avoid')
+    platforms = form.get('platforms') or []
+    links = form.get('links') or {}
+    (pd / 'identity.md').write_text(
+        f"# 身份定位\n\n## 我是谁\n\n{direction}\n\n## 差异化\n\n{reason}\n\n## 内容方向\n\n{direction}"
+        f"{'（形式：' + formats + '）' if formats else ''}\n"
+        f"{'运营目标：' + goal if goal else ''}\n",
+        encoding='utf-8')
+    (pd / 'style.md').write_text(
+        f"# 内容风格\n\n## 语气\n\n{tone}\n\n## 开头结构\n\n[待 AI 分析已发内容]\n\n## 视觉风格\n\n[待 AI 分析]\n\n## 内容节奏\n\n{formats or '[待补充]'}\n\n## 标志性元素\n\n[待 AI 分析]\n",
+        encoding='utf-8')
+    (pd / 'audience.md').write_text(
+        '# 目标受众\n\n## 核心人群\n\n[待 AI 分析/待补充]\n\n## 兴趣标签\n\n[待补充]\n\n## 痛点\n\n[待补充]\n\n## 互动特征\n\n[待 AI 分析已发内容]\n',
+        encoding='utf-8')
+    plat_lines = []
+    for p in platforms:
+        url = links.get(p, '')
+        plat_lines.append(f"## {p}\n\n主页：{url or '[待补充]'}\n粉丝量级 / 内容形式：[待补充]\n")
+    (pd / 'platforms.md').write_text(
+        '# 平台运营\n\n' + ('\n'.join(plat_lines) if plat_lines else '[待补充]\n'),
+        encoding='utf-8')
+    (pd / 'preferences.md').write_text(
+        f"# 偏好与红线\n\n## 要做的\n\n{direction}\n\n## 不做的\n\n{avoid or '[待补充]'}\n\n## 合规底线\n\n{avoid or '[待补充]'}\n",
+        encoding='utf-8')
+    (pd / 'memory.md').write_text(
+        f"# 经验沉淀\n\n## 内容洞察\n\n{'喜欢的内容/对标：' + likes if likes else '[待 AI 分析已收藏/点赞]'}\n\n## 踩过的坑\n\n[待积累]\n",
+        encoding='utf-8')
+
+
+@app.delete("/api/session/{session_key}")
+async def api_delete_session(session_key: str):
+    """删除 Easel 保存的 Codex thread 映射，不触碰 Codex 全局历史。"""
+    sk = session_key.removeprefix("web:")
+    if sk in _RUNNING_CHAT:
+        raise HTTPException(409, "Stop the active turn before deleting its session")
+    return {"deleted": await asyncio.to_thread(forget_session, f"web:{sk}")}
+
+
+TREND_SOURCES: dict[str, tuple[str, str | None]] = {
+    "weibo": ("https://60s.viki.moe/v2/weibo", "https://v2.xxapi.cn/api/weibohot"),
+    "douyin": ("https://60s.viki.moe/v2/douyin", "https://v2.xxapi.cn/api/douyinhot"),
+    "zhihu": ("https://60s.viki.moe/v2/zhihu", None),
+    "bilibili": ("https://60s.viki.moe/v2/bili", "https://v2.xxapi.cn/api/bilibilihot"),
+    "baidu": ("https://60s.viki.moe/v2/baidu/hot", "https://v2.xxapi.cn/api/baiduhot"),
+    "toutiao": ("https://60s.viki.moe/v2/toutiao", None),
+}
+TREND_LABELS = {
+    "weibo": "微博",
+    "douyin": "抖音",
+    "zhihu": "知乎",
+    "bilibili": "B站",
+    "baidu": "百度",
+    "toutiao": "头条",
+}
+_TREND_CACHE: dict[str, tuple[float, list]] = {}
+
+
+def _http_get_json(url: str, timeout: int = 8):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Easel"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+def _parse_hot(obj: dict) -> list[dict]:
+    data = obj.get("data")
+    if isinstance(data, dict):
+        data = data.get("data") or data.get("list") or []
+    out = []
+    if isinstance(data, list):
+        for it in data:
+            if not isinstance(it, dict):
+                continue
+            title = it.get("title") or it.get("word") or it.get("name") or it.get("keyword")
+            if not title:
+                continue
+            out.append({
+                "title": str(title),
+                "hot": str(it.get("hot") or it.get("hot_value") or it.get("num") or ""),
+                "url": it.get("url") or it.get("link") or it.get("mobil_url") or "",
+            })
+    return out
+
+
+def _fetch_platform(pf: str) -> list[dict]:
+    primary, backup = TREND_SOURCES.get(pf, (None, None))
+    for url in (primary, backup):
+        if not url:
+            continue
+        try:
+            items = _parse_hot(_http_get_json(url))
+            if items:
+                return items
+        except Exception:
+            continue
+    return []
+
+
+@app.get("/api/trends")
+async def api_trends(platforms: str = "weibo,douyin,zhihu", limit: int = 12):
+    pfs = [p.strip() for p in platforms.split(",") if p.strip() in TREND_SOURCES]
+    now = time.time()
+    loop = asyncio.get_event_loop()
+    result = []
+    for pf in pfs:
+        c = _TREND_CACHE.get(pf)
+        if c and now - c[0] < 300:
+            items = c[1]
+        else:
+            items = await loop.run_in_executor(None, _fetch_platform, pf)
+            if items:
+                _TREND_CACHE[pf] = (now, items)
+            elif c:
+                items = c[1]
+        result.append({
+            "platform": pf,
+            "label": TREND_LABELS.get(pf, pf),
+            "items": items[:max(1, min(limit, 30))],
+        })
+    return {"trends": result, "updated": int(now)}
+
+
+SCHEDULE_FILE = OUTPUTS_DIR / "_schedule.json"
+SCHEDULE_STATUSES = {"idea", "draft", "scheduled", "published"}
+SCHEDULE_KINDS = {"content", "event"}
+
+
+def _read_schedule() -> list[dict]:
+    if not SCHEDULE_FILE.is_file():
+        return []
+    try:
+        d = json.loads(SCHEDULE_FILE.read_text(encoding="utf-8"))
+        return d if isinstance(d, list) else []
+    except Exception:
+        return []
+
+
+def _write_schedule(items: list[dict]) -> None:
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = SCHEDULE_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(SCHEDULE_FILE)
+
+
+class ScheduleItem(BaseModel):
+    title: str
+    date: str
+    platform: str = ""
+    time: str = ""
+    status: str = "idea"
+    note: str = ""
+    kind: str = "content"          # content（内容/发布）| event（平台活动/节日/特殊日期）
+    url: str = ""                  # 已发布内容链接（可选）
+    source: str = "manual"         # manual | publish-page | chat | scheduler
+    event_type: str = ""           # event 专属：节日/电商/平台活动/行业
+    end_date: str = ""             # event 专属：活动区间结束日
+    task_id: str | None = None
+
+
+@app.get("/api/schedule")
+async def api_schedule_list(task_id: str | None = None):
+    items = _read_schedule()
+    return [it for it in items if not task_id or it.get("task_id") == task_id]
+
+
+@app.post("/api/schedule")
+async def api_schedule_create(req: ScheduleItem):
+    task_ref = _validate_task_ref(req.task_id)
+    items = _read_schedule()
+    kind = req.kind if req.kind in SCHEDULE_KINDS else "content"
+    st = req.status if req.status in SCHEDULE_STATUSES else "idea"
+    item = {
+        "id": uuid.uuid4().hex[:12],
+        "title": req.title.strip() or ("未命名活动" if kind == "event" else "未命名"),
+        "date": req.date,
+        "platform": req.platform,
+        "time": req.time,
+        "status": st,
+        "note": req.note,
+        "kind": kind,
+        "url": req.url,
+        "source": req.source if req.source in {"manual", "publish-page", "chat", "scheduler"} else "manual",
+        "event_type": req.event_type,
+        "end_date": req.end_date,
+        "task_id": task_ref,
+    }
+    items.append(item)
+    _write_schedule(items)
+    return item
+
+
+@app.put("/api/schedule/{sid}")
+async def api_schedule_update(sid: str, req: ScheduleItem):
+    items = _read_schedule()
+    task_ref = _validate_task_ref(req.task_id)
+    for it in items:
+        if it.get("id") == sid:
+            kind = req.kind if req.kind in SCHEDULE_KINDS else it.get("kind", "content")
+            it.update({
+                "title": req.title.strip() or it.get("title", "未命名"),
+                "date": req.date,
+                "platform": req.platform,
+                "time": req.time,
+                "status": req.status if req.status in SCHEDULE_STATUSES else it.get("status", "idea"),
+                "note": req.note,
+                "kind": kind,
+                "url": req.url,
+                "event_type": req.event_type,
+                "end_date": req.end_date,
+                "task_id": task_ref,
+            })
+            _write_schedule(items)
+            return it
+    raise HTTPException(404, "排期不存在")
+
+
+@app.delete("/api/schedule/{sid}")
+async def api_schedule_delete(sid: str):
+    items = _read_schedule()
+    new = [it for it in items if it.get("id") != sid]
+    if len(new) == len(items):
+        raise HTTPException(404, "排期不存在")
+    _write_schedule(new)
+    return {"ok": True, "deleted": sid}
+
+
+@app.get("/api/schedule/context")
+async def api_schedule_context(days: int = 14):
+    """规划摘要（发布节奏/断更缺口 + 待发排期 + 临近节点 + 建议）——薄封装 calendar_ops，
+    前端页头「近期节点/建议」与 Agent 读回共用同一逻辑。失败返回空摘要不抛错。"""
+    cmd = [sys.executable, str(SHARED_SCRIPTS / "calendar_ops.py"),
+           "--data", str(SCHEDULE_FILE), "context", "--days", str(max(1, min(days, 90)))]
+    try:
+        proc = subprocess.run(cmd, cwd=str(PROJECT_ROOT), env=_proxy_env(),
+                              capture_output=True, text=True, timeout=20)
+        return json.loads(proc.stdout) if proc.returncode == 0 and proc.stdout.strip() else {}
+    except Exception:
+        return {}
+
+
+IDEAS_FILE = OUTPUTS_DIR / "_ideas.json"
+IDEA_STATUSES = {"pending", "doing", "done"}
+
+
+def _read_ideas() -> list[dict]:
+    if not IDEAS_FILE.is_file():
+        return []
+    try:
+        d = json.loads(IDEAS_FILE.read_text(encoding="utf-8"))
+        return d if isinstance(d, list) else []
+    except Exception:
+        return []
+
+
+def _write_ideas(items: list[dict]) -> None:
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = IDEAS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(IDEAS_FILE)
+
+
+class IdeaItem(BaseModel):
+    title: str
+    note: str = ""
+    source: str = ""
+    status: str = "pending"
+    task_id: str | None = None
+
+
+@app.get("/api/ideas")
+async def api_ideas_list(task_id: str | None = None):
+    items = _read_ideas()
+    return [it for it in items if not task_id or it.get("task_id") == task_id]
+
+
+@app.post("/api/ideas")
+async def api_ideas_create(req: IdeaItem):
+    task_ref = _validate_task_ref(req.task_id)
+    items = _read_ideas()
+    st = req.status if req.status in IDEA_STATUSES else "pending"
+    item = {
+        "id": uuid.uuid4().hex[:12],
+        "title": req.title.strip() or "未命名选题",
+        "note": req.note,
+        "source": req.source,
+        "status": st,
+        "created": int(time.time()),
+        "task_id": task_ref,
+    }
+    items.insert(0, item)
+    _write_ideas(items)
+    return item
+
+
+@app.put("/api/ideas/{iid}")
+async def api_ideas_update(iid: str, req: IdeaItem):
+    items = _read_ideas()
+    task_ref = _validate_task_ref(req.task_id)
+    for it in items:
+        if it.get("id") == iid:
+            it.update({
+                "title": req.title.strip() or it.get("title", "未命名选题"),
+                "note": req.note,
+                "source": req.source,
+                "status": req.status if req.status in IDEA_STATUSES else it.get("status", "pending"),
+                "task_id": task_ref,
+            })
+            _write_ideas(items)
+            return it
+    raise HTTPException(404, "选题不存在")
+
+
+@app.delete("/api/ideas/{iid}")
+async def api_ideas_delete(iid: str):
+    items = _read_ideas()
+    new = [it for it in items if it.get("id") != iid]
+    if len(new) == len(items):
+        raise HTTPException(404, "选题不存在")
+    _write_ideas(new)
+    return {"ok": True, "deleted": iid}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("EASEL_PORT", "7860"))
+    proxy_url = os.environ.get("VSCODE_PROXY_URI", "").replace("{{port}}", str(port))
+    print("\n  Seal-您的私人运营顾问 · 源自开源项目Easel")
+    print(f"  http://localhost:{port}")
+    if proxy_url:
+        print(f"  {proxy_url}")
+    print()
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

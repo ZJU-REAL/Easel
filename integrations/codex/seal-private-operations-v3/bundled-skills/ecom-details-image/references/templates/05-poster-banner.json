@@ -1,0 +1,56 @@
+{
+  "id": "poster-banner",
+  "name": "促销海报/Banner",
+  "keywords": ["海报", "poster", "banner", "促销", "广告图", "活动图", "promotion", "sale"],
+  "trigger_phrases": ["促销海报", "banner", "广告图", "活动海报", "促销图", "campaign poster", "sale banner"],
+  "prompt_template": {
+    "type": "promotional poster design",
+    "subject": "{product_description}",
+    "background": "{background_description}",
+    "headline": "{headline_text}",
+    "subtitle": "{subtitle_text}",
+    "price": "{price_info}",
+    "cta": "{cta_text}",
+    "style": "{visual_style}",
+    "quality": "high-resolution professional marketing design"
+  },
+  "defaults": {
+    "background": "gradient matching brand aesthetic",
+    "headline": "headline text",
+    "subtitle": "subtitle or description",
+    "price": "",
+    "cta": "Shop Now",
+    "style": "clean minimalist with accent colors"
+  },
+  "variants": {
+    "luxury": {
+      "description": "高端奢华风格",
+      "overrides": { "background": "full-bleed rich gradient, gold accents", "style": "luxury magazine editorial, gold foil, pearl embellishments" }
+    },
+    "minimal": {
+      "description": "极简现代风格",
+      "overrides": { "background": "clean white or light gradient", "style": "minimalist modern typography, generous white space" }
+    },
+    "festive": {
+      "description": "节日主题风格",
+      "overrides": { "background": "festive themed gradient with decorative elements", "style": "festive, cultural elements, seasonal motifs" }
+    },
+    "flash-sale": {
+      "description": "限时折扣风格",
+      "overrides": { "style": "bold attention-grabbing, high contrast, urgency elements" }
+    }
+  },
+  "category_tips": {
+    "beauty": "rose gold accents, elegant serif fonts, luxury gift aesthetic",
+    "electronics": "dark backgrounds, neon accents, futuristic typography",
+    "food": "warm colors, dynamic food elements, freshness cues",
+    "fashion": "editorial style, model inclusion, aspirational lifestyle"
+  },
+  "examples": [
+    "Luxury {category} campaign poster. Full-bleed gradient ivory to rose. Top: {headline} elegant serif. Center: {product} with decorative elements. {subtitle}. Bottom left: price {price} original crossed out. Bottom right: brand logo and {cta}. Gold foil accents, premium aesthetic, 2000x3000px",
+    "{category} promotional poster. {product} centered on {background}. Bold {headline} at top, price {price}, {cta} button. Clean minimalist, accent colors, professional layout, 2000x2000px",
+    "Holiday {category} gift campaign. {background} with decorative elements. Center: {product} with gift wrapping. Headline {headline} modern script. Price tag {price} decorative frame. Festive sophisticated, warm cinematic lighting, 1080x1350px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

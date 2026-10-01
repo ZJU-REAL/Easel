@@ -1,0 +1,48 @@
+{
+  "id": "creative-concept",
+  "name": "创意概念广告图",
+  "keywords": ["创意图", "概念图", "creative", "概念广告", "品牌广告", "创意广告", "concept art"],
+  "trigger_phrases": ["创意广告", "概念图", "品牌广告", "创意素材", "品牌宣传", "creative concept"],
+  "prompt_template": {
+    "type": "creative advertising photography",
+    "subject": "{product_description}",
+    "concept": "{creative_concept}",
+    "effects": "{special_effects}",
+    "color_palette": "{bold_palette}",
+    "art_direction": "{art_style}",
+    "quality": "award-winning advertising photography, ultra-detailed, cinematic"
+  },
+  "defaults": {
+    "concept": "dynamic product with unexpected visual elements",
+    "effects": "dramatic visual impact",
+    "color_palette": "bold unusual combinations",
+    "art_direction": "strong visual narrative"
+  },
+  "variants": {
+    "splash-dynamic": {
+      "description": "飞溅动态效果",
+      "overrides": { "effects": "water splash / powder explosion frozen in motion, high-speed photography", "art_direction": "dramatic, vivid, commercial style" }
+    },
+    "surreal": {
+      "description": "超现实概念",
+      "overrides": { "concept": "product in unexpected surreal environment", "effects": "gravity-defying, impossible geometry" }
+    },
+    "minimal-art": {
+      "description": "极简艺术风格",
+      "overrides": { "concept": "product as art object in minimalist composition", "color_palette": "monochromatic or two-tone" }
+    }
+  },
+  "category_tips": {
+    "beauty": "floating product with splash, ethereal lighting, formula particles",
+    "electronics": "holographic interfaces, data visualization, futuristic",
+    "food": "ingredient explosion, dynamic pour/splash, steam and fire",
+    "fashion": "editorial art direction, dramatic poses, fabric in motion"
+  },
+  "examples": [
+    "{product} floating in {dramatic_environment}, {effects: splash/particles/smoke}, {bold colors}, art direction: {style}, ultra-detailed, cinematic lighting, award-winning advertising, 8K",
+    "{product} with dynamic elements frozen in motion, high-speed photography, dramatic lighting, vivid colors, commercial {category}. Bold concept, 8K",
+    "Creative advertising. {product} in {artistic setting}. {colors} palette. Dramatic lighting with {effects}. Art direction: {style}. Award-winning, cinematic, 8K"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

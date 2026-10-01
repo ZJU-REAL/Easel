@@ -1,0 +1,42 @@
+{
+  "style_name": "data-chart",
+  "display_name": "数据图表风",
+  "description": "图表主导:柱图 / 折线 / 饼图 / 对比条 + 极简网格 + 数字突出。适合数据观察、行业报告、趋势分析、排行榜。",
+  "suitable_for": [
+    "data-visualization",
+    "industry-report",
+    "trend-analysis",
+    "ranking-list",
+    "comparison-stats",
+    "benchmark-results"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "1:1",
+    "newspic_size": "1080x1080",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#fafbfc",
+    "primary": "#0ea5e9",
+    "accent": "#ef4444",
+    "secondary": "#10b981",
+    "text": "#0f172a",
+    "grid": "#e2e8f0",
+    "secondary_text": "#64748b"
+  },
+  "typography": {
+    "heading": "思源黑体 Bold / Inter Bold(中英混排)",
+    "body": "思源黑体 Regular / Inter Regular",
+    "data_labels": "Inter Medium / JetBrains Mono(数字用等宽)"
+  },
+  "mood": ["analytical", "neutral", "professional", "data-driven", "clean", "trustworthy"],
+  "prompt_template": {
+    "newspic_card": "Generate a data-visualization style Chinese card, 1:1 square. Near-white background (#fafbfc) with light gray (#e2e8f0) grid lines. Center: a clean chart (bar / line / donut / horizontal comparison, choose based on topic) rendered in flat vector style. Primary color blue (#0ea5e9), accent red (#ef4444) for 'bad / down', green (#10b981) for 'good / up'. Title at top: '{card_main}' (bold sans-serif Chinese). Data labels use monospace digits (JetBrains Mono). Small source caption at bottom in gray. No 3D charts, no drop shadows, no illustrations. Feel: FiveThirtyEight / Bloomberg / The Economist data graphic, clean Apple-Numbers-like rendering.",
+    "article_inline": "Generate a data-chart style Chinese illustration, 16:9. Near-white background with a light grid. Topic: '{image_subject}'. Show a clean flat-vector chart (bar / line / donut / comparison) with blue (#0ea5e9), red (#ef4444), green (#10b981) accents. Bold Chinese title, monospace digits for numbers. No 3D, no drop shadows. FiveThirtyEight / Bloomberg aesthetic."
+  },
+  "example_reference": "(参考 FiveThirtyEight / Bloomberg Graphics / The Economist 数据图)",
+  "notes": "需要文章里有真实数字才用 —— 不要为了用风格而编数据。数字编出来被读者识破会掉粉,比 AI 味严重。"
+}

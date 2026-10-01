@@ -1,0 +1,48 @@
+{
+  "id": "social-media",
+  "name": "社交媒体素材",
+  "keywords": ["社交媒体", "小红书", "instagram", "tiktok", "种草", "社媒", "social media"],
+  "trigger_phrases": ["社交媒体图", "小红书图", "Instagram", "TikTok", "种草图", "社媒素材", "social media post"],
+  "prompt_template": {
+    "type": "social media content",
+    "subject": "{product_description}",
+    "platform": "{platform_style}",
+    "composition": "phone camera perspective, slightly off-center",
+    "lighting": "natural indoor lighting",
+    "overlay": "{overlay_elements}",
+    "quality": "authentic smartphone photography aesthetic"
+  },
+  "defaults": {
+    "platform": "Instagram post style",
+    "composition": "casual phone framing, slightly imperfect",
+    "lighting": "natural window light, warm color tone",
+    "overlay": "minimal stickers and text badges"
+  },
+  "variants": {
+    "xiaohongshu": {
+      "description": "小红书种草风格",
+      "overrides": { "platform": "Xiaohongshu RED app lifestyle photo, iPhone shot", "composition": "slightly tilted like quick grab shot", "lighting": "iPhone warm auto-white-balance, Kodak Portra 400 color feel", "overlay": "Xiaohongshu sticker, casual text, star rating" }
+    },
+    "instagram": {
+      "description": "Instagram帖子风格",
+      "overrides": { "platform": "Instagram post premium aesthetic", "composition": "clean framing with visual hierarchy", "overlay": "engagement badges, hashtag elements" }
+    },
+    "tiktok": {
+      "description": "TikTok/Reels封面风格",
+      "overrides": { "platform": "TikTok/Reels thumbnail, vertical format", "overlay": "trending audio icon, duet prompt, engagement metrics" }
+    }
+  },
+  "category_tips": {
+    "beauty": "show product in use on skin, texture close-up, real results",
+    "food": "overhead dish/drink shot, appetizing colors, 45-degree angle",
+    "fashion": "mirror selfie or outfit grid, casual styling, real-person aesthetic",
+    "home": "corner shot in styled room, cozy atmosphere, warm tones"
+  },
+  "examples": [
+    "Ultra-realistic Xiaohongshu RED product lifestyle photo, iPhone 15 Pro, NOT professional photographer. Slightly tilted angle, {product} on {surface}, lid off showing texture. Environmental details: slight water stain, natural shadows, lived-in feel. iPhone warm auto-white-balance, natural noise, NOT sharpened, Kodak Portra 400 feel, NOT AI-generated look, 8K, 1080x1350px",
+    "Instagram post format. {product} with overlay text, clean aesthetic. Feature cards showing benefits. Engagement icons. Hashtag tags. Square format, lifestyle aesthetic, 1080x1080px",
+    "Premium social media content, TikTok thumbnail. {product} in lifestyle setting. Timestamp badge, engagement metrics, product card. Trending audio icon. Color gradient frame. Viral-worthy composition, 1080x1920px"
+  ],
+  "anti_ai_tips": "Specify phone model. Add imperfection: noise, warm cast, not centered, slight blur. Use 'NOT AI-generated look'. Reference Kodak Portra 400 tone. Show lived-in environment.",
+  "supports_image_reference": true
+}

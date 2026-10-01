@@ -5,6 +5,8 @@ __pycache__/
 *.pyo
 *.egg-info/
 dist/
+!integrations/codex/seal-private-operations-v3/runtime/web/frontend/dist/
+!integrations/codex/seal-private-operations-v3/runtime/web/frontend/dist/**
 build/
 .eggs/
 

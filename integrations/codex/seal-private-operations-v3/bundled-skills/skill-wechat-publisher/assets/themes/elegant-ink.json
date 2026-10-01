@@ -1,0 +1,58 @@
+{
+  "theme_name": "elegant-ink",
+  "description": "水墨雅韵 - 墨黑 + 朱砂红,衬线字体,克制雅致的现代宋体,适合观点 / 人文 / 深度长文",
+  "styles": {
+    "body": "font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'PingFang SC', serif; font-size: 16px; color: #1d1a17; line-height: 1.95; letter-spacing: 0.8px; word-spacing: 2px; padding: 20px 22px; background: #fafaf7;",
+    "h1": "font-size: 24px; font-weight: 700; color: #1a1a1a; text-align: center; margin: 40px 0 28px; padding: 0 0 18px 0; letter-spacing: 4px; line-height: 1.4; border-bottom: 2px solid #1a1a1a;",
+    "h2": "font-size: 19px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px; padding: 4px 0 10px 0; border-bottom: 1px solid #1a1a1a; line-height: 1.55; letter-spacing: 1.5px;",
+    "h3": "font-size: 16px; font-weight: 700; color: #6a2828; margin: 30px 0 14px; padding: 0 0 0 12px; border-left: 3px solid #6a2828; letter-spacing: 1px;",
+    "p": "margin: 18px 0; text-indent: 0; text-align: justify; color: #1d1a17; line-height: 2.0;",
+    "blockquote": "margin: 28px 0; padding: 20px 24px; background: #f2efe8; border-left: 4px solid #6a2828; color: #3a3330; font-size: 15px; border-radius: 0; line-height: 2.0; font-style: italic; letter-spacing: 0.6px;",
+    "img": "max-width: 100%; height: auto; border-radius: 2px; margin: 28px auto; display: block; box-shadow: 0 4px 18px rgba(26,26,26,0.08); border: 1px solid #e8e4d9;",
+    "strong": "color: #6a2828; font-weight: 700; border-bottom: 2px solid #d4b888; padding: 0 2px;",
+    "em": "font-style: italic; color: #6a4e3c;",
+    "code_inline": "background: #f2efe8; color: #6a2828; padding: 2px 8px; border-radius: 2px; font-size: 13.5px; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; border: 1px solid #e0dacc;",
+    "code_block": "background: #1a1a1a; color: #f2efe8; padding: 16px 18px; border-radius: 2px; font-size: 12.5px; line-height: 1.65; font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace; overflow-x: auto; white-space: pre; margin: 26px 0; border: none; -webkit-overflow-scrolling: touch; -moz-tab-size: 2; tab-size: 2; font-variant-ligatures: none; -webkit-font-smoothing: antialiased;",
+    "ul": "margin: 20px 0; padding-left: 0; list-style: none;",
+    "ol": "margin: 20px 0; padding-left: 0; list-style: none; counter-reset: list;",
+    "li": "margin: 12px 0; line-height: 1.95; color: #1d1a17; font-weight: 400;",
+    "li_bullet": "color: #6a2828; font-weight: 700; font-size: 13px; display: inline-block; min-width: 16px; margin-right: 8px; text-align: left;",
+    "li_bullet_char": "◆",
+    "li_number": "color: #6a2828; font-weight: 700; font-size: 14px; min-width: 22px; display: inline-block; margin-right: 10px;",
+    "hr": "border: none; height: 1px; background: #1a1a1a; margin: 42px 0; opacity: 0.25;",
+    "a": "color: #6a2828; text-decoration: none; border-bottom: 1px solid rgba(106,40,40,0.5);",
+    "table": "width: 100%; border-collapse: collapse; margin: 26px 0; font-size: 14.5px; border-top: 2px solid #1a1a1a; border-bottom: 2px solid #1a1a1a; table-layout: fixed; word-break: break-word;",
+    "th": "background: transparent; color: #1a1a1a; padding: 10px 8px; text-align: left; font-weight: 700; font-size: 12.5px; border-bottom: 1px solid #1a1a1a; letter-spacing: 1px; word-break: break-word; line-height: 1.5;",
+    "td": "padding: 10px 8px; border-bottom: 1px solid #e8e4d9; color: #1d1a17; font-size: 13px; word-break: break-word; line-height: 1.55;",
+    "caption": "font-size: 13px; color: #8a7968; text-align: center; margin-top: 12px; letter-spacing: 1px; font-style: italic;",
+    "section_divider": "text-align: center; color: #1a1a1a; letter-spacing: 18px; font-size: 14px; margin: 42px 0; user-select: none; opacity: 0.45;"
+  },
+  "highlights": {
+    "hl_yellow": "background: #fbf0c2; color: #1d1a17; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_blue": "background: #e6e9ef; color: #22304a; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_pink": "background: #f5dcd4; color: #6a2828; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "hl_green": "background: #dde4cf; color: #3e4d22; padding: 2px 7px; border-radius: 1px; font-weight: 500;",
+    "em_red": "color: #a82c2c; font-weight: 700;",
+    "em_blue": "color: #2a4a6a; font-weight: 700;",
+    "em_orange": "color: #b5601c; font-weight: 700;"
+  },
+  "section_divider_text": "· · ·",
+  "code_colors": {
+    "kw": "color: #d46860; font-weight: 600;",
+    "str": "color: #b8a870;",
+    "num": "color: #d89860;",
+    "fn": "color: #a88870;",
+    "cls": "color: #b09060;",
+    "comm": "color: #7a7066; font-style: italic;",
+    "punct": "color: #bfb8a8;"
+  },
+  "list_style": {
+    "label": "A · 墨色圆圈",
+    "num_container": "display: inline-block; color: #1a1a1a; font-weight: 700; font-size: 17px; margin-right: 8px; line-height: 1; vertical-align: -1px; font-family: 'Georgia','Times New Roman',serif;",
+    "num_prefix": "",
+    "num_suffix": "",
+    "num_formatter": "circled_filled",
+    "bullet_container": "display: inline-block; color: #b8362a; font-size: 13px; margin-right: 10px; font-weight: 700;",
+    "bullet_char": "※"
+  }
+}

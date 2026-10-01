@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 1280px; height: 640px;
+  background: linear-gradient(135deg, #FF2442 0%, #FF6B81 100%);
+  font-family: "Nunito", -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+  overflow: hidden;
+}
+.card {
+  position: absolute;
+  top: 24px; left: 24px;
+  width: 1232px; height: 592px;
+  background: #ffffff;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+.left {
+  flex: 1;
+  padding: 16px 0 16px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.emoji {
+  font-size: 56px;
+  margin-bottom: 16px;
+}
+.title {
+  font-size: 72px;
+  font-weight: 900;
+  color: #1a1a2e;
+  line-height: 1.05;
+  letter-spacing: -2px;
+}
+.title .highlight {
+  color: #FF2442;
+}
+.subtitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #64748b;
+  margin-top: 20px;
+  line-height: 1.35;
+}
+.tags {
+  display: flex;
+  gap: 5px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+.tag {
+  background: #fff5f5;
+  color: #FF2442;
+  padding: 4px 11px;
+  border-radius: 20px;
+  font-size: 16px;
+  font-weight: 800;
+  border: 1.5px solid #FFD6DC;
+}
+.right {
+  width: 440px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.terminal {
+  background: #1e293b;
+  border-radius: 14px;
+  width: 400px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+}
+.terminal-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.terminal-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+.terminal-dot.red { background: #ff5f57; }
+.terminal-dot.yellow { background: #febc2e; }
+.terminal-dot.green { background: #28c840; }
+.terminal-line {
+  font-family: "SF Mono", "Monaco", "Consolas", monospace;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #e2e8f0;
+}
+.terminal-line .prompt { color: #FF6B81; font-weight: 800; }
+.terminal-line .cmd { color: #fbbf24; font-weight: 800; }
+.terminal-line .arg { color: #38bdf8; font-weight: 800; }
+.terminal-line .dim { color: #64748b; font-weight: 600; }
+.terminal-line .green { color: #4ade80; }
+.terminal-line .result { color: #94a3b8; }
+.spacer { height: 3px; }
+.author {
+  position: absolute;
+  bottom: 16px;
+  right: 28px;
+  font-size: 26px;
+  font-weight: 700;
+  color: #d0d5dd;
+  font-family: "Nunito", -apple-system, "PingFang SC", sans-serif;
+}
+</style></head>
+<body>
+<div class="card">
+  <div class="left">
+    <div class="emoji">📕</div>
+    <div class="title">
+      <span class="highlight">redbook</span> cli
+    </div>
+    <div class="subtitle">
+      小红书命令行工具：搜索、分析、自动化。<br/>为 AI 智能体而生。
+    </div>
+    <div class="tags">
+      <span class="tag">搜索笔记</span>
+      <span class="tag">爆款分析</span>
+      <span class="tag">评论管理</span>
+      <span class="tag">图文卡片</span>
+      <span class="tag">内容策划</span>
+    </div>
+  </div>
+  <div class="right">
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+      </div>
+      <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">redbook</span> <span class="arg">search</span> "AI编程"</div>
+      <div class="terminal-line"><span class="green">✓</span> <span class="result">Found 20 notes</span></div>
+      <div class="spacer"></div>
+      <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">redbook</span> <span class="arg">analyze-viral</span> &lt;url&gt;</div>
+      <div class="terminal-line"><span class="green">✓</span> <span class="result">Hook score: 9.2/10</span></div>
+      <div class="spacer"></div>
+      <div class="terminal-line"><span class="prompt">$</span> <span class="cmd">redbook</span> <span class="arg">render</span> post.md</div>
+      <div class="terminal-line"><span class="green">✓</span> <span class="result">Rendered 4 cards</span></div>
+      <div class="spacer"></div>
+      <div class="terminal-line"><span class="dim">npm i -g @lucasygu/redbook</span></div>
+    </div>
+  </div>
+  <div class="author"><svg height="26" viewBox="0 0 16 16" width="26" style="vertical-align: middle; margin-right: 6px; fill: #d0d5dd;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>@lucasygu</div>
+</div>
+</body></html>

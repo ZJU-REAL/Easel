@@ -1,0 +1,48 @@
+{
+  "id": "before-after",
+  "name": "使用前后对比图",
+  "keywords": ["对比", "before after", "前后", "效果对比", "transformation", "变化图"],
+  "trigger_phrases": ["对比图", "前后对比", "before after", "效果展示", "使用效果", "transformation"],
+  "prompt_template": {
+    "type": "before/after comparison visualization",
+    "subject": "{product_description}",
+    "before_state": "{before_description}",
+    "after_state": "{after_description}",
+    "metrics": "{data_points}",
+    "divider": "elegant center divider",
+    "quality": "professional campaign photography"
+  },
+  "defaults": {
+    "before_state": "dull, dry, uneven appearance",
+    "after_state": "radiant, smooth, healthy appearance",
+    "metrics": "improvement percentage",
+    "divider": "elegant gold line with arrow"
+  },
+  "variants": {
+    "clinical": {
+      "description": "临床数据风格",
+      "overrides": { "metrics": "detailed data grid with 4+ metrics and percentage arrows" }
+    },
+    "cinematic": {
+      "description": "电影感蜕变",
+      "overrides": { "before_state": "moody dramatic, cool tone", "after_state": "bright warm golden hour, warm tone", "divider": "decorative vintage frame with product" }
+    },
+    "simple": {
+      "description": "简洁信息图",
+      "overrides": { "metrics": "simple progress bar with key metric" }
+    }
+  },
+  "category_tips": {
+    "beauty": "show skin texture change, include moisture/radiance percentage data",
+    "fitness": "body transformation, consistent pose and lighting",
+    "home": "room before/after renovation or cleaning",
+    "automotive": "vehicle before/after detailing"
+  },
+  "examples": [
+    "Cinematic before/after {category} transformation. Left: moody lighting showing {before}, cool tone. Right: bright golden hour showing {after}, warm tone. Center: decorative frame with product. Bottom: comparison data grid. Premium campaign layout, 8K, 1080x1620px",
+    "Premium before/after comparison. Left: {before_state}, caption 'Before'. Right: {after_state}, caption 'After'. Gold divider with arrow. Bottom: progress metrics {data}. Product thumbnail. Clean clinical aesthetic, 1080x1080px",
+    "{category} comparison visualization. Split: {before_state} left, {after_state} right. Key metrics below. White background, professional style, 1080x1080px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

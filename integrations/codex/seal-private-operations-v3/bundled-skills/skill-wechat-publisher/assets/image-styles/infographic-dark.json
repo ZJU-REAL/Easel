@@ -1,0 +1,56 @@
+{
+  "style_name": "infographic-dark",
+  "display_name": "手绘信息图·深夜档案",
+  "description": "深色夜间研究氛围的高密度中文手绘信息图。核心要求是信息密度高、中文层级清楚、手绘水彩和墨线质感明显。配色、布局、角色、图标、图表、终端元素和装饰都按内容自适应,不固定为同一套版式。适合前沿模型发布、协议规范、基建/安全话题。",
+  "suitable_for": [
+    "frontier-model-launch",
+    "protocol-spec",
+    "infra-deep-dive",
+    "security-topic",
+    "late-night-tech",
+    "cyber-archive"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "9:16",
+    "newspic_size": "1080x1920",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#151a2e",
+    "paper": "#1e2540",
+    "surface": "#2a3250",
+    "primary": "#fde38a",
+    "primary_dark": "#e8b94a",
+    "accent": "#22d3ee",
+    "secondary": "#a78bfa",
+    "secondary_alt": "#ff7b7b",
+    "secondary_warm": "#f5a623",
+    "text": "#f1ecd8",
+    "secondary_text": "#b8b3a0",
+    "divider": "#3a4466",
+    "terminal_bg": "#06090f",
+    "terminal_text": "#22d3ee"
+  },
+  "typography": {
+    "headline": "手写粗体 / 方正喵呜体 / ZCool KuaiLe,带厚重描边(亮黄/霓虹青色)",
+    "subtitle": "思源黑体 Heavy / PingFang SC Bold",
+    "body": "思源黑体 Regular / PingFang SC Regular",
+    "numbers": "圆润粗体数字",
+    "terminal": "JetBrains Mono / Menlo"
+  },
+  "mood": ["late-night", "frontier", "cyber", "mysterious", "information-dense", "illustrated"],
+  "visual_elements": {
+    "information_design": "每张卡都要根据要点选择合适的信息结构:夜间档案、研究笔记、威胁地图、节点网络、流程追踪、对比、数据面板、终端片段等。",
+    "illustration": "插画元素按内容选择,可以是人物、机器人、设备、网络节点、研究器材、抽象图形或纯图表,不强制固定主角。",
+    "usage": "深色氛围、研究感、技术可信和可读性优先,不要为了统一视觉而重复同一套角色和版式。"
+  },
+  "prompt_template": {
+    "newspic_card": "Generate a highly-detailed, information-dense Chinese infographic card in hand-drawn watercolor + ink illustration style, dark-mode variant. Aspect 9:16 portrait (1080x1920). Use a deep night research mood as the starting point, but adapt the exact palette, layout, composition, visual metaphors, characters, props, charts, icons, terminal elements, and decorations to the content. Do NOT use a fixed template.\n\nCONTENT:\n- Topic context: '{topic}'\n- Main card title: '{card_main}'\n- Supporting text: '{card_sub}'\n- Source bullet: '{point_full}'\n- Card {card_index} of {card_total}\n\nDESIGN REQUIREMENTS:\n- The card must be a high-density information graphic, not a simple poster or generic illustration.\n- Use hand-drawn watercolor washes, ink outlines, dark paper texture, research-note annotations, and clear Chinese typography with enough contrast.\n- Build a custom composition for this bullet. Choose only the components that fit: threat map, node network, research notebook, architecture diagram, timeline, flow trace, comparison table, 2x2 insight grid, mini chart, command strip, warning tags, footer watermark, scene illustration.\n- Extract 3-6 concrete sub-points from the source bullet and render them as readable Chinese labels or small information blocks. Use real terms from the bullet; do not invent fake data unless the bullet clearly implies it.\n- Illustration elements are optional and content-driven: people, robot, devices, servers, network nodes, research objects, charts, or abstract icons may be used only if they help explain the idea. No mandatory recurring boy/robot.\n- Prioritize contrast, hierarchy, readability, and information density over decorative symmetry.\n\nSTYLE STARTING POINT:\n- Deep indigo background, cream/yellow headline, cyan highlight, purple/coral secondary marks, black terminal accents if useful. Adjust colors if the topic needs another dark technical variant.\n- Feel like a mysterious late-night research notebook rendered in watercolor + ink. Information density 9/10, research mood 9/10.\n\nSTRICT BANS: no stock photos, no 3D render, no flat corporate vector look, no low-contrast text, no large empty whitespace, no unreadable tiny text, no repeating the same layout on every card, no rendering instruction labels such as 'headline zone' or 'insight grid' as visible text.",
+    "article_inline": "Generate a hand-drawn watercolor + ink Chinese infographic illustration, 16:9 landscape, dark-mode variant. Topic: '{image_subject}'. Make it high-density but readable: clear Chinese title, 3-5 structured information blocks, node network/flow trace/mini chart/diagram as needed, and content-specific dark research elements. Deep indigo night palette is a starting point, but adapt colors and layout to the topic. Characters are optional; use people, robot, servers, device, chart, security/research symbols, or abstract icons only when useful. No fixed template, no flat vector, no 3D, no photos."
+  },
+  "example_reference": "https://mp.weixin.qq.com/s/nSlGjh9hjM63jxz_jgUCwA",
+  "notes": "深色变体。适合前沿模型、协议、安全、基建、赛博话题。亮黄+霓虹青的点缀非常抓眼,但不适合生活化/温暖话题。共享的是高密度手绘信息图原则,不是固定角色或固定版式。"
+}

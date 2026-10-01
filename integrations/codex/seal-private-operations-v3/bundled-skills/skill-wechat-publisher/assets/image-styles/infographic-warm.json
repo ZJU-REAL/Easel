@@ -1,0 +1,58 @@
+{
+  "style_name": "infographic-warm",
+  "display_name": "手绘信息图·暖黄水彩（贴图默认）",
+  "description": "高密度中文手绘水彩信息图,暖色默认氛围,像杂志插页或科普绘本。核心要求是信息密度高、中文层级清楚、手绘水彩和墨线质感明显。配色、布局、角色、图标、图表、装饰和画面元素都按内容自适应,不固定为同一套版式。**贴图模式未指定风格时的默认**。",
+  "suitable_for": [
+    "newspic-default",
+    "product-deep-dive",
+    "agent-feature-breakdown",
+    "tool-explainer",
+    "trend-observation",
+    "编辑观察",
+    "科技产品综述",
+    "方法论拆解"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "9:16",
+    "newspic_size": "1080x1920",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#faf0d4",
+    "paper": "#fff8e3",
+    "surface": "#ffe9a8",
+    "primary": "#e8543a",
+    "primary_dark": "#b4351f",
+    "accent": "#f5a623",
+    "secondary": "#6fa96f",
+    "secondary_alt": "#4a90c2",
+    "secondary_warm": "#d97b4a",
+    "text": "#3a2a1c",
+    "secondary_text": "#6b5544",
+    "divider": "#e0c99a",
+    "terminal_bg": "#2a241b",
+    "terminal_text": "#fff3c4"
+  },
+  "typography": {
+    "headline": "手写粗体 / 方正喵呜体 / ZCool KuaiLe / 可变粗宋体,带厚重描边",
+    "subtitle": "思源黑体 Heavy / PingFang SC Bold",
+    "body": "思源黑体 Regular / PingFang SC Regular",
+    "numbers": "圆润粗体数字(1-9 手写感)",
+    "terminal": "JetBrains Mono / Menlo(命令行风)"
+  },
+  "mood": ["warm", "playful", "information-dense", "illustrated", "friendly", "editorial", "storybook"],
+  "visual_elements": {
+    "information_design": "每张卡都要根据要点选择合适的信息结构:流程、对比、时间线、2x2 网格、数据小图表、概念地图、checklist、标签带等。",
+    "illustration": "插画元素按内容选择,可以是人物、机器人、设备、动物、场景道具、抽象图形或纯图表,不强制固定主角。",
+    "usage": "高密度和可读性优先,元素服务于解释信息,不要为了统一视觉而重复同一套角色和版式。"
+  },
+  "prompt_template": {
+    "newspic_card": "Generate a highly-detailed, information-dense Chinese infographic card in hand-drawn watercolor + ink illustration style. Aspect 9:16 portrait (1080x1920). Use a warm editorial mood as the starting point, but adapt the exact color palette, layout, composition, visual metaphors, characters, props, charts, icons, and decorative elements to the content. Do NOT use a fixed template.\n\nCONTENT:\n- Topic context: '{topic}'\n- Main card title: '{card_main}'\n- Supporting text: '{card_sub}'\n- Source bullet: '{point_full}'\n- Card {card_index} of {card_total}\n\nDESIGN REQUIREMENTS:\n- The card must be a high-density information graphic, not a simple poster or generic illustration.\n- Use hand-drawn watercolor washes, ink outlines, soft paper texture, handwritten annotation marks, and clear Chinese typography.\n- Build a custom composition for this bullet. Choose only the components that fit: large Chinese headline, subtitle note, concept map, flow path, comparison table, timeline, 2x2 insight grid, mini chart, command strip, sticky notes, tags, footer watermark, scene illustration.\n- Extract 3-6 concrete sub-points from the source bullet and render them as readable Chinese labels or small information blocks. Use real terms from the bullet; do not invent fake data unless the bullet clearly implies it.\n- Illustration elements are optional and content-driven: people, robot, device, animal, architecture diagram, object metaphor, chart, or abstract icons may be used only if they help explain the idea. No mandatory recurring boy/robot.\n- Prioritize hierarchy, readability, and information density over decorative symmetry.\n\nSTYLE STARTING POINT:\n- Warm cream paper, red-orange or amber accents, deep warm-brown text, soft sage/blue secondary marks. Adjust colors if the topic needs another warm variant.\n- Feel like a beautifully illustrated Chinese/Japanese science-comic magazine page. Information density 9/10, warmth 9/10.\n\nSTRICT BANS: no stock photos, no 3D render, no flat corporate vector look, no large empty whitespace, no unreadable tiny text, no repeating the same layout on every card, no rendering instruction labels such as 'headline zone' or 'insight grid' as visible text.",
+    "article_inline": "Generate a hand-drawn watercolor + ink Chinese infographic illustration, 16:9 landscape. Topic: '{image_subject}'. Make it high-density but readable: clear Chinese title, 3-5 structured information blocks, arrows/labels/mini chart/diagram as needed, and content-specific hand-drawn illustration elements. Warm cream editorial palette is a starting point, but adapt colors and layout to the topic. Characters are optional; use people, robot, device, chart, object metaphor, or abstract icons only when useful. No fixed template, no flat vector, no 3D, no photos."
+  },
+  "example_reference": "https://mp.weixin.qq.com/s/nSlGjh9hjM63jxz_jgUCwA",
+  "notes": "**贴图模式的默认风格**。4 种 infographic-* 共享的是高密度手绘信息图原则,不是固定角色或固定版式。要点内容越具体,AI 渲染出的信息图越真实(数字、版本号、对比、步骤名都会被渲染成子卡片的文字);如果要点只是一句抽象观点,AI 会编具体内容,不如用 `marker-lime` 简单风格。"
+}

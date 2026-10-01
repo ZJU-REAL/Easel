@@ -1,0 +1,9 @@
+Seal Private Operations V3
+Copyright 2026 sealamla
+
+This integration is derived from Easel and includes workflow design adapted from the
+xiaohongshu-omni-v4 project by sealamla. For this contribution, the author submits those
+adaptations for inclusion in Easel under the repository's Apache License, Version 2.0.
+
+Third-party sources used by the bundled capabilities remain credited in the repository's
+docs/ACKNOWLEDGMENTS.md and in capability-local metadata where present.

@@ -1,0 +1,41 @@
+{
+  "style_name": "mint",
+  "display_name": "薄荷",
+  "description": "薄荷绿 + 天蓝清爽冷调 + 细黑线手绘 + 手写体标题 + 手账感。和其它几套同一套手绘+手写+细线 treatment,只换成薄荷/天蓝的清爽冷色 + 大量留白,干净、利落、有呼吸感。适合生产力、工具、效率方法、清单、上手指南这类话题。",
+  "suitable_for": [
+    "productivity",
+    "tools",
+    "efficiency-method",
+    "checklist",
+    "usage-guide-friendly",
+    "tutorial"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#f5faf8",
+    "mint": "#9fdcc8",
+    "sky_blue": "#a8d3ea",
+    "teal": "#7fc4be",
+    "peach_accent": "#f4b89a",
+    "ink": "#222222",
+    "text": "#222222"
+  },
+  "typography": {
+    "heading": "黑色手写体,粗而有手感(站酷快乐体 / 手写马克笔),非印刷黑体",
+    "body": "手写风中文(江城律动黑 / 站酷文艺体)"
+  },
+  "mood": ["手账", "hand-lettered", "fresh", "clean", "cool", "airy", "refreshing"],
+  "prompt_template": {
+    "newspic_card": "Generate a clean hand-drawn editorial card in Chinese with a 手账 / handwritten-notebook feel, 3:4 portrait. Cream / soft white background with LOTS of white space. THIN, confident hand-drawn BLACK ink line-art (NOT thick); any cartoon people have SOLID BLACK hair, dot-eye faces and light hoodies. Big BLACK HAND-LETTERED title '{card_main}' (hand-written) with a hand-drawn underline. Present '{card_sub}' in rounded cards with hand-lettered headings. Use a FRESH COOL palette for card fills, icon fills and highlights: mint green (#9fdcc8), sky blue (#a8d3ea), soft teal (#7fc4be), with one small warm peach (#f4b89a) accent — clean, refreshing, low saturation. Soft flat fills, small hand-drawn line icons, sparse stars/dots for bullets. Keep the 手账 feel — hand-lettered, crisp, airy. No photos, no 3D, no heavy gradients, no dark background.",
+    "article_inline": "Generate a clean hand-drawn editorial illustration in Chinese with a 手账 / handwritten-notebook feel, 16:9 landscape. Topic: '{image_subject}'. Cream / soft white background, generous white space. THIN, confident hand-drawn BLACK ink line-art (NOT thick); cartoon people have SOLID BLACK hair, dot-eye faces and light hoodies. Bold BLACK HAND-LETTERED headings (hand-written, not printed sans-serif). Use a FRESH COOL palette for card fills, icon fills and highlights: mint green (#9fdcc8), sky blue (#a8d3ea), soft teal (#7fc4be), one small warm peach (#f4b89a) accent — clean, refreshing, low saturation. Rounded cards, small hand-drawn line icons, sparse stars/dots. Keep the 手账 feel — hand-lettered, crisp, airy. No photos, no 3D, no heavy gradients, no dark background."
+  },
+  "example_reference": "(薄荷绿+天蓝清爽冷调的手账插画:细黑线 + 手写标题 + 大留白)",
+  "notes": "和其它几套同一套手绘+手写+细线 treatment,只换配色。薄荷适合生产力/工具/效率/清单。与 x-publisher 的 mint 同名同风格,跨 skill 复用。"
+}

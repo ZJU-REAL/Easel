@@ -1,0 +1,44 @@
+{
+  "style_name": "warm-handdrawn",
+  "display_name": "暖手绘",
+  "description": "干净细黑线手绘 + 米白底 + 粉/暖黄两色平涂 + 编辑式卡片排版。顶部大号黑色手写标题,关键词用黄荧光涂或粉色手绘下划线;圆角胶囊卡装内容,粉点 bullet、小星星和放射短线点缀;小人黑发点眼黄连帽衫。留白多、不拥挤、文字精简。适合工具测评、功能对比、上手指南、概念科普这类要清爽又亲切的内容。",
+  "suitable_for": [
+    "tool-recommendation",
+    "feature-comparison",
+    "usage-guide-friendly",
+    "concept-explainer",
+    "tips-with-scenario",
+    "editorial-illustration"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#fdf6ec",
+    "ink": "#222222",
+    "pink": "#f3a3bf",
+    "pink_deep": "#e87fa6",
+    "yellow": "#fbd24e",
+    "highlight_yellow": "#ffe08a",
+    "muted_gray": "#b8b8b8",
+    "coral_accent": "#f06a5b",
+    "text": "#222222"
+  },
+  "typography": {
+    "heading": "黑色手写马克笔体,粗而有手感(站酷快乐体 / 手写体)",
+    "body": "干净圆润中文(思源黑体 Regular / 站酷文艺体)",
+    "emphasis": "关键词加黄色荧光涂抹或粉色手绘下划线"
+  },
+  "mood": ["warm", "clean", "friendly", "airy", "editorial", "手账", "playful"],
+  "prompt_template": {
+    "newspic_card": "Generate a clean warm hand-drawn editorial card in Chinese, 3:4 portrait. Soft cream / warm off-white background (#fdf6ec) with generous white space. Thin, confident, even BLACK ink line-art (a clean line drawing, NOT heavy marker strokes) with simple flat pastel fills — blush pink (#f3a3bf) and butter yellow (#fbd24e) are the ONLY accent colors, no blue and no green. At the top a big bold BLACK hand-lettered title '{card_main}', with one key word highlighted by a yellow highlighter swash or underlined with a pink hand-drawn scribble. Below it, organize the supporting point '{card_sub}' into rounded pill / rounded-rectangle cards with very soft cream-to-pink or cream-to-yellow pastel fills, each card with a simple clean black-line icon and a short bold hand-lettered heading. Decorate sparingly with pink outlined stars, tiny sparkles and small radiating pink strokes beside icons; use pink dots for bullets. Cute minimal characters only when needed: black hair, small dot eyes, a yellow hoodie, thin clean outlines. Keep text short, airy and clean, NOT busy. No photos, no 3D, no heavy shading, no dark background.",
+    "article_inline": "Generate a clean warm hand-drawn editorial illustration in Chinese, 16:9 landscape. Topic: '{image_subject}'. Soft cream / warm off-white background (#fdf6ec) with generous white space. Thin, confident, even BLACK ink line-art (a clean line drawing, NOT heavy marker strokes) with simple flat pastel fills — blush pink (#f3a3bf) and butter yellow (#fbd24e) are the ONLY accent colors, no blue and no green. Lay it out like an editorial infographic: a big bold BLACK hand-lettered title at the top with one key word highlighted by a yellow highlighter swash or underlined with a pink hand-drawn scribble; organize content into rounded pill / rounded-rectangle cards with very soft cream-to-pink or cream-to-yellow pastel fills, each with a simple clean black-line icon, a short bold heading and at most a short subtitle. Decorate sparingly with pink outlined stars, tiny sparkles and small radiating pink strokes beside icons; pink dots for bullets. Cute minimal characters only when needed: black hair, small dot eyes, a yellow hoodie, thin clean outlines. For VS / before-after comparisons, draw the negative side muted gray (#b8b8b8) and the positive side warm pink + yellow. Keep text short and minimal, airy and clean, NOT busy. No photos, no 3D, no heavy shading, no dark background."
+  },
+  "example_reference": "(粉+暖黄手账卡片风:干净细黑线 + 米白留白 + 黑色手写标题配黄荧光/粉下划线)",
+  "notes": "视觉指纹是'细黑线 + 米白留白 + 粉黄两色 + 手写标题 + 卡片排版'。和 illustrated-warm(暖橙渐变+人物气泡)不同:这个更清爽、更信息图、更克制。话题偏冷硬(纯数据/架构)时可换 hand-drawn-blue 或 data-chart;要讲故事带人物时用 illustrated-warm。与 x-publisher skill 的 warm-handdrawn 同名同风格,跨 skill 复用。"
+}

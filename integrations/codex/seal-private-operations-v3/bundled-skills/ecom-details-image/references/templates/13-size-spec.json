@@ -1,0 +1,48 @@
+{
+  "id": "size-spec",
+  "name": "尺寸规格+使用步骤图",
+  "keywords": ["尺寸", "规格", "尺寸图", "使用步骤", "规格图", "dimension", "how to use", "使用指南"],
+  "trigger_phrases": ["尺寸图", "规格图", "使用步骤图", "尺寸标注", "how to use", "使用指南", "产品规格"],
+  "prompt_template": {
+    "type": "product specification and usage guide infographic",
+    "subject": "{product_description}",
+    "dimensions": "{size_annotations}",
+    "steps": "{usage_steps}",
+    "extras": "{additional_info}",
+    "style": "clean professional layout",
+    "quality": "professional e-commerce infographic"
+  },
+  "defaults": {
+    "dimensions": "height, width with measurement lines and arrows",
+    "steps": "3-4 step numbered usage guide with icons",
+    "extras": "ingredient highlights or feature badges",
+    "style": "clean white, professional typography"
+  },
+  "variants": {
+    "premium-editorial": {
+      "description": "高端杂志风格",
+      "overrides": { "style": "luxury editorial with decorative elements, gold accents, premium typography" }
+    },
+    "technical": {
+      "description": "技术规格风格",
+      "overrides": { "dimensions": "detailed specs with reference objects for scale", "extras": "comparison charts, certification badges, data grids" }
+    },
+    "ritual-guide": {
+      "description": "使用仪式指南",
+      "overrides": { "steps": "decorative numbered ritual guide with small illustrations" }
+    }
+  },
+  "category_tips": {
+    "beauty": "dimension callout badge, usage ritual steps, ingredient percentages",
+    "electronics": "precise dimensions with comparison objects, port specs",
+    "food": "serving size, preparation steps, nutritional highlights",
+    "fashion": "size chart with body measurements, care instructions"
+  },
+  "examples": [
+    "Premium {category} specification and ritual guide, luxury editorial. White background, subtle border. Top: {product} centered with dimension badge. Left: 4-step usage guide with decorative icons. Right: highlights with colored pills. Bottom: {data}. Decorative corner accents. Magazine-quality, 2000x2800px",
+    "Product detail card. Left: {product} with dimension annotations {measurements}, arrows and lines. Right: {n}-step usage guide with icons. White background, minimal, professional, 2000x1500px",
+    "{category} specification card. {product} with detailed dimensions and reference object. Usage steps with icons. Key features. Clean layout, mobile-friendly, 2000x2000px"
+  ],
+  "anti_ai_tips": "",
+  "supports_image_reference": true
+}

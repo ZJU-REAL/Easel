@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  排版卡 / typeset-card — generic starter (terminal variant).
+  Copy this, swap the CSS variables + content, then:
+    npx -y bun scripts/render-card.ts template.html out.png --w 1080 --h 1350 --scale 2
+  Palette swaps (change --bg / font stack / --accent):
+    ink     : --bg radial #191a1c→#08090c · font Songti SC · --accent #b0503f (暗红) · text #e9e4d9
+    signal  : --bg radial #21467a→#081327 · font PingFang · --accent #1d9bf0 (X蓝) · add broadcast rings
+    terminal: (this file) near-black + grid · PingFang+SF Mono · --accent amber/green/blue
+    versus  : dark bg · two brand-tinted .card blocks stacked + center pill (see references)
+  ⚠ Render then EYEBALL — overflow silently clips the footer.
+-->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:1080px;height:1350px;}           /* MUST match --window-size */
+  :root{
+    --mono:"SF Mono","Menlo","Roboto Mono",ui-monospace,monospace;
+    --sans:"PingFang SC","Noto Sans CJK SC",sans-serif;
+    --serif:"Songti SC","STSong",serif;
+    --bg1:#16171b; --bg2:#0c0d10;                    /* tonal background */
+    --ink:#f2f4f8; --dim:#8a90a0; --accent:#f5a623;  /* one accent color */
+  }
+  body{width:1080px;height:1350px;overflow:hidden;position:relative;
+    background:radial-gradient(120% 80% at 50% 0%,var(--bg1) 0%,var(--bg2) 60%,#08090b 100%);
+    color:var(--ink);font-family:var(--sans);}
+  .grid{position:absolute;inset:0;opacity:.05;                       /* optional faint grid */
+    background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
+    background-size:60px 60px;}
+  .wrap{position:absolute;inset:0;padding:70px 74px 60px;display:flex;flex-direction:column;}
+
+  .kicker{font-family:var(--mono);font-size:29px;letter-spacing:.14em;color:var(--dim);}
+  .kicker b{color:var(--ink);}
+  .hero{margin-top:44px;font-size:96px;font-weight:800;line-height:1.14;letter-spacing:.005em;}
+  .hero .em{color:var(--accent);}                                    /* accent ONE word */
+  .rule{margin:46px 0 44px;height:2px;background:linear-gradient(90deg,#2a2d36,transparent);}
+
+  .row{display:flex;align-items:flex-start;gap:28px;margin-bottom:40px;}
+  .mk{flex:0 0 auto;width:56px;height:56px;border-radius:14px;display:flex;align-items:center;
+    justify-content:center;font-size:34px;font-weight:800;margin-top:2px;
+    background:rgba(245,166,35,.14);color:var(--accent);border:2px solid rgba(245,166,35,.5);}
+  .rtext{font-size:42px;line-height:1.4;color:#dfe3ec;font-weight:500;}
+  .rtext b{color:#fff;font-weight:800;}
+
+  .foot{margin-top:auto;padding-top:30px;border-top:1px solid #23262e;
+    font-family:var(--mono);font-size:29px;color:var(--dim);letter-spacing:.03em;}
+  .foot b{color:#aab2c4;}
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="wrap">
+    <div class="kicker">KICKER · 标签  <b>//</b>  2026.01.01</div>
+    <div class="hero">大号标题<br><span class="em">强调词</span></div>
+    <div class="rule"></div>
+
+    <div class="row"><div class="mk">✓</div><div class="rtext"><b>要点一</b>：一行说清一件事,数字/名词要具体</div></div>
+    <div class="row"><div class="mk">↓</div><div class="rtext"><b>要点二</b>：第二条内容</div></div>
+    <div class="row"><div class="mk">⟳</div><div class="rtext"><b>要点三</b>：第三条内容</div></div>
+
+    <div class="foot">来源：<b>@handle</b> · 说明 · 日期</div>
+  </div>
+</body>
+</html>

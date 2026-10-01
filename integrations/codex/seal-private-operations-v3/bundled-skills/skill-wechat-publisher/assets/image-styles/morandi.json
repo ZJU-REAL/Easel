@@ -1,0 +1,42 @@
+{
+  "style_name": "morandi",
+  "display_name": "莫兰迪",
+  "description": "莫兰迪低饱和配色 + 细黑线手绘 + 手写体标题 + 手账感。和 warm-handdrawn / flat-editorial 同一套手绘+手写+细线 treatment,只换成莫兰迪灰绿/脏粉/灰蓝/陶土的柔哑配色,高级、克制、安静。适合人文、随笔、深度评论、文化、有质感的话题。",
+  "suitable_for": [
+    "essay",
+    "culture",
+    "deep-commentary",
+    "review",
+    "lifestyle-refined",
+    "editorial-illustration"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "16:9",
+    "article_size": "1440x810"
+  },
+  "palette": {
+    "background": "#f4f1ea",
+    "grey_green": "#9caf9a",
+    "dusty_rose": "#c8a9a6",
+    "grey_blue": "#9aa8b5",
+    "taupe": "#b3a394",
+    "clay": "#bb9c8a",
+    "ink": "#2a2a2a",
+    "text": "#2a2a2a"
+  },
+  "typography": {
+    "heading": "黑色手写体,粗而有手感(站酷快乐体 / 手写马克笔),非印刷黑体",
+    "body": "手写风中文(江城律动黑 / 站酷文艺体)"
+  },
+  "mood": ["手账", "hand-lettered", "morandi", "calm", "sophisticated", "quiet", "refined"],
+  "prompt_template": {
+    "newspic_card": "Generate a clean hand-drawn editorial card in Chinese with a 手账 / handwritten-notebook feel, 3:4 portrait. Cream / off-white background. THIN, confident hand-drawn BLACK ink line-art (a clean hand-drawn line drawing, slightly imperfect, NOT thick); any cartoon people have SOLID BLACK hair, simple dot-eye faces and light hoodies. Big BLACK HAND-LETTERED title '{card_main}' (hand-written, not printed sans-serif) with a hand-drawn underline scribble. Present '{card_sub}' in rounded cards with hand-lettered headings. Use a LOW-SATURATION MORANDI palette for all card fills, icon fills and highlights: muted grey-green (#9caf9a), dusty rose (#c8a9a6), soft grey-blue (#9aa8b5), warm taupe (#b3a394), muted clay (#bb9c8a) — elegant, calm, quiet, NEVER bright. Soft pink dots for bullets, small hand-drawn stars/sparkles. Cute minimal characters when needed. Keep the 手账 feel — hand-lettered, airy, uncluttered. No photos, no 3D, no heavy gradients, no dark background.",
+    "article_inline": "Generate a clean hand-drawn editorial illustration in Chinese with a 手账 / handwritten-notebook feel, 16:9 landscape. Topic: '{image_subject}'. Cream / off-white background, generous white space. THIN, confident hand-drawn BLACK ink line-art (NOT thick); cartoon people have SOLID BLACK hair, dot-eye faces and light hoodies. Bold BLACK HAND-LETTERED headings (hand-written, not printed sans-serif). Use a LOW-SATURATION MORANDI palette for card fills, icon fills and highlights: muted grey-green (#9caf9a), dusty rose (#c8a9a6), soft grey-blue (#9aa8b5), warm taupe (#b3a394), muted clay (#bb9c8a) — elegant, calm, quiet, never bright. Rounded cards, small hand-drawn line icons, sparse hand-drawn stars/dots. Keep the 手账 feel — hand-lettered, airy, uncluttered. No photos, no 3D, no heavy gradients, no dark background."
+  },
+  "example_reference": "(莫兰迪低饱和柔哑配色的手账插画:细黑线 + 手写标题 + 灰绿/脏粉/灰蓝)",
+  "notes": "和 warm-handdrawn / flat-editorial / mint / blue 是同一套手绘+手写+细线 treatment,只换配色。莫兰迪适合人文/随笔/有质感的深度内容。与 x-publisher 的 morandi 同名同风格,跨 skill 复用。"
+}

@@ -1,0 +1,51 @@
+{
+  "style_name": "marker-violet",
+  "display_name": "荧光刷体大字卡·藕紫",
+  "description": "白底 + 粗刷体大字(干笔飞白)+ 一道lilac violet干刷荧光高亮压在第一行大字 + 单词强调色。字号有层级(小引子 + 大爆点),字小而透气、行距宽松,文字块只占画面 ~40%、四周大留白。纯文字大字卡,标题党/爆点/热评气质,手作感强。取代旧的 tech-card-blue / quote-card-minimal 两款极简大字卡。配色体系:高亮 #d9c2f0 + 强调 #e11d6b。",
+  "suitable_for": [
+    "headline-card",
+    "hot-take",
+    "news-flash",
+    "rumor-card",
+    "opinion",
+    "hook-title",
+    "short-punchy"
+  ],
+  "newspic_ready": true,
+  "article_ready": true,
+  "canvas": {
+    "newspic_aspect": "3:4",
+    "newspic_size": "1080x1440",
+    "article_aspect": "4:3",
+    "article_size": "1200x900"
+  },
+  "palette": {
+    "background": "#ffffff",
+    "ink": "#1a1a1a",
+    "highlight": "#d9c2f0",
+    "accent": "#e11d6b",
+    "text": "#1a1a1a",
+    "outline": "#1a1a1a"
+  },
+  "typography": {
+    "heading": "粗刷体/马克笔手写中文(汉仪雅酷黑 / 站酷庆科黄油体 / 演示悠然小楷),干笔飞白",
+    "english": "随性手写小写拉丁体(Permanent Marker / Caveat),与中文刷体拉开对比",
+    "hierarchy": "小引子行 ≈ 大爆点行的 55%;大字中等不夸张;三行大字之间强制留大行距(≥0.6 字高)、绝不贴成块;文字块只占画面中段 ~40%,四周大留白",
+    "highlight": "一道干刷、有笔触条纹、边缘毛糙半透明的荧光高亮(#d9c2f0)只压第一行大字",
+    "accent": "仅第一行大字里的一个关键词上强调色(#e11d6b),其余近黑 #1a1a1a"
+  },
+  "mood": [
+    "bold",
+    "punchy",
+    "hand-made",
+    "energetic",
+    "news-flash",
+    "opinionated"
+  ],
+  "prompt_template": {
+    "newspic_card": "Generate a bold hand-lettered Chinese headline card, 3:4 portrait, on a clean near-white background (#ffffff). Leave VERY LARGE empty white margins on ALL FOUR sides — the whole text block is centered both vertically and horizontally within only the middle ~40% of the canvas, occupying a MODEST portion of the image; it must look airy, small and uncrowded, NOT large or frame-filling. All text centered, stacked with a clear SIZE HIERARCHY and GENEROUS spacing:\n• First a SHORT lead-in line '{card_sub}' in SMALL brush type, only about 55% the height of the main lines, near-black ink, as a setup, with a comfortable gap below it.\n• Then the punchline '{card_main}' on 2-3 SEPARATE lines in a MEDIUM-sized bold hand-lettered brush-marker type (clearly bigger than the lead-in but NOT oversized — keep it modest). CRITICAL LINE SPACING: put a LARGE empty white gap between EVERY consecutive line — the blank vertical gap between two lines must be at least 0.6x the character height, so the lines are clearly separated and float apart with visible white space between them. The punchline must NOT be compressed into a solid tight block, and no two lines may touch or overlap. Thick energetic strokes with rough dry-brush flying-white edges, near-black ink (#1a1a1a), with slightly relaxed letter spacing.\nBehind the FIRST big line of the punchline only, paint ONE rough STREAKY translucent lilac violet (#d9c2f0) highlighter swipe — a horizontal marker band slightly taller than the text, with visible dry-brush streaks, uneven opacity and frayed torn ends, extending a little past the text on both sides, semi-transparent so the text reads clearly through it. Render exactly ONE key word or short phrase inside that highlighted first line in a saturated rose red (#e11d6b) accent instead of black; everything else stays near-black. Any English words (product or brand names) in a casual handwritten lowercase Latin marker script, clearly different from the Chinese brush type. Mood: bold, punchy, rumor / news-flash headline, hand-made poster energy. KEEP the small-lead-in-vs-big-punchline size contrast, the modest text size, the abundant white space, and ESPECIALLY the LARGE empty gaps between every stacked line (widely-spaced lines, never a tight block). NO serif fonts, NO thin elegant type, NO uniform line sizes, NO oversized frame-filling text, NO tight cramped line spacing, NO lines touching or stacked into a solid block, NO background fill, NO borders, NO card frame, NO illustration, NO gradients, NO 3D, NO photorealism, NO clip-art, NO full-card drop shadow.",
+    "article_inline": "Generate a bold hand-lettered Chinese headline banner, 4:3 landscape, clean near-white background (#ffffff), with VERY LARGE empty margins on all sides — the text occupies only a modest central portion (~40%) and does NOT fill the frame. Headline: '{image_subject}'. Centered text with SIZE HIERARCHY: a small brush lead-in line on top, then a MEDIUM-sized (not oversized) 1-2 line punchline in thick rough dry-brush brush-marker Chinese type, near-black (#1a1a1a), with LARGE empty gaps between every line (lines widely separated, never a tight block) and relaxed letter spacing. Behind the first big line, one rough STREAKY translucent lilac violet (#d9c2f0) highlighter swipe with frayed ends; exactly one key word in saturated rose red (#e11d6b). English words in a casual handwritten lowercase Latin marker script. Lots of white space, no illustration, no borders. Bold punchy poster feel. No serif, no thin type, no uniform sizes, no oversized frame-filling text, no cramped spacing, no gradients, no 3D."
+  },
+  "example_reference": "参考:白底刷体大字 + 干刷荧光高亮热评卡(『据传/阿里宣布/全面禁用/Claude 等产品』同款语言)",
+  "notes": "视觉指纹 = '白底 + 粗刷体大字 + 一道干刷荧光高亮 + 单词强调色 + 字号层级 + 居中大留白'。配色体系:高亮 #d9c2f0 + 强调 #e11d6b,其余近黑 #1a1a1a。四条铁律:(1)字号分层——小引子 ≈ 大字的 55%,大爆点中等不夸张,三行大字之间强制留大行距(≥0.6 字高)、绝不贴成块;(2)文字块只占画面 ~40%、四周大留白,字小而透气不铺满;(3)全卡只一道干刷荧光(有笔触条纹、边缘毛糙半透明),只压第一行大字;(4)只一个词上强调色,白底不铺色不加框。⚠️ 字体一致:纯文字卡最吃字体,模型渲染中文会飘、刷体难稳。要真·一致就走'白底只出高亮+版式,文字用固定刷体后期叠'(中文汉仪雅酷黑/站酷庆科黄油体,英文 Permanent Marker/Caveat)。若一步到位出字,卡面控制在 ≤14 字、短句分行,出错率更低。"
+}

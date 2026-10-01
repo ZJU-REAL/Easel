@@ -1,0 +1,48 @@
+{
+  "id": "model-showcase",
+  "name": "模特展示图",
+  "keywords": ["模特", "model", "人物展示", "模特图", "真人展示", "人物图"],
+  "trigger_phrases": ["模特图", "真人展示", "人物图", "model photo", "模特展示", "人物展示图"],
+  "prompt_template": {
+    "type": "editorial beauty/fashion photography",
+    "subject": "{person_description} with {product_description}",
+    "camera": "shot with {camera_setup}",
+    "lighting": "natural window light creating realistic highlights",
+    "skin_detail": "visible pores, natural skin texture, NOT retouched",
+    "expression": "{expression_description}",
+    "quality": "professional editorial photography, 8K"
+  },
+  "defaults": {
+    "camera": "Canon EOS R5, 85mm f/1.4 lens",
+    "lighting": "natural window light from left, realistic highlights",
+    "skin_detail": "visible pores, natural under-eye shadows, slight texture unevenness",
+    "expression": "authentic relaxed, subtle natural asymmetry"
+  },
+  "variants": {
+    "beauty-closeup": {
+      "description": "美妆极致特写",
+      "overrides": { "camera": "Canon EOS R5, 100mm f/2.8 macro", "skin_detail": "incredibly detailed: pores, fine lines, freckles, NOT retouched", "expression": "eyes half-closed, peaceful self-care moment" }
+    },
+    "fashion-full": {
+      "description": "时尚全身展示",
+      "overrides": { "camera": "Canon EOS R5, 50mm f/1.2", "expression": "confident direct gaze, editorial pose" }
+    },
+    "candid": {
+      "description": "自然抓拍",
+      "overrides": { "camera": "iPhone 15 Pro main camera", "expression": "genuine candid, mid-action", "skin_detail": "natural texture, slight blemishes, relatable" }
+    }
+  },
+  "category_tips": {
+    "beauty": "extreme close-up on application moment, formula texture on skin, real skin mandatory",
+    "fashion": "full outfit showcase, pose highlighting garment, editorial lighting",
+    "accessories": "product being worn/used, hand or body detail, lifestyle context",
+    "sports": "active pose in appropriate setting, show performance"
+  },
+  "examples": [
+    "Extreme close-up beauty macro, Canon EOS R5 100mm f/2.8 macro. Face filling 80% of frame, {product} being applied on {focus_area}. Skin incredibly detailed: pores, fine lines, natural imperfections, NOT retouched. Formula visible with realistic reflection. Natural side lighting. NOT AI-generated look, 8K, 1080x1350px",
+    "Fashion editorial. {person} with {product}, Canon EOS R5 85mm f/1.4. Natural window light, visible pores, natural shadows, authentic expression, soft bokeh, warm golden tones, 1080x1350px",
+    "Candid beauty moment. {person} with {product}, iPhone front camera. Natural lighting, visible pores and texture, relaxed candid, NOT AI-generated look, documentary style, 1080x1350px"
+  ],
+  "anti_ai_tips": "MANDATORY: (1) Real camera (Canon EOS R5 / Sony A7 IV), (2) Visible skin imperfections (pores, uneven tone, blemishes, fine lines), (3) Natural expression asymmetry, (4) 'NOT retouched, NOT AI-generated look', (5) Real lighting (natural window, NOT studio-perfect), (6) Natural hand details (knuckle lines, cuticle texture)",
+  "supports_image_reference": true
+}
