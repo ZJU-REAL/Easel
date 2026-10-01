@@ -31,12 +31,19 @@ def list_personas() -> list[str]:
 
 
 def profile_exists(name: str) -> bool:
-    """检查画像目录是否存在。"""
-    return bool(name) and (PROFILES_DIR / name).is_dir()
+    """检查画像目录是否存在，拒绝把路径片段当作画像名。"""
+    return valid_persona_name(name) and (PROFILES_DIR / name).is_dir()
+
+
+def valid_persona_name(name: str) -> bool:
+    """Return whether ``name`` is a single, user-facing profile directory name."""
+    return bool(name) and "/" not in name and "\\" not in name and not name.startswith((".", "_"))
 
 
 def load_profile_text(name: str) -> str:
     """读取画像文件夹，按固定顺序拼接所有非空 .md。画像不存在返回空串。"""
+    if not valid_persona_name(name):
+        return ""
     profile_dir = PROFILES_DIR / name
     if not profile_dir.is_dir():
         return ""

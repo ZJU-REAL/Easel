@@ -41,7 +41,8 @@ if str(PROJECT_ROOT / "scripts") not in sys.path:
 
 from easel.gateway_endpoint import chat_completions_url, healthz_url, port_source
 from easel.openclaw_cmd import openclaw_base_cmd
-from easel.persona import load_profile_text, persona_prefix, chat_turn_message, profile_exists, _FILE_ORDER
+from easel.persona import (load_profile_text, persona_prefix, chat_turn_message,
+                           profile_exists, valid_persona_name, _FILE_ORDER)
 from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
 try:
     from easel.gateway_questions import (
@@ -1050,7 +1051,7 @@ async def api_persona(name: str):
 
 
 def _valid_persona_name(name: str) -> bool:
-    return bool(name) and "/" not in name and "\\" not in name and not name.startswith((".", "_"))
+    return valid_persona_name(name)
 
 
 def _persona_file_path(name: str, filename: str) -> Path:
