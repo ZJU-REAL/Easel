@@ -1504,6 +1504,11 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
                 if models[0].get('id') != model:
                     models[0]['id'] = model
                     changed = True
+                # openclaw 的 provider schema 要求每个模型都有 name（缺了整个配置拒载，
+                # 网关起不来——真实踩过：custom anthropic 行只写 id 导致 crash-loop）。
+                if not models[0].get('name'):
+                    models[0]['name'] = model
+                    changed = True
                 prov['models'] = models
         if primary_ref:
             ref = data.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})
@@ -1707,8 +1712,18 @@ async def api_settings_models_save(req: ModelSaveRequest):
         # 这道闸会把网关用户彻底锁死（连只改模型都保存不了）；而且下面 _sync_openclaw_chat
         # 本来就不会改网关的 baseUrl，没有「拿旧 Key 打新地址」这个风险。
         if is_chat and pkey and base and not key:
-            _pb, _pk = _cur_prov.get(pkey, ('', ''))
-            if _pk and base != _pb.strip().rstrip('/') and not _is_local_gateway_base(_pb):
+            # 换址校验的「现值」要跟配置的权威来源比：openai/relay/anthropic 的权威在 .env
+            # （面板与 setup.sh 都写它），openclaw.json 只是保存时的镜像——setup.sh 配置后
+            # 用户从没用面板保存过的话，镜像可能停在初始值（如 api.openai.com），拿它比对
+            # 会把「原样回传真值」误判成「换址没填 key」，整个面板都保存不了（真机踩中）。
+            # custom 供应商权威就在 openclaw.json，维持原比对。
+            _be, _ke = _SLOT_ENV_KEYS.get(pkey, ('', ''))
+            if _be:
+                _pb = (_cur_env.get(_be, '') or '').strip().rstrip('/')
+                _pk = (_cur_env.get(_ke, '') or '').strip()
+            else:
+                _pb, _pk = _cur_prov.get(pkey, ('', ''))
+            if _pk and base and base != _pb and not _is_local_gateway_base(_pb or ''):
                 raise HTTPException(400, f'更换 Base URL 时必须重新填写 API Key（{pkey}）')
         if is_chat and pkey and getattr(row, 'primary', False) and model:
             primary_ref = f'{pkey}/{model}'

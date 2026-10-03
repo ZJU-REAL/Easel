@@ -867,10 +867,11 @@ export interface ModelsFetchResponse { baseUrl: string; models: string[]; fetche
  */
 export function fetchAvailableModels(
   baseUrl: string, key: string, protocol: string, slot = '',
+  name = '',
 ): Promise<ModelsFetchResponse> {
   return request('/api/settings/models/available', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ baseUrl, key, protocol, slot }),
+    body: JSON.stringify({ baseUrl, key, protocol, slot, name }),
   });
 }
