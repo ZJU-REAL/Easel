@@ -46,6 +46,10 @@ PLATFORMS: dict[str, dict] = {
         # 首页「近7日」块真实标签（旧列表与页面不符导致 metrics 恒空）；环比是「较前7日±X」。
         "metrics": ["播放量", "主页访问量", "作品分享", "作品评论"],
         "metrics_anchor": "近7日",   # 只从「近7日」之后解析，避开「最新作品」卡片里的同名「播放量」
+        # 登录墙检测：抖音会话过期时 creator-micro 不跳 passport，而是原地弹扫码 iframe（URL 不变），
+        # 通用 URL 检测兜不住 → 补二维码选择器 + 「高清发布」按钮（登录者必有）双检（同 douyin_publish._logged_in）。
+        "login_qr_selector": 'img[class*="qr"], [class*="qrcode"] img, [class*="qrcode"] canvas, img[aria-label="二维码"]',
+        "login_ok_selector": 'button[class*="douyin-creator-master-button"], #douyin-creator-master-side-upload-wrap button',
         "note_url_re": r"douyin\.com/(video|note)/|creator-micro/content",
     },
     "kuaishou": {
@@ -406,6 +410,16 @@ def _scrape(platform: str, headed: bool, base: str | None, proxy: str | None) ->
                 if re.search(r"(passport|/login)", page.url or "") or \
                    page.query_selector('button:has-text("扫码登录"), [class*="login-btn"]'):
                     r["logged_in"] = False
+                # 平台级登录墙检测：有配置的（如抖音）必须「无二维码 且 有登录后锚点」才算已登录。
+                # 只靠 URL/按钮文本兜不住原地弹 iframe 的登录墙（抖音实测：会话过期 URL 不变）。
+                lqr = cfg.get("login_qr_selector")
+                lok = cfg.get("login_ok_selector")
+                if lqr and lok and r["logged_in"]:
+                    try:
+                        if page.query_selector(lqr) or not page.query_selector(lok):
+                            r["logged_in"] = False
+                    except Exception:
+                        pass
                 r["followers"] = num_by_label(lines, ov["followers"], d)
                 r["likes"] = num_by_label(lines, ov["likes"], d)
                 r["following"] = num_by_label(lines, ov.get("following", []), d)
