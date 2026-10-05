@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Easel 一键安装
-# 用法: git clone <repo> && cd Easel && bash setup.sh [--api|--openclaw]
+# 用法: git clone <repo> && cd Easel && bash setup.sh [--api]
 #
 # 环境隔离：所有 OpenClaw 配置存在 ~/.openclaw-easel/
 # 不影响用户本机已有的 OpenClaw 配置
@@ -12,16 +12,12 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROFILE="easel"
 OC="openclaw --profile $PROFILE"
-CHAT_MODE="${EASEL_CHAT_TRANSPORT:-}"
+CHAT_MODE=http
 case "${1:-}" in
     --api) CHAT_MODE=api ;;
-    --openclaw) CHAT_MODE=http ;;
     "") ;;
-    *) echo "用法：bash setup.sh [--api|--openclaw]" >&2; exit 1 ;;
+    *) echo "用法：bash setup.sh [--api]" >&2; exit 1 ;;
 esac
-if [ -z "$CHAT_MODE" ] && [ -f "$PROJECT_ROOT/.env" ]; then
-    CHAT_MODE=$(sed -n 's/^EASEL_CHAT_TRANSPORT=//p' "$PROJECT_ROOT/.env" | tail -1 | tr -d "\"' ")
-fi
 
 # macOS ships Bash 3.2; keep the installer portable to that baseline.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -360,8 +356,8 @@ else
     warn "  vim .env"
 fi
 
-if [ "$CHAT_MODE" = "api" ] || [ "${1:-}" = "--openclaw" ]; then
-    python3 - "$PROJECT_ROOT/.env" "$CHAT_MODE" <<'PYENV'
+# 安装模式由命令参数决定：默认 OpenClaw，只有 --api 选择直连。
+python3 - "$PROJECT_ROOT/.env" "$CHAT_MODE" <<'PYENV'
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
@@ -369,7 +365,6 @@ lines = [line for line in path.read_text().splitlines()
          if line.strip().split("=", 1)[0] != "EASEL_CHAT_TRANSPORT"]
 path.write_text("\n".join(lines) + f"\nEASEL_CHAT_TRANSPORT={sys.argv[2]}\n")
 PYENV
-fi
 
 if [ "$CHAT_MODE" = "api" ]; then
     ok "已启用 API 直连；请在 .env 填 EASEL_DIRECT_API_BASE_URL、EASEL_DIRECT_API_MODEL 和网关所需的 EASEL_DIRECT_API_KEY"
