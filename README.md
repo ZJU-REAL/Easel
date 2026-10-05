@@ -41,6 +41,23 @@
 
 ## 🎨 Easel 是什么
 
+### 本地 API 直连（无需 OpenClaw）
+
+已有 Python 依赖和前端构建时，在项目 `.env` 中配置下面四项，然后运行 `easel web`：
+
+```dotenv
+EASEL_CHAT_TRANSPORT=api
+OPENAI_BASE_URL=http://localhost:50288/v1
+OPENAI_MODEL=gpt-6.1-sol
+OPENAI_API_KEY=你的网关Key
+```
+
+首次安装可用 `bash setup.sh --api`，跳过 OpenClaw 安装、profile、技能同步和 Gateway。也可在 Web「设置 → 模型配置 → 连接方式」选择「API 直连」，填写 OpenAI 兼容 API 的地址、模型与 Key 后保存。Base URL 应包含网关的 `/v1` 路径，不要填完整的 `/chat/completions`。无需鉴权的网关可在 `.env` 中将 Key 留空。
+
+此模式直接请求模型 API，支持流式文字/思考、多轮历史、断线恢复、停止、画像，以及文本/图片附件（图片需要模型支持）。会话历史保存在 `outputs/_sessions/api/`；模型配置下一轮生效，无需同步 OpenClaw。`easel chat`、`easel ping`、`easel doctor` 同样识别直连模式。环境变量优先于 `.env`。
+
+模型 API 不提供本机工具，直连模式无法自动执行文件操作、浏览器、技能和发布流程。需要这些 Agent 能力时，切回 OpenClaw 模式。切换模式后请新建对话，两个模式的历史独立存储。模型列表/自测允许使用 `.env` 中已配置的本地或内网网关，其他私有地址仍会被拦截；请求不跟随重定向。
+
 Easel 是一个面向社交媒体创作者的开源内容工作台。它把 OpenClaw Agent、账号画像、内容技能和真实的媒体工具接在一起，让 Agent 不只回答“应该怎么做”，而是直接把内容做出来并归档，且可实现直接/按需发布。
 
 你可以把它理解成一个会记住你的内容搭档：它了解账号定位、受众、风格、平台限制和历史表现，从热点发现一直陪你做到发布，再把结果带回下一次创作。

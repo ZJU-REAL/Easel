@@ -51,6 +51,7 @@ export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [gatewayStatus, setGatewayStatus] = useState('connecting');
+  const [apiDirect, setApiDirect] = useState(false);
   const [showRecommend, setShowRecommend] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -163,6 +164,7 @@ export default function App() {
       .then((data) => {
         setPersonas(data.personas || []);
         setGatewayStatus(data.gateway ? 'connected' : 'disconnected');
+        setApiDirect(data.transport === 'api');
         // 首次使用：没有任何个性化画像 且 未看过引导 → 推荐配置
         if ((data.personas || []).length === 0 && !onboardingSeen()) {
           setShowRecommend(true);
@@ -685,6 +687,7 @@ export default function App() {
           <DashboardPage
             persona={selectedPersona}
             gatewayStatus={gatewayStatus}
+            apiDirect={apiDirect}
             onNavigate={setCurrentPage}
             onUseTopic={handleUseTopic}
           />
@@ -692,6 +695,7 @@ export default function App() {
       case 'chat':
         return activeSession ? (
           <ChatPage
+            apiDirect={apiDirect}
             key={activeSession.id}
             session={activeSession}
             stream={streams[activeSession.id]}
@@ -781,6 +785,7 @@ export default function App() {
         onSessionArchive={handleSessionArchive}
         onNewChat={handleNewChat}
         gatewayStatus={gatewayStatus}
+        apiDirect={apiDirect}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <main className="main-content">

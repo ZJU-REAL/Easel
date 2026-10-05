@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import subprocess
 import urllib.error
 import urllib.request
 
 from easel.gateway_endpoint import healthz_url, port_source, resolve_gateway_port
 from easel.openclaw_cmd import openclaw_base_cmd
+from easel.direct_api import DirectAPIError, api_mode, read_settings, stream_chat
 
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
@@ -50,6 +52,19 @@ def _step(label: str, cmd: list[str], timeout: int = 30,
 
 def cmd_ping(_args) -> int:
     print("[easel] 连通性测试\n")
+    settings = read_settings()
+    if api_mode(settings):
+        async def probe():
+            async for kind, text in stream_chat(settings, "请只回复 PONG", timeout=30):
+                if kind == "token":
+                    print(text, end="", flush=True)
+        try:
+            asyncio.run(asyncio.wait_for(probe(), timeout=35))
+        except (DirectAPIError, asyncio.TimeoutError) as error:
+            print(f"\n{RED}API 直连 FAIL{NC}：{error or '请求超时'}")
+            return 1
+        print(f"\n{GREEN}✓ API 直连通过（未使用 OpenClaw）{NC}")
+        return 0
     all_ok = True
 
     # Step 1: Gateway healthz（端口不写死：非默认 profile 走哈希，easel → 37289）

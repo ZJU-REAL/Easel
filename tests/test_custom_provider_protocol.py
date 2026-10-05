@@ -21,6 +21,8 @@ from easel import openclaw_workspace as ws
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("EASEL_CHAT_TRANSPORT", "http")
+    monkeypatch.setattr(web, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setenv("EASEL_OPENCLAW_STATE_DIR", str(tmp_path))
     oc = tmp_path / "openclaw.json"
     oc.write_text(json.dumps({

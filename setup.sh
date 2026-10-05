@@ -12,6 +12,15 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROFILE="easel"
 OC="openclaw --profile $PROFILE"
+CHAT_MODE="${EASEL_CHAT_TRANSPORT:-}"
+case "${1:-}" in
+    --api) CHAT_MODE=api ;;
+    "") ;;
+    *) echo "用法：bash setup.sh [--api]" >&2; exit 1 ;;
+esac
+if [ -z "$CHAT_MODE" ] && [ -f "$PROJECT_ROOT/.env" ]; then
+    CHAT_MODE=$(sed -n 's/^EASEL_CHAT_TRANSPORT=//p' "$PROJECT_ROOT/.env" | tail -1 | tr -d "\"' ")
+fi
 
 # macOS ships Bash 3.2; keep the installer portable to that baseline.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -70,9 +79,13 @@ run_with_progress() {
 clear 2>/dev/null || true
 echo -e "\n${CYAN}╭────────────────────────────────────────────────────╮${NC}"
 echo -e "${CYAN}│${NC}  ${MAGENTA}Easel${NC} · 社媒内容工作台安装向导                 ${CYAN}│${NC}"
-echo -e "${CYAN}│${NC}  ${DIM}OpenClaw-powered · Linux / macOS${NC}                 ${CYAN}│${NC}"
+echo -e "${CYAN}│${NC}  ${DIM}API / OpenClaw · Linux / macOS${NC}                  ${CYAN}│${NC}"
 echo -e "${CYAN}╰────────────────────────────────────────────────────╯${NC}"
-echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
+if [ "$CHAT_MODE" = "api" ]; then
+    echo -e "\n${DIM}  API 直连模式，不安装 OpenClaw，不启动 Gateway。${NC}\n"
+else
+    echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
+fi
 
 # ---- 1. Node.js >= 24.16 ----
 # 跟随 openclaw@latest 的引擎要求：当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0
@@ -212,11 +225,12 @@ if [ -z "$NPM_REGISTRY" ]; then
         warn "npmjs.org 连通性差，自动使用国内镜像 npmmirror.com（可用 EASEL_NPM_REGISTRY 覆盖）"
     fi
 else
-    ok "npm registry: $NPM_REGISTRY（EASEL_NPM_REGISTRY 指定）"
+    ok "npm registry: ${NPM_REGISTRY}（EASEL_NPM_REGISTRY 指定）"
 fi
 NPM_REGISTRY_ARGS=(--registry "$NPM_REGISTRY")
 
 # ---- 3. 检测/安装 OpenClaw（复用用户已有安装，不覆盖全局配置） ----
+if [ "$CHAT_MODE" != "api" ]; then
 step "3/8" "检测 OpenClaw" "已有安装将直接复用"
 info "检查 OpenClaw..."
 if command -v openclaw >/dev/null 2>&1; then
@@ -274,6 +288,10 @@ else
     ok "Profile 初始化完成 → ~/.openclaw-${PROFILE}/"
 fi
 
+else
+    ok "API 直连模式：跳过 OpenClaw 安装和 profile 初始化"
+fi
+
 # ---- 5. 安装 easel CLI ----
 step "5/8" "安装 Easel 运行依赖" "Web · 媒体 · 浏览器发布"
 info "[1/2] 安装 Python 依赖与 easel CLI..."
@@ -297,7 +315,7 @@ if [ -z "$PIP_INDEX" ]; then
     fi
 else
     PIP_INDEX_ARGS=(-i "$PIP_INDEX")
-    ok "PyPI: $PIP_INDEX（EASEL_PIP_INDEX 指定）"
+    ok "PyPI: ${PIP_INDEX}（EASEL_PIP_INDEX 指定）"
 fi
 # --prefer-binary: 新版 biliup 常先发 sdist 后补 wheel，源码构建要求最新 rustc；优先选有 wheel 的旧版本
 PIP_ARGS=(install -e "$PROJECT_ROOT" --prefer-binary --progress-bar on ${PIP_INDEX_ARGS[@]+"${PIP_INDEX_ARGS[@]}"})
@@ -341,6 +359,17 @@ else
     warn "  vim .env"
 fi
 
+if [ "$CHAT_MODE" = "api" ]; then
+    python3 - "$PROJECT_ROOT/.env" <<'PYENV'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+lines = [line for line in path.read_text().splitlines()
+         if line.strip().split("=", 1)[0] != "EASEL_CHAT_TRANSPORT"]
+path.write_text("\n".join(lines) + "\nEASEL_CHAT_TRANSPORT=api\n")
+PYENV
+    ok "已启用 API 直连；请在 .env 填 OPENAI_BASE_URL、OPENAI_MODEL 和网关所需的 OPENAI_API_KEY"
+else
 # ---- 8. 同步 skills + workspace ----
 info "同步 Easel skills..."
 # 不要把 stderr 并进管道：sync.sh 解析不出 workspace 时那条警告只走 stderr，且不含 ✓/→，
@@ -722,6 +751,8 @@ step "8/8" "启动并验证" "配置校验 · Chromium · Gateway health"
 info "启动 Easel gateway..."
 bash "$PROJECT_ROOT/scripts/gateway.sh" start
 
+fi
+
 # Playwright is a runtime dependency for browser login/publishing.
 if python3 -c 'import playwright' >/dev/null 2>&1; then
     if ! python3 -m playwright install chromium; then
@@ -749,6 +780,8 @@ fi
 echo "    easel web                    # 启动 Web 工作台"
 echo "    easel chat                   # 终端对话"
 echo "    easel doctor                 # 检查环境"
-echo "    easel ping                   # Gateway 连通性"
-echo -e "\n  ${DIM}Easel profile：~/.openclaw-${PROFILE}/${NC}"
+echo "    easel ping                   # 当前模式连通性"
+if [ "$CHAT_MODE" != "api" ]; then
+    echo -e "\n  ${DIM}Easel profile：~/.openclaw-${PROFILE}/${NC}"
+fi
 echo -e "  ${DIM}项目目录：$PROJECT_ROOT${NC}\n"

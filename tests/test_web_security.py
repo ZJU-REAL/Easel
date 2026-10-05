@@ -225,7 +225,8 @@ def test_ssrf_guard_rejects_internal(url):
 def test_selftest_probe_has_guards():
     import inspect
     src = inspect.getsource(web.api_models_selftest)
-    assert "_valid_base_url" in src and "_ssrf_safe" in src, "探针前必须先过两道闸"
+    assert "_valid_base_url" in src and "_model_target_allowed" in src, "探针前必须先过两道闸"
+    assert "_ssrf_safe" in inspect.getsource(web._model_target_allowed)
     assert "redirect_request" in src, "不能跟跳转——跟了等于绕过前面的判断"
 
 

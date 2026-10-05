@@ -22,6 +22,7 @@ from pathlib import Path
 from easel.openclaw_cmd import openclaw_base_cmd
 from easel.persona import persona_prefix, profile_exists
 from easel.timeouts import TIMEOUT_PRODUCE
+from easel.direct_api import api_mode, read_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = PROJECT_ROOT / "skills" / "openclaw"
@@ -141,6 +142,9 @@ def _run_via_openclaw(message: str, timeout: int = 300) -> int:
 
 
 def cmd_skill(args) -> int:
+    if api_mode(read_settings()):
+        print("[easel] API 直连支持聊天；SKILL 执行需要具备本机工具的 Agent 运行时")
+        return 1
     skill_name = args.name
     skill_full = _find_skill(skill_name)
 

@@ -8,6 +8,7 @@ import type { UploadedFile } from '../lib/api';
 import { IconArrowUp, IconStop, IconPlus, IconFile } from './icons';
 
 interface ChatPageProps {
+  apiDirect: boolean;
   session: ChatSession;
   stream?: StreamState;          // 进行中的流式态（来自 App，切页也不丢）
   onSend: (displayText: string, attachments?: UploadedFile[]) => void;
@@ -35,7 +36,7 @@ function greeting(): string {
   return `${g}，想创作点什么？`;
 }
 
-export default function ChatPage({ session, stream, onSend, onStop, onResend, onQuestionAnswered }: ChatPageProps) {
+export default function ChatPage({ apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered }: ChatPageProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -140,7 +141,8 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
         </div>
       )}
       <div className="composer-top">
-        <BrushEntry onPick={(t) => { setInput(t); requestAnimationFrame(() => textareaRef.current?.focus()); }} />
+        {apiDirect ? <span className="composer-hint">API 直连 · 文字与附件分析</span>
+          : <BrushEntry onPick={(t) => { setInput(t); requestAnimationFrame(() => textareaRef.current?.focus()); }} />}
         <textarea
           ref={textareaRef}
           className="chat-input"
@@ -183,10 +185,11 @@ export default function ChatPage({ session, stream, onSend, onStop, onResend, on
             <span>Easel</span>
           </div>
           <h1 className="chat-hero-title">{greeting()}</h1>
-          <p className="chat-hero-sub">从选题到发布，一站式帮你把想法做成能发的内容。</p>
+          <p className="chat-hero-sub">{apiDirect ? 'API 直连：写文案、策划选题、分析附件。本机工具和自动发布未启用。'
+            : '从选题到发布，一站式帮你把想法做成能发的内容。'}</p>
           {inputBox(true)}
           <div className="suggestions">
-            {SUGGESTIONS.map((s) => (
+            {SUGGESTIONS.filter((s) => !apiDirect || ['写小红书文案', '口播脚本'].includes(s.title)).map((s) => (
               <button key={s.title} className="card card-hover suggestion-card"
                 onClick={() => { if (!isStreaming) onSend(s.prompt); }}>
                 <span className="suggestion-icon">{s.icon}</span>
