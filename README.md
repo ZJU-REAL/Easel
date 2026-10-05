@@ -60,6 +60,18 @@ EASEL_DIRECT_API_KEY=你的网关Key
 
 直连配置只读取 `EASEL_DIRECT_API_*`，不会回退到 `OPENAI_*`。`OPENAI_*` 继续用于原有 OpenAI 通道，两套配置可以同时保存并独立切换。旧版直连用户需将网关配置填写到新增的三项中。
 
+### 本地网关经 OpenClaw 执行工具
+
+同一套 `EASEL_DIRECT_API_BASE_URL`、`EASEL_DIRECT_API_MODEL`、`EASEL_DIRECT_API_KEY` 也可以作为 OpenClaw 的模型后端。在项目目录运行：
+
+```bash
+bash setup.sh --openclaw
+```
+
+此参数将 `.env` 的 `EASEL_CHAT_TRANSPORT` 切为 `http`，启用 OpenClaw 安装、技能同步和 Gateway。安装脚本优先使用独立网关配置，将整块 provider 写为 `models.providers.local-api`，主模型设为 `local-api/<模型名>`，明确使用 OpenClaw 运行时并允许请求配置的私有网络地址；不会覆盖原有 `openai` provider 或改写 `OPENAI_*`。执行路径为 **Easel → OpenClaw → 本地网关**，模型需要支持工具调用。
+
+首次交互安装也可在模型服务向导选择「4) 独立本地 / 内网网关」。Base URL 和模型名必须填写；无需鉴权的网关可留空 Key。部分填写或占位 Key 会明确报错，不会静默切到其他供应商。已有完整独立网关配置且 `.env` 的传输方式为 `http`/`cli` 时，直接运行 `bash setup.sh` 也会同步它。需要恢复无工具的 API 直连时运行 `bash setup.sh --api`。此安装入口为 Linux/macOS 的 `setup.sh`。
+
 Easel 是一个面向社交媒体创作者的开源内容工作台。它把 OpenClaw Agent、账号画像、内容技能和真实的媒体工具接在一起，让 Agent 不只回答“应该怎么做”，而是直接把内容做出来并归档，且可实现直接/按需发布。
 
 你可以把它理解成一个会记住你的内容搭档：它了解账号定位、受众、风格、平台限制和历史表现，从热点发现一直陪你做到发布，再把结果带回下一次创作。

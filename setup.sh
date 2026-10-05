@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Easel 一键安装
-# 用法: git clone <repo> && cd Easel && bash setup.sh
+# 用法: git clone <repo> && cd Easel && bash setup.sh [--api|--openclaw]
 #
 # 环境隔离：所有 OpenClaw 配置存在 ~/.openclaw-easel/
 # 不影响用户本机已有的 OpenClaw 配置
@@ -15,8 +15,9 @@ OC="openclaw --profile $PROFILE"
 CHAT_MODE="${EASEL_CHAT_TRANSPORT:-}"
 case "${1:-}" in
     --api) CHAT_MODE=api ;;
+    --openclaw) CHAT_MODE=http ;;
     "") ;;
-    *) echo "用法：bash setup.sh [--api]" >&2; exit 1 ;;
+    *) echo "用法：bash setup.sh [--api|--openclaw]" >&2; exit 1 ;;
 esac
 if [ -z "$CHAT_MODE" ] && [ -f "$PROJECT_ROOT/.env" ]; then
     CHAT_MODE=$(sed -n 's/^EASEL_CHAT_TRANSPORT=//p' "$PROJECT_ROOT/.env" | tail -1 | tr -d "\"' ")
@@ -359,15 +360,18 @@ else
     warn "  vim .env"
 fi
 
-if [ "$CHAT_MODE" = "api" ]; then
-    python3 - "$PROJECT_ROOT/.env" <<'PYENV'
+if [ "$CHAT_MODE" = "api" ] || [ "${1:-}" = "--openclaw" ]; then
+    python3 - "$PROJECT_ROOT/.env" "$CHAT_MODE" <<'PYENV'
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 lines = [line for line in path.read_text().splitlines()
          if line.strip().split("=", 1)[0] != "EASEL_CHAT_TRANSPORT"]
-path.write_text("\n".join(lines) + "\nEASEL_CHAT_TRANSPORT=api\n")
+path.write_text("\n".join(lines) + f"\nEASEL_CHAT_TRANSPORT={sys.argv[2]}\n")
 PYENV
+fi
+
+if [ "$CHAT_MODE" = "api" ]; then
     ok "已启用 API 直连；请在 .env 填 EASEL_DIRECT_API_BASE_URL、EASEL_DIRECT_API_MODEL 和网关所需的 EASEL_DIRECT_API_KEY"
 else
 # ---- 8. 同步 skills + workspace ----
@@ -380,6 +384,12 @@ bash "$PROJECT_ROOT/openclaw/sync.sh" | grep -E '✓|→'
 # ---- 9. 认证信息写入 Easel 专属 OpenClaw config ----
 info "同步认证到 OpenClaw profile..."
 source "$PROJECT_ROOT/.env" 2>/dev/null || true
+
+# 独立网关配置优先于原有供应商；部分填写也进入此路径，后续明确校验而不静默回退。
+LOCAL_API_CONFIGURED=false
+if [ -n "${EASEL_DIRECT_API_BASE_URL:-}${EASEL_DIRECT_API_MODEL:-}${EASEL_DIRECT_API_KEY:-}" ]; then
+    LOCAL_API_CONFIGURED=true
+fi
 
 # 部分 OpenClaw 版本执行 config unset 后会把字段留成 null 而非真正删除该键，
 # 一旦落盘就再也无法通过 config set/doctor --fix 修复（每次校验都先失败）。
@@ -437,7 +447,7 @@ print(json.dumps(p))')"
 }
 
 # 若用户已有默认 OpenClaw 配置，复用其模型名称；密钥不会从别的 profile 复制。
-if [ -z "${CLAUDE_MODEL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; then
+if [ "${LOCAL_API_CONFIGURED:-false}" = false ] && [ -z "${CLAUDE_MODEL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; then
     EXISTING_MODEL="$($OPENCLAW_BIN config get agents.defaults.model.primary 2>/dev/null || true)"
     if [ -n "$EXISTING_MODEL" ] && [ "$EXISTING_MODEL" != "null" ]; then
         echo "  检测到已有 OpenClaw 默认模型：$EXISTING_MODEL"
@@ -464,7 +474,9 @@ usable_key() {
 }
 
 MODEL_CONFIGURED=false
-if usable_key "${ANTHROPIC_API_KEY:-}"; then
+if [ "${LOCAL_API_CONFIGURED:-false}" = true ]; then
+    MODEL_CONFIGURED=true
+elif usable_key "${ANTHROPIC_API_KEY:-}"; then
     MODEL_CONFIGURED=true
 elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     MODEL_CONFIGURED=true
@@ -483,6 +495,7 @@ if [ "$MODEL_CONFIGURED" = false ] && [ -t 0 ]; then
     echo "    1) Anthropic API"
     echo "    2) OpenAI / OpenAI-compatible API"
     echo "    3) 其他 Anthropic-compatible API"
+    echo "    4) 独立本地 / 内网网关（OpenClaw 执行工具）"
     echo "    0) 稍后配置"
     PROVIDER_CHOICE="$(ask '请选择模型服务 [1]：')"
     case "${PROVIDER_CHOICE:-1}" in
@@ -516,6 +529,15 @@ if [ "$MODEL_CONFIGURED" = false ] && [ -t 0 ]; then
                 ok "兼容 API 的 Agent 配置已写入 .env"
             fi
             ;;
+        4)
+            MODEL_URL="$(ask '本地网关 Base URL（含 /v1）：')"
+            MODEL_NAME="$(ask '模型名：')"
+            MODEL_KEY="$(ask_secret '网关 API Key（无需鉴权可留空，不会回显）：')"
+            printf '\nEASEL_DIRECT_API_BASE_URL=%s\nEASEL_DIRECT_API_MODEL=%s\nEASEL_DIRECT_API_KEY=%s\n' \
+                "$MODEL_URL" "$MODEL_NAME" "$MODEL_KEY" >> "$PROJECT_ROOT/.env"
+            LOCAL_API_CONFIGURED=true
+            ok "独立网关配置已写入 .env"
+            ;;
         0) ;;
         *) warn "无法识别的选择，稍后可编辑 .env 后重新运行 bash setup.sh" ;;
     esac
@@ -543,7 +565,42 @@ fi
 # 而非 -z，否则 .env.example 留下的占位符会一直把这支挡掉。
 # EASEL_LLM 要连 BASE_URL 一起判：只填了 key 没填 URL 时它哪条分支都用不上，
 # 不能让这种半拉配置把可用的 OPENAI 也一并挡死、最后落到「认证未配置」。
-if usable_key "${OPENAI_API_KEY:-}" && ! usable_key "${ANTHROPIC_API_KEY:-}" \
+if [ "${LOCAL_API_CONFIGURED:-false}" = true ]; then
+    # 整块替换，避免不完整 provider 与旧模型上的 codex runtime 覆盖。
+    LOCAL_API_PROVIDER_CONFIG=$(EASEL_DIRECT_API_BASE_URL="${EASEL_DIRECT_API_BASE_URL:-}" \
+        EASEL_DIRECT_API_MODEL="${EASEL_DIRECT_API_MODEL:-}" \
+        EASEL_DIRECT_API_KEY="${EASEL_DIRECT_API_KEY:-}" python3 - "$PROJECT_ROOT" <<'PYLOCAL'
+import json
+import os
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from easel.direct_api import DirectAPIError, api_config
+
+try:
+    base, model, key = api_config(os.environ)
+except DirectAPIError as error:
+    raise SystemExit(str(error)) from None
+
+print(json.dumps({
+    "baseUrl": base,
+    "api": "openai-completions",
+    "apiKey": key or "local-gateway",
+    "authHeader": bool(key),
+    "agentRuntime": {"id": "openclaw"},
+    "request": {"allowPrivateNetwork": True},
+    "models": [{"id": model, "name": model}],
+}))
+PYLOCAL
+)
+    $OC config set models.providers.local-api "$LOCAL_API_PROVIDER_CONFIG" \
+        --strict-json 2>&1 | sed '/^No change$/d'
+    LOCAL_API_MODEL=$(printf '%s' "$LOCAL_API_PROVIDER_CONFIG" | python3 -c \
+        'import json, sys; print(json.load(sys.stdin)["models"][0]["id"])')
+    DEFAULT_PRIMARY_MODEL="local-api/$LOCAL_API_MODEL"
+    CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
+    ok "独立网关已同步为 local-api，使用 OpenClaw 工具运行时"
+elif usable_key "${OPENAI_API_KEY:-}" && ! usable_key "${ANTHROPIC_API_KEY:-}" \
    && ! { usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; }; then
     OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
     # 未声明 maxTokens 时 OpenClaw 会自行推导，部分 OpenAI 兼容网关据此拒绝请求
