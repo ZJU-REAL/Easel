@@ -368,7 +368,7 @@ lines = [line for line in path.read_text().splitlines()
          if line.strip().split("=", 1)[0] != "EASEL_CHAT_TRANSPORT"]
 path.write_text("\n".join(lines) + "\nEASEL_CHAT_TRANSPORT=api\n")
 PYENV
-    ok "已启用 API 直连；请在 .env 填 OPENAI_BASE_URL、OPENAI_MODEL 和网关所需的 OPENAI_API_KEY"
+    ok "已启用 API 直连；请在 .env 填 EASEL_DIRECT_API_BASE_URL、EASEL_DIRECT_API_MODEL 和网关所需的 EASEL_DIRECT_API_KEY"
 else
 # ---- 8. 同步 skills + workspace ----
 info "同步 Easel skills..."

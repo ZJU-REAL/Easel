@@ -40,9 +40,9 @@ def api_mode(settings: dict[str, str]) -> bool:
 
 
 def api_config(settings: dict[str, str]) -> tuple[str, str, str]:
-    base = settings.get("OPENAI_BASE_URL", "").strip().rstrip("/")
-    model = settings.get("OPENAI_MODEL", "").strip()
-    key = settings.get("OPENAI_API_KEY", "").strip()
+    base = settings.get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/")
+    model = settings.get("EASEL_DIRECT_API_MODEL", "").strip()
+    key = settings.get("EASEL_DIRECT_API_KEY", "").strip()
     try:
         url = urlsplit(base)
         valid = (url.scheme in ("http", "https") and bool(url.hostname)
@@ -52,11 +52,11 @@ def api_config(settings: dict[str, str]) -> tuple[str, str, str]:
     except ValueError:
         valid = False
     if not valid:
-        raise DirectAPIError("请填写有效的 OPENAI_BASE_URL，例如 http://localhost:50288/v1")
+        raise DirectAPIError("请填写有效的 EASEL_DIRECT_API_BASE_URL，例如 http://localhost:50288/v1")
     if not model or any(c in model for c in "\r\n"):
-        raise DirectAPIError("请填写 OPENAI_MODEL，例如 gpt-6.1-sol")
+        raise DirectAPIError("请填写 EASEL_DIRECT_API_MODEL，例如 gpt-6.1-sol")
     if any(c.isspace() for c in key) or "REPLACE_ME" in key.upper():
-        raise DirectAPIError("OPENAI_API_KEY 无效，请填写网关的真实 Key；无需鉴权时可留空")
+        raise DirectAPIError("EASEL_DIRECT_API_KEY 无效，请填写网关的真实 Key；无需鉴权时可留空")
     return base, model, key
 
 

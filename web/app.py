@@ -405,7 +405,9 @@ SKILL_API_REQUIREMENTS: dict[str, dict] = {
     },
 }
 
-_ENV_ALLOWLIST: set[str] = set()
+_ENV_ALLOWLIST: set[str] = {
+    "EASEL_DIRECT_API_BASE_URL", "EASEL_DIRECT_API_KEY", "EASEL_DIRECT_API_MODEL",
+}
 for _spec in SKILL_API_REQUIREMENTS.values():
     for _key in _spec.get("settings", []):
         _ENV_ALLOWLIST.add(_key["env"])
@@ -756,6 +758,7 @@ def _is_local_gateway_base(url: str) -> bool:
 
 # 设置面板里「改了 Base URL 就必须重填 Key」要比对的 .env 键位（槽位 → (base 键, key 键)）。
 _SLOT_ENV_KEYS = {
+    'direct-api': ('EASEL_DIRECT_API_BASE_URL', 'EASEL_DIRECT_API_KEY'),
     'openai': ('OPENAI_BASE_URL', 'OPENAI_API_KEY'),
     'relay': ('EASEL_LLM_BASE_URL', 'EASEL_LLM_API_KEY'),
     'anthropic': ('ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY'),
@@ -796,11 +799,11 @@ def _direct_api_enabled() -> bool:
     return api_mode(read_settings(ENV_FILE))
 
 
-def _model_target_allowed(base: str) -> bool:
+def _model_target_allowed(base: str, slot: str = "") -> bool:
     # Trust only the exact gateway configured by the user, not arbitrary private URLs.
     settings = read_settings(ENV_FILE)
-    configured = settings.get("OPENAI_BASE_URL", "").strip().rstrip("/")
-    if api_mode(settings) and base.rstrip("/") == configured:
+    configured = settings.get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/")
+    if slot == "direct-api" and api_mode(settings) and base.rstrip("/") == configured:
         try:
             api_config(settings)
             return True
@@ -1332,7 +1335,7 @@ def _model_channels() -> dict:
         pass
     if direct:
         env = read_settings(ENV_FILE)
-        primary = f"openai/{env.get('OPENAI_MODEL', '')}"
+        primary = f"direct-api/{env.get('EASEL_DIRECT_API_MODEL', '')}"
     direct_ready = False
     if direct:
         try:
@@ -1345,14 +1348,23 @@ def _model_channels() -> dict:
     ob = (env.get("OPENAI_BASE_URL") or "").strip()
     om = (env.get("OPENAI_MODEL") or "").strip()
     ok_key = bool((env.get("OPENAI_API_KEY") or "").strip())
-    if direct or ob or ok_key:
+    if direct:
         chat_rows.append({
-            "slot": "openai", "order": 1, "name": "OpenAI 兼容 API" if direct else "deepseek",
-            "sub": "API 直连" if direct else "官方直连",
-            "type": "openai", "model": om if direct else (om or "deepseek-chat"),
+            "slot": "direct-api", "order": 1, "name": "本地 / 内网 API 直连",
+            "sub": "独立直连配置", "type": "openai",
+            "model": env.get("EASEL_DIRECT_API_MODEL", "").strip(),
+            "baseUrl": env.get("EASEL_DIRECT_API_BASE_URL", "").strip(),
+            "keyMasked": _mask_key(env.get("EASEL_DIRECT_API_KEY", "")),
+            "role": "主", "result": "已配置" if direct_ready else "缺配置",
+        })
+    elif ob or ok_key:
+        chat_rows.append({
+            "slot": "openai", "order": 1, "name": "deepseek",
+            "sub": "官方直连",
+            "type": "openai", "model": om or "deepseek-chat",
             "baseUrl": ob, "keyMasked": _mask_key(env.get("OPENAI_API_KEY", "")),
             "role": "主" if primary.startswith("openai/") else "备",
-            "result": ("已配置" if direct_ready else "缺配置") if direct else ("已配置" if ok_key else "缺 key"),
+            "result": "已配置" if ok_key else "缺 key",
         })
     ab = (env.get("ANTHROPIC_BASE_URL") or "").strip()
     ak = (env.get("ANTHROPIC_API_KEY") or "").strip()
@@ -1641,8 +1653,10 @@ async def api_settings_models_save(req: ModelSaveRequest):
     """保存模型通道：.env 就地更新（key 留空=不改）；chat 同步 openclaw；媒体通道写 provider 配置。"""
     ch0 = (req.channel or "").strip()
     direct = _direct_api_enabled()
-    if direct and ch0 == "chat" and any(row.slot != "openai" for row in req.rows):
-        raise HTTPException(400, "API 直连模式请使用 OpenAI 兼容 API 通道")
+    if direct and ch0 == "chat" and any(row.slot != "direct-api" for row in req.rows):
+        raise HTTPException(400, "API 直连模式请使用独立的 API 直连通道")
+    if any(row.slot == "direct-api" for row in req.rows) and not (direct and ch0 == "chat"):
+        raise HTTPException(400, "请先切换到 API 直连模式再保存直连配置")
     if ch0 in ("speech", "image", "video", "music"):
         import model_registry as _mr2
         _gid0 = {"speech": "voice", "image": "image", "video": "video", "music": "music"}[ch0]
@@ -1698,7 +1712,7 @@ async def api_settings_models_save(req: ModelSaveRequest):
     keep_custom: set[str] = set()
     primary_ref = ''
     is_chat = (req.channel or '').strip() == 'chat'
-    _cur_env = _read_env()
+    _cur_env = read_settings(ENV_FILE) if direct else _read_env()
     _cur_prov = _openclaw_provider_creds() if is_chat and not direct else {}
     for row in req.rows:
         slot = (row.slot or '').strip()
@@ -1719,7 +1733,14 @@ async def api_settings_models_save(req: ModelSaveRequest):
                 and (_cur_env.get(_ke, '') or '').strip():
             raise HTTPException(400, f'更换 Base URL 时必须重新填写 API Key（{slot}）')
         pkey = ''
-        if slot == 'openai':
+        if slot == 'direct-api':
+            if model:
+                updates['EASEL_DIRECT_API_MODEL'] = model
+            if base:
+                updates['EASEL_DIRECT_API_BASE_URL'] = base
+            if key:
+                updates['EASEL_DIRECT_API_KEY'] = key
+        elif slot == 'openai':
             if model:
                 updates['OPENAI_MODEL'] = model
             if base:
@@ -1939,6 +1960,7 @@ class ModelsFetchRequest(BaseModel):
 
 # slot → (base 键, key 键)；与 _SLOT_ENV_KEYS 同源，外加自定义供应商。
 _FETCH_KEY_BY_SLOT = {
+    'direct-api': ('EASEL_DIRECT_API_BASE_URL', 'EASEL_DIRECT_API_KEY'),
     'openai': ('OPENAI_BASE_URL', 'OPENAI_API_KEY'),
     'relay': ('EASEL_LLM_BASE_URL', 'EASEL_LLM_API_KEY'),
     'anthropic': ('ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY'),
@@ -1972,10 +1994,10 @@ async def api_models_available(req: ModelsFetchRequest):
         raise HTTPException(400, "Base URL 不能为空")
     if not _valid_base_url(base):
         raise HTTPException(400, "Base URL 不合法")
-    if not _model_target_allowed(base):
+    if not _model_target_allowed(base, slot):
         raise HTTPException(400, "目标指向本机/内网地址，已拒绝（避免把 API Key 发给内网服务）")
 
-    anthropic = (req.protocol or "").strip().lower() == "anthropic"
+    anthropic = slot != "direct-api" and (req.protocol or "").strip().lower() == "anthropic"
     if anthropic:
         url = base + "/v1/models"
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01",
@@ -1989,7 +2011,7 @@ async def api_models_available(req: ModelsFetchRequest):
             return None
 
     handlers = [_NoRedirect]
-    if _direct_api_enabled() and base == read_settings(ENV_FILE).get("OPENAI_BASE_URL", "").strip().rstrip("/"):
+    if slot == "direct-api" and _direct_api_enabled() and base == read_settings(ENV_FILE).get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/"):
         handlers.append(urllib.request.ProxyHandler({}))
     _opener = urllib.request.build_opener(*handlers)
 
@@ -2024,21 +2046,25 @@ async def api_models_selftest(req: SelftestRequest):
     channel = (req.channel or "all").strip()
     direct = _direct_api_enabled()
     env = read_settings(ENV_FILE) if direct else _read_env()
-    # (base, key, 是否为 Anthropic Messages 协议)。协议决定探测用的鉴权头与路径：
+    # (base, key, 是否为 Anthropic Messages 协议, slot)。协议决定鉴权头与路径：
     # Anthropic 是 x-api-key + /v1/models，OpenAI 兼容是 Bearer + /models。
-    targets: list[tuple[str, str, bool]] = []
+    targets: list[tuple[str, str, bool, str]] = []
     if channel in ("chat", "all"):
-        chat_targets = (
-            (env.get("ANTHROPIC_BASE_URL", ""), env.get("ANTHROPIC_API_KEY", ""), True),
-            (env.get("OPENAI_BASE_URL", ""), env.get("OPENAI_API_KEY", ""), False),
-            (env.get("EASEL_LLM_BASE_URL", ""), env.get("EASEL_LLM_API_KEY", ""), False),
-        )
-        for base, key, is_anthropic in (chat_targets[1:2] if direct else chat_targets):
+        if direct:
+            chat_targets = ((env.get("EASEL_DIRECT_API_BASE_URL", ""),
+                             env.get("EASEL_DIRECT_API_KEY", ""), False, "direct-api"),)
+        else:
+            chat_targets = (
+                (env.get("ANTHROPIC_BASE_URL", ""), env.get("ANTHROPIC_API_KEY", ""), True, "anthropic"),
+                (env.get("OPENAI_BASE_URL", ""), env.get("OPENAI_API_KEY", ""), False, "openai"),
+                (env.get("EASEL_LLM_BASE_URL", ""), env.get("EASEL_LLM_API_KEY", ""), False, "relay"),
+            )
+        for base, key, is_anthropic, slot in chat_targets:
             if base.strip() and (key.strip() or direct):
-                targets.append((base.strip().rstrip("/"), key.strip(), is_anthropic))
+                targets.append((base.strip().rstrip("/"), key.strip(), is_anthropic, slot))
     if channel in ("transcribe", "all") and (env.get("SILICONFLOW_API_KEY") or "").strip():
         targets.append(((env.get("SILICONFLOW_BASE_URL") or "https://api.siliconflow.cn/v1").strip().rstrip("/"),
-                        env["SILICONFLOW_API_KEY"].strip(), False))
+                        env["SILICONFLOW_API_KEY"].strip(), False, "siliconflow"))
 
     # 这里会把真实 API Key 当 Bearer 发出去，所以目标地址必须先过闸：
     # 合法 http(s)、且不指向本机/内网/云元数据；跳转也不跟（跟了等于绕过前面的判断）。
@@ -2048,11 +2074,11 @@ async def api_models_selftest(req: SelftestRequest):
 
     _opener = urllib.request.build_opener(_NoRedirect)
 
-    def _probe(base: str, key: str, *, anthropic: bool = False) -> dict:
+    def _probe(base: str, key: str, *, anthropic: bool = False, slot: str = "") -> dict:
         t0 = time.time()
         if not _valid_base_url(base):
             return {"baseUrl": base, "ok": False, "ms": 0, "detail": "Base URL 不合法，未发起请求"}
-        if not _model_target_allowed(base):
+        if not _model_target_allowed(base, slot):
             return {"baseUrl": base, "ok": False, "ms": 0,
                     "detail": "目标指向本机/内网地址，已拒绝（避免把 API Key 发给内网服务）"}
         try:
@@ -2070,7 +2096,7 @@ async def api_models_selftest(req: SelftestRequest):
             else:
                 rq = urllib.request.Request(base + "/models", headers={"Authorization": f"Bearer {key}"})
             opener = _opener
-            if direct and base == env.get("OPENAI_BASE_URL", "").strip().rstrip("/"):
+            if slot == "direct-api" and base == env.get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/"):
                 opener = urllib.request.build_opener(_NoRedirect, urllib.request.ProxyHandler({}))
             with opener.open(rq, timeout=15) as resp:
                 return {"baseUrl": base, "ok": resp.status == 200, "ms": int((time.time() - t0) * 1000)}
@@ -2080,8 +2106,8 @@ async def api_models_selftest(req: SelftestRequest):
 
     def _run_probes() -> list[dict]:
         out: list[dict] = []
-        for base, key, is_anthropic in targets:
-            out.append(_probe(base, key, anthropic=is_anthropic))
+        for base, key, is_anthropic, slot in targets:
+            out.append(_probe(base, key, anthropic=is_anthropic, slot=slot))
         return out
 
     results = await asyncio.to_thread(_run_probes)

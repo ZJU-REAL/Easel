@@ -19,7 +19,7 @@ import app as web
 from easel import direct_api
 
 BASE = "http://localhost:50288/v1"
-SETTINGS = {"OPENAI_BASE_URL": BASE, "OPENAI_MODEL": "gpt-6.1-sol", "OPENAI_API_KEY": "gateway-secret"}
+SETTINGS = {"EASEL_DIRECT_API_BASE_URL": BASE, "EASEL_DIRECT_API_MODEL": "gpt-6.1-sol", "EASEL_DIRECT_API_KEY": "gateway-secret"}
 ASYNC_CLIENT = httpx.AsyncClient
 
 
@@ -123,7 +123,7 @@ def test_nonstream_and_model_save_without_openclaw(sandbox, monkeypatch):
     assert sandbox.post("/api/chat/question/status", json={"questionIds": ["old-question"]}).json()["questions"]["old-question"]["status"] == "not_found"
     assert sandbox.post("/api/chat/question/answer", json={"questionId": "old-question", "answers": {}}).status_code == 409
     response = sandbox.post("/api/settings/models/save", json={"channel": "chat", "rows": [
-        {"slot": "openai", "model": "another-model", "baseUrl": BASE, "key": "", "primary": True}]})
+        {"slot": "direct-api", "model": "another-model", "baseUrl": BASE, "key": "", "primary": True}]})
     assert response.status_code == 200, response.text
     assert response.json()["transport"] == "api"
     assert "gateway-secret" not in response.text
@@ -147,7 +147,7 @@ def test_private_models_only_allowed_for_configured_gateway(sandbox, monkeypatch
             captured.append(request.full_url)
             return Response()
     monkeypatch.setattr(web.urllib.request, "build_opener", lambda *args: Opener())
-    assert sandbox.post("/api/settings/models/available", json={"slot": "openai", "baseUrl": BASE}).json()["models"] == ["gpt-6.1-sol"]
+    assert sandbox.post("/api/settings/models/available", json={"slot": "direct-api", "baseUrl": BASE}).json()["models"] == ["gpt-6.1-sol"]
     for address in ("http://localhost:50289/v1", "http://169.254.169.254/latest", "http://10.0.0.1/v1"):
         assert sandbox.post("/api/settings/models/available", json={"baseUrl": address, "key": "secret"}).status_code == 400
     assert captured == [BASE + "/models"]
@@ -199,10 +199,10 @@ def test_text_attachment_and_persona_are_inlined(sandbox, monkeypatch, tmp_path)
 
 def test_settings_quoted_values_and_environment_override(tmp_path, monkeypatch):
     env = tmp_path / ".env"
-    env.write_text('EASEL_CHAT_TRANSPORT="api"\nOPENAI_BASE_URL="http://localhost:50288/v1"\n')
+    env.write_text('EASEL_CHAT_TRANSPORT="api"\nEASEL_DIRECT_API_BASE_URL="http://localhost:50288/v1"\n')
     assert direct_api.api_mode(direct_api.read_settings(env))
-    monkeypatch.setenv("OPENAI_MODEL", "from-process")
-    assert direct_api.read_settings(env)["OPENAI_MODEL"] == "from-process"
+    monkeypatch.setenv("EASEL_DIRECT_API_MODEL", "from-process")
+    assert direct_api.read_settings(env)["EASEL_DIRECT_API_MODEL"] == "from-process"
 
 
 def test_doctor_api_mode_skips_openclaw(tmp_path, monkeypatch):
@@ -233,7 +233,7 @@ def test_switching_modes_requires_new_session(sandbox, monkeypatch):
 def test_api_installer_skips_openclaw_and_gateway(tmp_path):
     root = Path(__file__).resolve().parents[1]
     (tmp_path / "setup.sh").write_text((root / "setup.sh").read_text())
-    (tmp_path / ".env.example").write_text("OPENAI_BASE_URL=http://localhost:50288/v1\nOPENAI_MODEL=test\n")
+    (tmp_path / ".env.example").write_text("EASEL_DIRECT_API_BASE_URL=http://localhost:50288/v1\nEASEL_DIRECT_API_MODEL=test\n")
     (tmp_path / "web" / "frontend").mkdir(parents=True)
     binary = tmp_path / "bin"
     binary.mkdir()

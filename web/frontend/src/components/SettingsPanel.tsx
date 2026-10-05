@@ -342,6 +342,7 @@ export default function SettingsPanel({ onClose }: Props) {
   };
 
   const SLOT_EDIT: Record<string, { model: boolean; base: boolean }> = {
+    'direct-api': { model: true, base: true },
     openai: { model: true, base: true },
     relay: { model: true, base: true },
     // anthropic 也要能改 Base URL：官方直连之外，中转站/自建网关/兼容代理都靠它
@@ -655,7 +656,7 @@ export default function SettingsPanel({ onClose }: Props) {
                       <button className="btn btn-sm" onClick={() => void doSelftest('chat')} disabled={testing}>自测本通道</button>
                     </div>
                     {renderBoard(chatRows, { onRow: (i, p) => updateRow(setChatRows, i, p), onPrimary: setPrimaryRow, onRemove: removeRow })}
-                    {transport === 'api' ? <div className="foot-note">直接调用 OpenAI 兼容 API，支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
+                    {transport === 'api' ? <div className="foot-note">此通道使用独立的 EASEL_DIRECT_API_* 配置，与原有 OpenAI 通道分开保存。支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
                       : <div className="add-row" onClick={addProvider}>＋ 添加供应商（填名称 / 模型 / Base URL / Key；点「设为主」切换生效通道）</div>}
                     {transport !== 'api' && (() => {
                       // 本机 agent 区块：装了 Claude Code / Gemini CLI 并登录过的用户不需要填 API Key。
