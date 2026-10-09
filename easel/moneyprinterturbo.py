@@ -30,6 +30,7 @@ MEDIA_EXTENSIONS = frozenset(
 )
 ASPECTS = frozenset({"9:16", "16:9", "1:1"})
 MPT_VERSION = "v1.3.7"
+MPT_COMMIT = "cf5a3aedad1741d012152d355aa909d224fc4557"
 DEFAULT_LLM_BASE_URL = "http://127.0.0.1:8081/v1"
 DEFAULT_LLM_MODEL = "qwen38-27b-mythos-agentic"
 DEFAULT_TIMEOUT_SECONDS = 20 * 60
@@ -193,9 +194,12 @@ def prepare_request(
     project_name = request.project_name.strip()
     if not project_name or Path(project_name).name != project_name or project_name in {".", ".."}:
         raise MoneyPrinterTurboError("project name must be one human-readable directory name")
+    requested_output = paths.root / "outputs" / project_name
+    if _has_symlink_component(requested_output, paths.root):
+        raise MoneyPrinterTurboError("project destination may not contain a symlink")
     try:
         output_dir = output_paths.validate_project_dir(
-            paths.root / "outputs" / project_name,
+            requested_output,
             create=False,
         )
     except (ValueError, OSError) as exc:
@@ -322,7 +326,76 @@ def configure_managed_runtime(
             stage_path.unlink(missing_ok=True)
 
 
+def _require_managed_link(link: Path, expected: Path, label: str) -> None:
+    if not link.is_symlink():
+        raise MoneyPrinterTurboError(f"managed {label} link is missing")
+    try:
+        actual_target = link.resolve(strict=True)
+        expected_target = expected.resolve(strict=True)
+    except OSError as exc:
+        raise MoneyPrinterTurboError(f"managed {label} link is broken") from exc
+    if actual_target != expected_target:
+        raise MoneyPrinterTurboError(f"managed {label} link has an unexpected target")
+
+
+def verify_pinned_runtime(
+    paths: MoneyPrinterTurboPaths,
+    *,
+    expected_commit: str = MPT_COMMIT,
+    allow_webui_config_file: bool = False,
+) -> None:
+    if paths.source.is_symlink() or not paths.source.is_dir() or not (paths.source / ".git").is_dir():
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo source is missing, redirected, or not a Git checkout")
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(paths.source), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            shell=False,
+            timeout=10,
+            check=False,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(paths.source), "status", "--porcelain", "--untracked-files=all"],
+            capture_output=True,
+            text=True,
+            shell=False,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise MoneyPrinterTurboError("could not verify the pinned MoneyPrinterTurbo source") from exc
+    if revision.returncode != 0 or revision.stdout.strip() != expected_commit:
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo source has the wrong revision")
+    if status.returncode != 0:
+        raise MoneyPrinterTurboError("could not inspect the MoneyPrinterTurbo source")
+    for line in status.stdout.splitlines():
+        if line in {"?? storage", "?? config.toml"}:
+            name = line[3:]
+            if (paths.source / name).is_symlink():
+                continue
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo source is dirty")
+
+    if paths.state.is_symlink() or not paths.state.is_dir():
+        raise MoneyPrinterTurboError("managed MoneyPrinterTurbo state is missing or redirected")
+    if paths.config.is_symlink() or not paths.config.is_file():
+        raise MoneyPrinterTurboError("managed MoneyPrinterTurbo config is missing or unsafe")
+    if paths.storage.is_symlink() or not paths.storage.is_dir():
+        raise MoneyPrinterTurboError("managed MoneyPrinterTurbo storage is missing or unsafe")
+    _require_managed_link(paths.source / "storage", paths.storage, "storage")
+    source_config = paths.source / "config.toml"
+    if allow_webui_config_file and source_config.is_file() and not source_config.is_symlink():
+        pass
+    else:
+        _require_managed_link(source_config, paths.config, "config")
+    if (paths.source / "cli.py").is_symlink() or not (paths.source / "cli.py").is_file():
+        raise MoneyPrinterTurboError("pinned MoneyPrinterTurbo CLI is missing or unsafe")
+    if not (paths.source / ".venv" / "bin" / "python").is_file():
+        raise MoneyPrinterTurboError("pinned MoneyPrinterTurbo Python environment is missing")
+
+
 def reconcile_webui_config(paths: MoneyPrinterTurboPaths) -> None:
+    verify_pinned_runtime(paths, allow_webui_config_file=True)
     source_config = paths.source / "config.toml"
     if source_config.is_symlink():
         try:
@@ -610,6 +683,7 @@ class MoneyPrinterTurboBridge:
         dry_run: bool = False,
     ) -> BridgeResult | list[str]:
         prepared = prepare_request(self.paths, request)
+        verify_pinned_runtime(self.paths)
         task_id = self.task_id_factory()
         command = build_command(self.paths, prepared, task_id)
         if dry_run:

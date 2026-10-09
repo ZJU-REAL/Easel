@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import easel.moneyprinterturbo as moneyprinterturbo_module
 from easel.moneyprinterturbo import (
     BridgeResult,
     MoneyPrinterTurboError,
@@ -21,11 +22,21 @@ from easel.moneyprinterturbo import (
     prepare_request,
     reconcile_webui_config,
     render_managed_config,
+    verify_pinned_runtime,
 )
 from skills.shared.scripts import output_paths
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _stub_runtime_verification(monkeypatch):
+    monkeypatch.setattr(
+        moneyprinterturbo_module,
+        "verify_pinned_runtime",
+        lambda *_args, **_kwargs: None,
+    )
 
 
 def _paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> MoneyPrinterTurboPaths:
@@ -82,6 +93,13 @@ def test_project_name_uses_output_paths_gate(tmp_path, monkeypatch):
     assert prepared.output_dir == paths.root / "outputs" / "Autumn city guide"
     assert prepared.final_path == prepared.output_dir / "final.mp4"
     assert not prepared.output_dir.exists()
+
+    sibling = paths.root / "outputs" / "Sibling project"
+    sibling.mkdir()
+    redirected = paths.root / "outputs" / "Redirected project"
+    redirected.symlink_to(sibling, target_is_directory=True)
+    with pytest.raises(MoneyPrinterTurboError, match="symlink"):
+        prepare_request(paths, _request(project_name="Redirected project"))
 
 
 def test_local_source_requires_real_non_symlink_media_in_allowed_roots(tmp_path, monkeypatch):
@@ -180,6 +198,40 @@ def _runtime(paths: MoneyPrinterTurboPaths) -> None:
     paths.state.mkdir(parents=True)
     paths.config.write_text(CONFIG_SAMPLE, encoding="utf-8")
     paths.task_root.mkdir(parents=True)
+
+
+def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, check=False)
+
+
+def test_pinned_runtime_verification_rejects_wrong_dirty_and_redirected_sources(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    (paths.source / ".gitignore").write_text(".venv/\nconfig.toml\n/storage/\n", encoding="utf-8")
+    assert _git("init", "-q", cwd=paths.source).returncode == 0
+    assert _git("config", "user.email", "tests@example.invalid", cwd=paths.source).returncode == 0
+    assert _git("config", "user.name", "Tests", cwd=paths.source).returncode == 0
+    assert _git("add", "cli.py", ".gitignore", cwd=paths.source).returncode == 0
+    assert _git("commit", "-qm", "fixture", cwd=paths.source).returncode == 0
+    revision = _git("rev-parse", "HEAD", cwd=paths.source).stdout.strip()
+    (paths.source / "config.toml").symlink_to(paths.config)
+    (paths.source / "storage").symlink_to(paths.storage)
+
+    verify_pinned_runtime(paths, expected_commit=revision)
+    with pytest.raises(MoneyPrinterTurboError, match="revision"):
+        verify_pinned_runtime(paths, expected_commit="0" * 40)
+
+    (paths.source / "cli.py").write_text("# dirty\n", encoding="utf-8")
+    with pytest.raises(MoneyPrinterTurboError, match="dirty"):
+        verify_pinned_runtime(paths, expected_commit=revision)
+    (paths.source / "cli.py").write_text("# fixture\n", encoding="utf-8")
+
+    (paths.source / "storage").unlink()
+    outside = paths.root / "outside-storage"
+    outside.mkdir()
+    (paths.source / "storage").symlink_to(outside)
+    with pytest.raises(MoneyPrinterTurboError, match="storage"):
+        verify_pinned_runtime(paths, expected_commit=revision)
 
 
 def test_managed_config_sets_loopback_local_qwen_and_disables_upload():
@@ -395,6 +447,12 @@ def test_webui_config_reconciliation_preserves_changes_and_restores_link(tmp_pat
 def test_dry_run_returns_redacted_argv_without_launching(tmp_path, monkeypatch):
     paths = _paths(tmp_path, monkeypatch)
     _runtime(paths)
+    verified: list[MoneyPrinterTurboPaths] = []
+    monkeypatch.setattr(
+        moneyprinterturbo_module,
+        "verify_pinned_runtime",
+        lambda supplied: verified.append(supplied),
+    )
 
     def must_not_run(*_args, **_kwargs):
         raise AssertionError("dry-run launched a subprocess")
@@ -410,6 +468,7 @@ def test_dry_run_returns_redacted_argv_without_launching(tmp_path, monkeypatch):
     assert isinstance(command, list)
     assert "[REDACTED]" in command
     assert "Three quiet places to visit this fall" not in command
+    assert verified == [paths]
 
 
 def test_bridge_writes_managed_config_runs_once_and_delivers_brief(tmp_path, monkeypatch):
