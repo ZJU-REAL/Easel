@@ -26,17 +26,30 @@ def list_personas() -> list[str]:
         return []
     return sorted(
         d.name for d in PROFILES_DIR.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
+        if d.is_dir() and valid_persona_name(d.name)
     )
 
 
 def profile_exists(name: str) -> bool:
-    """检查画像目录是否存在。"""
-    return bool(name) and (PROFILES_DIR / name).is_dir()
+    """检查画像目录是否存在，拒绝把路径片段当作画像名。"""
+    return valid_persona_name(name) and (PROFILES_DIR / name).is_dir()
+
+
+def valid_persona_name(name: str) -> bool:
+    """Return whether ``name`` is a single, user-facing profile directory name."""
+    return (
+        isinstance(name, str)
+        and bool(name)
+        and not name.startswith((".", "_"))
+        and not any(character in name for character in ("/", "\\", ":"))
+        and not any(ord(character) < 32 for character in name)
+    )
 
 
 def load_profile_text(name: str) -> str:
     """读取画像文件夹，按固定顺序拼接所有非空 .md。画像不存在返回空串。"""
+    if not valid_persona_name(name):
+        return ""
     profile_dir = PROFILES_DIR / name
     if not profile_dir.is_dir():
         return ""
