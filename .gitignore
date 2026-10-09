@@ -29,6 +29,10 @@ Thumbs.db
 # OpenClaw runtime
 .openclaw/
 
+# Pinned third-party runtime and mutable state
+.tools/moneyprinterturbo/
+.state/moneyprinterturbo/
+
 # Outputs (keep directory structure via .gitkeep, ignore actual content)
 outputs/**/*
 !outputs/**/.gitkeep
