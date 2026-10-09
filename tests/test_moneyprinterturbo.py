@@ -1,19 +1,30 @@
 from __future__ import annotations
 
+import json
+import fcntl
+import importlib.util
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from easel.moneyprinterturbo import (
+    BridgeResult,
     MoneyPrinterTurboError,
+    MoneyPrinterTurboBridge,
     MoneyPrinterTurboPaths,
     MoneyPrinterTurboRequest,
+    atomic_deliver,
     build_command,
+    parse_cli_result,
     prepare_request,
     render_managed_config,
 )
 from skills.shared.scripts import output_paths
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> MoneyPrinterTurboPaths:
@@ -161,6 +172,15 @@ model_size = "large-v3"
 """
 
 
+def _runtime(paths: MoneyPrinterTurboPaths) -> None:
+    (paths.source / ".venv" / "bin").mkdir(parents=True)
+    _media(paths.source / ".venv" / "bin" / "python")
+    (paths.source / "cli.py").write_text("# fixture\n", encoding="utf-8")
+    paths.state.mkdir(parents=True)
+    paths.config.write_text(CONFIG_SAMPLE, encoding="utf-8")
+    paths.task_root.mkdir(parents=True)
+
+
 def test_managed_config_sets_loopback_local_qwen_and_disables_upload():
     rendered = render_managed_config(
         CONFIG_SAMPLE,
@@ -255,3 +275,318 @@ def test_topic_and_script_map_to_distinct_upstream_arguments(tmp_path, monkeypat
     assert "--video-script" not in topic_command
     assert script_command[script_command.index("--video-script") + 1] == "A finished script"
     assert "--video-subject" not in script_command
+
+
+def _result_payload(task_id: str, video: Path, warnings: list[object] | None = None) -> str:
+    return json.dumps(
+        {
+            "task_id": task_id,
+            "result": {"videos": [str(video)], "warnings": warnings or []},
+        }
+    )
+
+
+def test_result_accepts_one_matching_completed_task_video(tmp_path):
+    task_root = tmp_path / "tasks"
+    video = _media(task_root / "matching-task" / "final-1.mp4")
+
+    parsed, warnings = parse_cli_result(
+        _result_payload("matching-task", video, ["subtitle fallback"]),
+        expected_task_id="matching-task",
+        task_root=task_root,
+    )
+
+    assert parsed == video.resolve()
+    assert warnings == ("subtitle fallback",)
+
+
+def test_result_rejects_malformed_multiple_or_mismatched_json(tmp_path):
+    task_root = tmp_path / "tasks"
+    video = _media(task_root / "expected" / "final.mp4")
+    valid = _result_payload("expected", video)
+
+    for stdout in (
+        "not-json",
+        "{}",
+        valid + "\n" + valid,
+        _result_payload("different", video),
+        json.dumps({"task_id": "expected", "result": []}),
+        json.dumps({"task_id": "expected", "result": {"videos": [str(video), str(video)]}}),
+    ):
+        with pytest.raises(MoneyPrinterTurboError):
+            parse_cli_result(stdout, expected_task_id="expected", task_root=task_root)
+
+
+def test_result_rejects_missing_empty_non_mp4_and_out_of_task_paths(tmp_path):
+    task_root = tmp_path / "tasks"
+    task_dir = task_root / "expected"
+    missing = task_dir / "missing.mp4"
+    empty = _media(task_dir / "empty.mp4", b"")
+    wrong_type = _media(task_dir / "video.mov")
+    outside = _media(tmp_path / "outside.mp4")
+
+    for video in (missing, empty, wrong_type, outside):
+        with pytest.raises(MoneyPrinterTurboError):
+            parse_cli_result(
+                _result_payload("expected", video),
+                expected_task_id="expected",
+                task_root=task_root,
+            )
+
+
+def test_atomic_delivery_replaces_only_after_complete_copy(tmp_path, monkeypatch):
+    source = _media(tmp_path / "source.mp4", b"new-complete-video")
+    destination = _media(tmp_path / "project" / "final.mp4", b"old-video")
+    import easel.moneyprinterturbo as module
+
+    real_replace = module.os.replace
+    observations: list[tuple[bytes, bytes]] = []
+
+    def observing_replace(stage: Path, final: Path) -> None:
+        observations.append((final.read_bytes(), Path(stage).read_bytes()))
+        real_replace(stage, final)
+
+    monkeypatch.setattr(module.os, "replace", observing_replace)
+    atomic_deliver(source, destination)
+
+    assert observations == [(b"old-video", b"new-complete-video")]
+    assert destination.read_bytes() == b"new-complete-video"
+    assert not list(destination.parent.glob(".final.mp4.partial.*"))
+
+
+def test_atomic_delivery_preserves_existing_final_when_copy_fails(tmp_path, monkeypatch):
+    source = _media(tmp_path / "source.mp4", b"new-video")
+    destination = _media(tmp_path / "project" / "final.mp4", b"old-video")
+    import easel.moneyprinterturbo as module
+
+    def failing_copy(*_args, **_kwargs):
+        raise OSError("simulated copy failure")
+
+    monkeypatch.setattr(module.shutil, "copyfileobj", failing_copy)
+    with pytest.raises(MoneyPrinterTurboError, match="deliver"):
+        atomic_deliver(source, destination)
+
+    assert destination.read_bytes() == b"old-video"
+    assert not list(destination.parent.glob(".final.mp4.partial.*"))
+
+
+def test_dry_run_returns_redacted_argv_without_launching(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("dry-run launched a subprocess")
+
+    bridge = MoneyPrinterTurboBridge(
+        paths,
+        runner=must_not_run,
+        task_id_factory=lambda: "dry-task",
+        secret_values=("Three quiet places to visit this fall",),
+    )
+    command = bridge.run(_request(), dry_run=True)
+
+    assert isinstance(command, list)
+    assert "[REDACTED]" in command
+    assert "Three quiet places to visit this fall" not in command
+
+
+def test_bridge_writes_managed_config_runs_once_and_delivers_brief(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def successful_runner(command, **kwargs):
+        calls.append((command, kwargs))
+        video = _media(paths.task_root / "fixed-task" / "final.mp4", b"finished-video")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            _result_payload("fixed-task", video, ["fallback preserve-pexels"]),
+            "",
+        )
+
+    bridge = MoneyPrinterTurboBridge(
+        paths,
+        runner=successful_runner,
+        task_id_factory=lambda: "fixed-task",
+    )
+    result = bridge.run(_request())
+
+    assert result == BridgeResult(
+        status="completed",
+        task_id="fixed-task",
+        final_path=paths.root / "outputs" / "Autumn city guide" / "final.mp4",
+        warnings=("fallback [REDACTED]",),
+    )
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert kwargs == {
+        "cwd": paths.source,
+        "capture_output": True,
+        "text": True,
+        "shell": False,
+        "timeout": 1200,
+    }
+    assert command[command.index("--task-id") + 1] == "fixed-task"
+    assert result.final_path.read_bytes() == b"finished-video"
+    assert 'listen_host = "127.0.0.1"' in paths.config.read_text(encoding="utf-8")
+    brief = (result.final_path.parent / "brief.md").read_text(encoding="utf-8")
+    assert "v1.3.7" in brief
+    assert "9:16" in brief
+    assert "pexels" in brief
+    assert "fallback" in brief
+    assert "local-easel" not in brief
+    assert "preserve-pexels" not in brief
+
+
+def test_single_job_lock_rejects_concurrent_run(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    paths.lock.touch()
+
+    with paths.lock.open("a+") as held:
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        bridge = MoneyPrinterTurboBridge(paths, runner=lambda *_a, **_k: None)
+        with pytest.raises(MoneyPrinterTurboError, match="already running"):
+            bridge.run(_request())
+
+
+def test_nonzero_exit_reports_bounded_redacted_error(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    secret = "preserve-pexels"
+    calls = 0
+
+    def failing_runner(command, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(command, 9, "", (secret + " failure ") * 200)
+
+    bridge = MoneyPrinterTurboBridge(paths, runner=failing_runner, task_id_factory=lambda: "failed-task")
+    with pytest.raises(MoneyPrinterTurboError) as raised:
+        bridge.run(_request())
+
+    message = str(raised.value)
+    assert calls == 1
+    assert secret not in message
+    assert "[REDACTED]" in message
+    assert len(message) <= 1_100
+
+
+def test_safe_timeout_is_not_retried(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    calls = 0
+
+    def timing_out(command, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise subprocess.TimeoutExpired(command, 1200)
+
+    bridge = MoneyPrinterTurboBridge(paths, runner=timing_out, task_id_factory=lambda: "timeout-task")
+    with pytest.raises(MoneyPrinterTurboError, match="timed out") as raised:
+        bridge.run(_request(source="pexels"))
+    assert "ambiguous" not in str(raised.value).lower()
+    assert calls == 1
+
+
+def test_paid_timeout_is_ambiguous_and_is_not_retried(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    calls = 0
+
+    def timing_out(command, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise subprocess.TimeoutExpired(command, 1200)
+
+    bridge = MoneyPrinterTurboBridge(paths, runner=timing_out, task_id_factory=lambda: "paid-timeout")
+    with pytest.raises(MoneyPrinterTurboError, match="ambiguous"):
+        bridge.run(_request(source="ofox", confirm_ofox_charge=True))
+    assert calls == 1
+
+
+def _load_bridge_cli():
+    path = ROOT / "skills" / "openclaw" / "moneyprinterturbo-video" / "scripts" / "mpt_bridge.py"
+    spec = importlib.util.spec_from_file_location("mpt_bridge_cli", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_bridge_cli_configure_run_and_dry_run_contract(tmp_path, monkeypatch, capsys):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    module = _load_bridge_cli()
+    invocations: list[tuple[str, bool]] = []
+    constructors: list[dict[str, str]] = []
+    monkeypatch.setenv("EASEL_MPT_LLM_BASE_URL", "http://127.0.0.1:18081/v1")
+    monkeypatch.setenv("EASEL_MPT_LLM_MODEL", "test-qwen")
+
+    class FakeBridge:
+        def __init__(self, supplied_paths, **kwargs):
+            assert supplied_paths == paths
+            constructors.append(kwargs)
+
+        def run(self, request, *, dry_run=False):
+            invocations.append((request.project_name, dry_run))
+            if dry_run:
+                return ["python", "cli.py", "--video-subject", "topic"]
+            return BridgeResult("completed", "cli-task", request_path, ())
+
+    request_path = paths.root / "outputs" / "CLI project" / "final.mp4"
+    monkeypatch.setattr(module, "MoneyPrinterTurboBridge", FakeBridge)
+
+    common = [
+        "--root", str(paths.root), "--project", "CLI project", "--aspect", "1:1",
+        "--source", "pexels", "--topic", "topic",
+    ]
+    assert module.main(["dry-run", *common]) == 0
+    dry_payload = json.loads(capsys.readouterr().out)
+    assert dry_payload["status"] == "dry-run"
+    assert module.main(["run", *common]) == 0
+    run_payload = json.loads(capsys.readouterr().out)
+    assert run_payload == {
+        "status": "completed",
+        "task_id": "cli-task",
+        "final_path": str(request_path),
+        "warnings": [],
+    }
+    assert invocations == [("CLI project", True), ("CLI project", False)]
+    assert constructors == [
+        {"llm_base_url": "http://127.0.0.1:18081/v1", "llm_model": "test-qwen"},
+        {"llm_base_url": "http://127.0.0.1:18081/v1", "llm_model": "test-qwen"},
+    ]
+
+    assert module.main(["configure", "--root", str(paths.root)]) == 0
+    configure_payload = json.loads(capsys.readouterr().out)
+    assert configure_payload == {"status": "configured"}
+
+
+def test_bridge_cli_prints_only_small_result_json(tmp_path, monkeypatch, capsys):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    module = _load_bridge_cli()
+
+    class FakeBridge:
+        def __init__(self, _paths, **_kwargs):
+            pass
+
+        def run(self, request, *, dry_run=False):
+            return BridgeResult("completed", "small-task", request_path, ("one warning",))
+
+    request_path = paths.root / "outputs" / "Compact result" / "final.mp4"
+    monkeypatch.setattr(module, "MoneyPrinterTurboBridge", FakeBridge)
+    exit_code = module.main(
+        [
+            "run", "--root", str(paths.root), "--project", "Compact result",
+            "--aspect", "16:9", "--source", "pixabay", "--script", "script",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert exit_code == 0
+    assert not output.err
+    assert len(output.out) < 500
+    assert json.loads(output.out)["task_id"] == "small-task"

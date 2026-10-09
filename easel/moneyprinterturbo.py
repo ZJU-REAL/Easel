@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+import fcntl
 import os
 import re
+import shutil
+import subprocess
 import tempfile
+import tomllib
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Sequence
 
 from skills.shared.scripts import output_paths
 
@@ -23,6 +29,10 @@ MEDIA_EXTENSIONS = frozenset(
     {".mp4", ".mov", ".mkv", ".avi", ".webm", ".jpg", ".jpeg", ".png", ".webp"}
 )
 ASPECTS = frozenset({"9:16", "16:9", "1:1"})
+MPT_VERSION = "v1.3.7"
+DEFAULT_LLM_BASE_URL = "http://127.0.0.1:8081/v1"
+DEFAULT_LLM_MODEL = "qwen38-27b-mythos-agentic"
+DEFAULT_TIMEOUT_SECONDS = 20 * 60
 
 
 class MoneyPrinterTurboError(RuntimeError):
@@ -81,6 +91,14 @@ class PreparedMoneyPrinterTurboRequest:
     confirm_seedance_charge: bool
     confirm_ofox_charge: bool
     confirm_metaso_minimax_charge: bool
+
+
+@dataclass(frozen=True)
+class BridgeResult:
+    status: str
+    task_id: str
+    final_path: Path
+    warnings: tuple[str, ...]
 
 
 def _is_within(path: Path, directory: Path) -> bool:
@@ -341,3 +359,250 @@ def build_command(
     if request.source in confirmation_flags:
         command.append(confirmation_flags[request.source])
     return command
+
+
+def _warning_text(value: object) -> str:
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            raise MoneyPrinterTurboError("upstream warnings contain an unsupported value") from exc
+    return text[:500]
+
+
+def parse_cli_result(
+    stdout: str,
+    *,
+    expected_task_id: str,
+    task_root: Path,
+) -> tuple[Path, tuple[str, ...]]:
+    if not stdout.strip():
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo returned no result JSON")
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo returned malformed or multiple result JSON") from exc
+    if not isinstance(payload, dict):
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo result must be one JSON object")
+    if payload.get("task_id") != expected_task_id:
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo returned a mismatched task ID")
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo result payload is missing")
+    videos = result.get("videos")
+    if not isinstance(videos, list) or len(videos) != 1 or not isinstance(videos[0], str):
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo must return exactly one video path")
+
+    raw_video = Path(videos[0]).expanduser()
+    expected_dir = (Path(task_root).resolve() / expected_task_id).resolve()
+    if raw_video.is_symlink():
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo returned a symlink instead of a final video")
+    video = raw_video.resolve() if raw_video.is_absolute() else (expected_dir / raw_video).resolve()
+    if not _is_within(video, expected_dir):
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo video is outside the matching task directory")
+    if video.suffix.casefold() != ".mp4":
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo final video is not an MP4")
+    if not video.is_file() or video.stat().st_size <= 0:
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo final video is missing or empty")
+
+    raw_warnings = result.get("warnings", [])
+    if not isinstance(raw_warnings, list):
+        raise MoneyPrinterTurboError("MoneyPrinterTurbo warnings must be a list")
+    return video, tuple(_warning_text(item) for item in raw_warnings)
+
+
+def atomic_deliver(source: Path, destination: Path) -> None:
+    source = Path(source)
+    destination = Path(destination)
+    if source.is_symlink() or not source.is_file() or source.stat().st_size <= 0:
+        raise MoneyPrinterTurboError("cannot deliver a missing, empty, or symlinked source video")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stage_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=destination.parent,
+            prefix=f".{destination.name}.partial.",
+            delete=False,
+        ) as stage, source.open("rb") as source_file:
+            stage_path = Path(stage.name)
+            shutil.copyfileobj(source_file, stage)
+            stage.flush()
+            os.fsync(stage.fileno())
+        os.replace(stage_path, destination)
+        stage_path = None
+    except OSError as exc:
+        raise MoneyPrinterTurboError(f"could not deliver final video: {exc}") from exc
+    finally:
+        if stage_path is not None:
+            stage_path.unlink(missing_ok=True)
+
+
+def _configured_secret_values(config: Path) -> tuple[str, ...]:
+    try:
+        payload = tomllib.loads(config.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ()
+    secrets: set[str] = set()
+
+    def visit(value: object, key: str = "") -> None:
+        sensitive = any(marker in key.casefold() for marker in ("key", "token", "secret", "password"))
+        if isinstance(value, dict):
+            for child_key, child in value.items():
+                visit(child, str(child_key))
+        elif isinstance(value, list):
+            for child in value:
+                if sensitive and isinstance(child, str) and len(child) >= 4:
+                    secrets.add(child)
+        elif sensitive and isinstance(value, str) and len(value) >= 4:
+            secrets.add(value)
+
+    visit(payload)
+    return tuple(sorted(secrets, key=len, reverse=True))
+
+
+def _redact(text: str, secrets: Sequence[str]) -> str:
+    redacted = text
+    for secret in sorted({value for value in secrets if len(value) >= 4}, key=len, reverse=True):
+        redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
+def _write_brief(request: PreparedMoneyPrinterTurboRequest, result: BridgeResult) -> None:
+    request.output_dir.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# MoneyPrinterTurbo delivery",
+        "",
+        f"- Engine: MoneyPrinterTurbo {MPT_VERSION}",
+        f"- Task: {result.task_id}",
+        f"- Aspect: {request.aspect}",
+        f"- Source: {request.source}",
+    ]
+    if result.warnings:
+        lines.extend(["- Warnings:", *(f"  - {warning}" for warning in result.warnings)])
+    else:
+        lines.append("- Warnings: none")
+    content = "\n".join(lines) + "\n"
+    destination = request.output_dir / "brief.md"
+    stage_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=request.output_dir,
+            prefix=".brief.md.partial.",
+            delete=False,
+        ) as stage:
+            stage_path = Path(stage.name)
+            stage.write(content)
+            stage.flush()
+            os.fsync(stage.fileno())
+        os.replace(stage_path, destination)
+        stage_path = None
+    except OSError as exc:
+        raise MoneyPrinterTurboError(f"could not write delivery brief: {exc}") from exc
+    finally:
+        if stage_path is not None:
+            stage_path.unlink(missing_ok=True)
+
+
+Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+class MoneyPrinterTurboBridge:
+    def __init__(
+        self,
+        paths: MoneyPrinterTurboPaths,
+        *,
+        runner: Runner = subprocess.run,
+        task_id_factory: Callable[[], str] = lambda: str(uuid.uuid4()),
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        llm_base_url: str = DEFAULT_LLM_BASE_URL,
+        llm_model: str = DEFAULT_LLM_MODEL,
+        secret_values: Sequence[str] = (),
+    ) -> None:
+        self.paths = paths
+        self.runner = runner
+        self.task_id_factory = task_id_factory
+        self.timeout = timeout
+        self.llm_base_url = llm_base_url
+        self.llm_model = llm_model
+        self.secret_values = tuple(secret_values)
+
+    def _redacted_command(self, command: Sequence[str]) -> list[str]:
+        secrets = (*self.secret_values, *_configured_secret_values(self.paths.config))
+        return [_redact(item, secrets) for item in command]
+
+    def _run_once(self, command: list[str], request: PreparedMoneyPrinterTurboRequest):
+        try:
+            return self.runner(
+                command,
+                cwd=self.paths.source,
+                capture_output=True,
+                text=True,
+                shell=False,
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            if request.source in PAID_SOURCE_CONFIRMATIONS:
+                raise MoneyPrinterTurboError(
+                    "paid MoneyPrinterTurbo run timed out; provider charge state is ambiguous and the run was not retried"
+                ) from exc
+            raise MoneyPrinterTurboError("MoneyPrinterTurbo run timed out and was not retried") from exc
+        except OSError as exc:
+            raise MoneyPrinterTurboError(f"could not launch MoneyPrinterTurbo: {exc}") from exc
+
+    def run(
+        self,
+        request: MoneyPrinterTurboRequest,
+        *,
+        dry_run: bool = False,
+    ) -> BridgeResult | list[str]:
+        prepared = prepare_request(self.paths, request)
+        task_id = self.task_id_factory()
+        command = build_command(self.paths, prepared, task_id)
+        if dry_run:
+            return self._redacted_command(command)
+
+        if not self.paths.state.is_dir() or self.paths.state.is_symlink():
+            raise MoneyPrinterTurboError("managed MoneyPrinterTurbo state directory is missing or unsafe")
+        try:
+            lock_file = self.paths.lock.open("a+", encoding="utf-8")
+        except OSError as exc:
+            raise MoneyPrinterTurboError(f"could not open MoneyPrinterTurbo job lock: {exc}") from exc
+        with lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise MoneyPrinterTurboError("another MoneyPrinterTurbo job is already running") from exc
+
+            configure_managed_runtime(
+                self.paths,
+                llm_base_url=self.llm_base_url,
+                llm_model=self.llm_model,
+            )
+            completed = self._run_once(command, prepared)
+            secrets = (*self.secret_values, *_configured_secret_values(self.paths.config))
+            if completed.returncode != 0:
+                excerpt = _redact((completed.stderr or completed.stdout or "upstream failure").strip(), secrets)
+                excerpt = excerpt[:1_000]
+                raise MoneyPrinterTurboError(
+                    f"MoneyPrinterTurbo exited with status {completed.returncode}: {excerpt}"
+                )
+            video, warnings = parse_cli_result(
+                completed.stdout,
+                expected_task_id=task_id,
+                task_root=self.paths.task_root,
+            )
+            warnings = tuple(_redact(warning, secrets)[:500] for warning in warnings)
+            atomic_deliver(video, prepared.final_path)
+            result = BridgeResult(
+                status="completed",
+                task_id=task_id,
+                final_path=prepared.final_path,
+                warnings=warnings,
+            )
+            _write_brief(prepared, result)
+            return result
