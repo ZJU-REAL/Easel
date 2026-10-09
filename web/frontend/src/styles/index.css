@@ -1378,4 +1378,12 @@ textarea.field { resize: vertical; min-height: 90px; }
 
 
 /* 自定义供应商行的协议选择：与行内 mock 输入同风格，宽度收敛 */
-.prow select.proto-sel { min-width: 0; width: 100%; padding: 4px 6px; font-size: 12px; }
+/* 协议触发器：与行内 mock 输入同款外框，点开浮层选择（浮层复用 .model-dd 视觉） */
+.proto-trigger {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 6px;
+  min-width: 0; width: 100%; padding: 6px 9px; font-size: 12.5px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+  color: var(--text); position: relative; user-select: none;
+}
+.proto-trigger:hover { border-color: #9db3d8; }
+.proto-trigger .proto-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

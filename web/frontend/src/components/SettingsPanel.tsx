@@ -177,6 +177,8 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   });
   // 自定义下拉面板的展开状态与收起检测
   const [openDd, setOpenDd] = useState<Record<number, boolean>>({});
+  const [protoDd, setProtoDd] = useState<Record<number, boolean>>({});
+  const protoRefs = useRef<Record<number, HTMLSpanElement | null>>({});
   const modelCellRefs = useRef<Record<number, HTMLSpanElement | null>>({});
 
   useEffect(() => {
@@ -205,7 +207,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     setModelLists((m) => ({ ...m, [i]: { loading: true, models: m[i]?.models || [], err: '' } }));
     try {
       const proto = r.slot === 'custom' ? (r.protocol || 'openai') : (r.type === 'anthropic' ? 'anthropic' : 'openai');
-      const d = await fetchAvailableModels(r.baseUrl || '', r.keyNew || '', proto, r.slot || '');
+      const d = await fetchAvailableModels(r.baseUrl || '', r.keyNew || '', proto, r.slot || '', r.name || '');
       const fetchedAt = Date.now();
       setModelLists((m) => ({ ...m, [i]: { loading: false, models: d.models, err: d.models.length ? '' : '该端点没有返回模型', fetchedAt } }));
       if (d.models.length) {
@@ -306,7 +308,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
 
   // Esc 关闭
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -426,24 +430,43 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 <span className="pname">{r.name}<small>{r.sub}</small></span>
               )}
               {isCustom && ed && ed.base ? (
-                <select
-                  className="mock proto-sel"
-                  value={r.protocol || 'openai'}
+                <span
+                  className="proto-trigger"
+                  role="button"
+                  tabIndex={0}
+                  aria-haspopup="listbox"
+                  aria-expanded={!!protoDd[i]}
+                  ref={(el) => { protoRefs.current[i] = el; }}
                   title="上游协议：中转站是 OpenAI 兼容格式选 openai；原生 Anthropic 格式（/v1/messages）选 anthropic"
-                  onChange={(e) => {
-                    ops?.onRow?.(i, { protocol: e.target.value });
-                    // 协议变了，旧协议拉来的模型列表不再适用：清内存列表 + 下拉
-                    setModelLists((m) => {
-                      const next = { ...m };
-                      delete next[i];
-                      return next;
-                    });
-                    setOpenDd((s) => ({ ...s, [i]: false }));
+                  onClick={() => setProtoDd((s) => ({ ...s, [i]: !s[i] }))}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setProtoDd((state) => ({ ...state, [i]: !state[i] }));
+                    }
                   }}
                 >
-                  <option value="openai">openai</option>
-                  <option value="anthropic">anthropic</option>
-                </select>
+                  <span className="proto-label">{r.protocol === 'anthropic' ? 'anthropic' : 'openai'}</span>
+                  {protoDd[i] && (
+                    <OptionsDropdown
+                      anchor={protoRefs.current[i]}
+                      items={[{ value: 'openai', label: 'openai（OpenAI 兼容）' }, { value: 'anthropic', label: 'anthropic（原生 /v1/messages）' }]}
+                      current={r.protocol || 'openai'}
+                      onPick={(v) => {
+                        ops?.onRow?.(i, { protocol: v });
+                        // 协议变了，旧协议拉来的模型列表不再适用：清内存列表 + 收起
+                        setModelLists((m) => {
+                          const next = { ...m };
+                          delete next[i];
+                          return next;
+                        });
+                        setProtoDd((s) => ({ ...s, [i]: false }));
+                        setOpenDd((state) => ({ ...state, [i]: false }));
+                      }}
+                      onClose={() => setProtoDd((s) => ({ ...s, [i]: false }))}
+                    />
+                  )}
+                </span>
               ) : isCustom ? (
                 <span title="保存后可切换协议">{r.protocol === 'anthropic' ? 'anthropic' : 'openai'}</span>
               ) : (
@@ -827,6 +850,31 @@ function FixedDropdown({ anchor, models, current, emptyHint, onPull, pulling, on
   onPick: (mid: string) => void;
   onClose: () => void;
 }) {
+  return (
+    <OptionsDropdown
+      anchor={anchor}
+      items={models.map((m) => ({ value: m, label: m }))}
+      current={current}
+      emptyHint={emptyHint}
+      onPull={onPull}
+      pulling={pulling}
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
+}
+
+/** 通用选项浮层（协议下拉与模型下拉共用同一视觉：圆角/阴影/悬停/当前项标注）。 */
+function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pulling, onPick, onClose }: {
+  anchor: HTMLElement | null;
+  items: { value: string; label: string }[];
+  current: string;
+  emptyHint?: string;
+  onPull?: () => void;
+  pulling?: boolean;
+  onPick: (value: string) => void;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   useEffect(() => {
@@ -836,7 +884,7 @@ function FixedDropdown({ anchor, models, current, emptyHint, onPull, pulling, on
       const width = Math.max(r.width, 240);
       // 优先向下展开；下方空间不足时向上翻
       const below = window.innerHeight - r.bottom;
-      const est = Math.min(models.length, 8) * 30 + 10;
+      const est = Math.min(items.length, 8) * 30 + 10;
       const openUp = below < Math.min(est, 240) && r.top > est;
       setPos({
         top: openUp ? r.top - Math.min(est, 240) - 4 : r.bottom + 4,
@@ -851,26 +899,35 @@ function FixedDropdown({ anchor, models, current, emptyHint, onPull, pulling, on
       window.removeEventListener('resize', measure);
       window.removeEventListener('scroll', measure, true);
     };
-  }, [anchor, models.length]);
+  }, [anchor, items.length]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)
           && !(anchor && anchor.contains(e.target as Node))) onClose();
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+        anchor?.focus();
+      }
+    };
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
     };
   }, [anchor, onClose]);
 
   if (!pos) return null;
   return createPortal(
-    <div ref={ref} className="model-dd" role="listbox" style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}>
-      {models.length === 0 && (
+    <div ref={ref} className="model-dd" role="listbox" onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}>
+      {items.length === 0 && (
         <div className="dd-empty">
           <span>{emptyHint || '该端点没有返回模型'}</span>
           {onPull && (
@@ -880,14 +937,23 @@ function FixedDropdown({ anchor, models, current, emptyHint, onPull, pulling, on
           )}
         </div>
       )}
-      {models.map((mid) => (
+      {items.map((it) => (
         <div
-          key={mid}
-          className={`dd-item${mid === current ? ' active' : ''}`}
-          onMouseDown={(e) => { e.preventDefault(); onPick(mid); }}
+          key={it.value}
+          role="option"
+          aria-selected={it.value === current}
+          tabIndex={0}
+          className={`dd-item${it.value === current ? ' active' : ''}`}
+          onMouseDown={(e) => { e.preventDefault(); onPick(it.value); }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onPick(it.value);
+            }
+          }}
         >
-          <span>{mid}</span>
-          {mid === current && <small>当前</small>}
+          <span>{it.label}</span>
+          {it.value === current && <small>当前</small>}
         </div>
       ))}
     </div>,

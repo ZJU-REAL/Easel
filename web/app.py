@@ -1866,9 +1866,28 @@ async def api_settings_models_save(req: ModelSaveRequest):
         # 这道闸会把网关用户彻底锁死（连只改模型都保存不了）；而且下面 _sync_openclaw_chat
         # 本来就不会改网关的 baseUrl，没有「拿旧 Key 打新地址」这个风险。
         if is_chat and pkey and base and not key:
-            _pb, _pk = _cur_prov.get(pkey, ('', ''))
-            if _pk and base != _pb.strip().rstrip('/') and not _is_local_gateway_base(_pb):
+            # 换址校验的「现值」要跟配置的权威来源比：openai/relay/anthropic 的权威在 .env
+            # （面板与 setup.sh 都写它），openclaw.json 只是保存时的镜像——setup.sh 配置后
+            # 用户从没用面板保存过的话，镜像可能停在初始值（如 api.openai.com），拿它比对
+            # 会把「原样回传真值」误判成「换址没填 key」，整个面板都保存不了（真机踩中）。
+            # custom 供应商权威就在 openclaw.json，维持原比对。
+            _be, _ke = _SLOT_ENV_KEYS.get(slot, ('', ''))
+            if _be and _is_set(_cur_env.get(_ke)):
+                _pb = (_cur_env.get(_be, '') or '').strip().rstrip('/')
+                _pk = (_cur_env.get(_ke, '') or '').strip()
+                if slot == 'anthropic' and not _pb:
+                    _pb = 'https://api.anthropic.com'
+            else:
+                _pb, _pk = _cur_prov.get(pkey, ('', ''))
+                _pb = _pb.strip().rstrip('/')
+            if _pk and base != _pb and not _is_local_gateway_base(_pb):
                 raise HTTPException(400, f'更换 Base URL 时必须重新填写 API Key（{pkey}）')
+        if is_chat and slot == 'openai' and not key and _is_set(_cur_env.get('OPENAI_API_KEY')) \
+                and (_cur_env.get('OPENAI_BASE_URL') or '').strip() \
+                and not _is_local_gateway_base(_cur_prov.get('openai', ('', ''))[0]):
+            provider_updates['openai']['key'] = _cur_env['OPENAI_API_KEY'].strip()
+            provider_updates['openai']['base'] = (
+                base or _cur_env['OPENAI_BASE_URL'].strip().rstrip('/'))
         if is_chat and pkey and getattr(row, 'primary', False) and model:
             # model 可能本来就是 provider/model 形式：anthropic 行的 model 直接取自
             # .env 的 CLAUDE_MODEL，而那个值按约定就写成 anthropic/claude-opus-4-7。
@@ -1886,13 +1905,27 @@ async def api_settings_models_save(req: ModelSaveRequest):
         # 两者共用同一个 anthropic provider，和 setup.sh 的映射保持一致。
         _slots = {(r.slot or '').strip() for r in req.rows}
         if 'anthropic' in _slots:
-            _an = _sync_anthropic_provider(updates.get('ANTHROPIC_BASE_URL', ''),
-                                          updates.get('ANTHROPIC_API_KEY', ''))
+            _an = _sync_anthropic_provider(
+                updates.get('ANTHROPIC_BASE_URL',
+                            _cur_env.get('ANTHROPIC_BASE_URL', '')
+                            if _is_set(_cur_env.get('ANTHROPIC_API_KEY')) else '')
+                or ('' if _is_set(_cur_env.get('ANTHROPIC_API_KEY'))
+                    else _cur_prov.get('anthropic', ('', ''))[0]),
+                updates.get('ANTHROPIC_API_KEY',
+                            _cur_env.get('ANTHROPIC_API_KEY', '')
+                            if _is_set(_cur_env.get('ANTHROPIC_API_KEY')) else ''))
             if _an:
                 note = f'{note}；{_an}' if note else _an
         elif 'relay' in _slots:
-            _an = _sync_anthropic_provider(updates.get('EASEL_LLM_BASE_URL', ''),
-                                          updates.get('EASEL_LLM_API_KEY', ''))
+            _an = _sync_anthropic_provider(
+                updates.get('EASEL_LLM_BASE_URL',
+                            _cur_env.get('EASEL_LLM_BASE_URL', '')
+                            if _is_set(_cur_env.get('EASEL_LLM_API_KEY')) else '')
+                or ('' if _is_set(_cur_env.get('EASEL_LLM_API_KEY'))
+                    else _cur_prov.get('anthropic', ('', ''))[0]),
+                updates.get('EASEL_LLM_API_KEY',
+                            _cur_env.get('EASEL_LLM_API_KEY', '')
+                            if _is_set(_cur_env.get('EASEL_LLM_API_KEY')) else ''))
             if _an:
                 note = f'{note}；{_an}' if note else _an
     resp = {"ok": True, "note": note}
