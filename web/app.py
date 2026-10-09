@@ -2520,10 +2520,20 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
                 idle_since = time.monotonic()
                 for event in batch:
                     cursor = int(event["id"])
+                    raw = event.get("data")
+                    # job 日志里 question 的 data 已是序列化 JSON 字符串（实时流
+                    # forward() 对 question 原样透传），这里若再 json.dumps 会双层
+                    # 转义 → 前端 JSON.parse 拿到字符串而非对象 → ask_user 选项
+                    # 卡片渲染成空壳。其余事件存原文/dict，与实时流的 dumps 规则
+                    # 一致。因此仅 question 按实时流规则原样透传。
+                    if event["event"] == "question" and isinstance(raw, str):
+                        data_out = raw
+                    else:
+                        data_out = json.dumps(raw, ensure_ascii=False)
                     yield {
                         "id": str(cursor),
                         "event": event["event"],
-                        "data": json.dumps(event.get("data"), ensure_ascii=False),
+                        "data": data_out,
                     }
                     if event["event"] in ("done", "error"):
                         return
