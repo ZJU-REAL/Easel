@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # 每天 03:17 UTC 跑一次真实安装。错开整点：整点是 GitHub Actions 的高峰，
+    # 排队时间明显更长。
+    - cron: '17 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,3 +47,172 @@ jobs:
       # CI 也全绿，但那部分从来没在 CI 上跑过。从根目录跑一次，两边都覆盖。
       - name: Run unit tests
         run: python -m pytest -v
+
+  # 两个安装脚本此前在 CI 里零覆盖 —— setup.ps1 把 setup.sh 的版本假设 bug 原样复刻了一
+  # 遍却没人发现，根因就在这里。这个 job 全程在 ubuntu 上跑（shellcheck 与 PSScriptAnalyzer
+  # 都是跨平台的），~90s，不下载任何东西，适合挂在每个 PR 上。
+  lint-installers:
+    name: Installer lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Bash syntax
+        run: |
+          for f in setup.sh scripts/gateway.sh openclaw/sync.sh; do
+            echo "== bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          severity: warning
+          # 技能自带的 vendor 脚本不在本仓库维护范围内
+          ignore_paths: skills/openclaw/video-production/vendor
+
+      # PowerShell 侧：解析 + 静态分析。作者的开发机是 Linux，改 setup.ps1 没法本地验证，
+      # 这里是唯一的把关点，所以 Error 级别直接判失败。
+      # 只检查我们自己维护的 .ps1：vendor/video-pipeline-sdk 下那几个不在本仓库范围内，
+      # 扫进来只会把真问题埋在噪音里（shellcheck 那边也同样排除了该目录）。
+      - name: PowerShell parse check
+        shell: pwsh
+        run: |
+          $files = git ls-files '*.ps1' | Where-Object { $_ -notmatch 'vendor/' }
+          if (-not $files) { throw '没找到要检查的 .ps1' }
+          $bad = $false
+          foreach ($f in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $f), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { Write-Host "== $f"; $errors | Format-List; $bad = $true }
+          }
+          if ($bad) { throw 'PowerShell 解析失败（注意 setup.ps1 必须保持 UTF-8 with BOM）' }
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
+          $files = git ls-files '*.ps1' | Where-Object { $_ -notmatch 'vendor/' }
+          if (-not $files) { throw '没找到要检查的 .ps1' }
+          # -Path 只收单个字符串，传数组会抛错却仍让这一步「0 findings」通过 —— 必须逐个扫。
+          $r = @($files | ForEach-Object {
+                  Invoke-ScriptAnalyzer -Path $_ -Settings ./PSScriptAnalyzerSettings.psd1 })
+          Write-Host "扫描 $($files.Count) 个文件，findings: $($r.Count)"
+          if ($r) { $r | Format-Table -AutoSize RuleName,Severity,ScriptName,Line,Message }
+          if ($r | Where-Object Severity -eq 'Error') { throw 'PSScriptAnalyzer 报告了 Error' }
+
+  # setup.ps1 的容忍层必须在**真实的 Windows PowerShell 5.1** 上验证一次。
+  # 作者的开发机是 Linux，pwsh 7 虽然能装但复现不了 5.1 的关键行为：Stop 模式下
+  # 原生命令的 stderr 会被包成 ErrorRecord 抛 NativeCommandError。实测把修复
+  # （ErrorActionPreference=Continue）去掉，pwsh 7 上测试照样通过 —— 所以这个
+  # job 是该缺陷类唯一真正的把关点。5.1 是 Windows 自带版本，必须先跑它。
+  powershell-tolerance:
+    name: PowerShell tolerance (${{ matrix.shell }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]   # powershell = Windows PowerShell 5.1
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run tolerance probe (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./tests/ps_tolerance_probe.ps1
+      - name: Run tolerance probe (PowerShell Core)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./tests/ps_tolerance_probe.ps1
+
+  # 现有 test job 从不构建前端，而 doctor.py 把 web/frontend/dist/index.html 当作安装成功的
+  # 判据之一 —— TypeScript 一旦编译不过，CI 全绿而用户装完打开是空白页。
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - name: Frontend regression tests
+        run: node --test ../../tests/frontend/*.test.mjs
+      - run: npm run build
+
+  # 真·跑一遍安装。只在 nightly / 手动触发 / 打了 ci:full-install 标签的 PR 上跑：
+  # 一次完整安装要下 ~1GB（pip 的 opencv/faster-whisper/rembg + npm + Chromium），
+  # windows-latest 上 I/O 更慢且按 2 倍计费，挂在每个 PR 上并不现实。
+  # 日常 PR 由 lint-installers 与 pytest 里的 check-mode 回归把关。
+  install-real:
+    name: Real install (${{ matrix.os }})
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      || contains(github.event.pull_request.labels.*.name, 'ci:full-install')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # CI 里没有真 key。doctor 的认证检查是静态的（只判「非空且非占位符」），
+      # 给一个语法合法的假值即可走通整条配置链路。
+      - name: Seed .env
+        shell: bash
+        run: |
+          cp .env.example .env
+          printf '\nEASEL_LLM_API_KEY=sk-ci-not-a-real-key-0123456789\n' >> .env
+          printf 'EASEL_LLM_BASE_URL=https://example.invalid/v1\n' >> .env
+          printf 'CLAUDE_MODEL=anthropic/claude-sonnet-4-6\n' >> .env
+
+      - name: Install (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: bash setup.sh
+
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell       # 5.1：Windows 自带版本，必须按它验证
+        run: ./setup.ps1
+
+      # 这一条是重点：setup 必须可重入。2026.9.x 拒绝「会删掉已存在子键的整块写入」，
+      # 于是首次安装能过、第二次重跑必失败 —— 两边都真实发生过，只有跑第二遍才看得见。
+      - name: Install again (idempotency)
+        if: runner.os != 'Windows'
+        run: bash setup.sh
+
+      - name: Install again (idempotency, Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./setup.ps1
+
+      - name: doctor
+        shell: bash
+        run: |
+          if [ -x .venv/bin/easel ]; then .venv/bin/easel doctor
+          else .venv/Scripts/easel.exe doctor; fi
+
+      - name: Upload install report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-report-${{ matrix.os }}
+          path: |
+            outputs/_install/last-install.json
+          if-no-files-found: warn

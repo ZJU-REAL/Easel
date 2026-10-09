@@ -6,7 +6,6 @@ set -euo pipefail
 # 用法: ./scripts/gateway.sh {start|stop|restart|status|logs}
 
 PROFILE="easel"
-OC="openclaw --profile $PROFILE"
 LOGFILE="/tmp/easel-gateway.log"
 ADAPTER_LOGFILE="/tmp/easel-openai-maas-adapter.log"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,11 +29,16 @@ if ! [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-# Easel 自己的端口覆盖要透传给 OpenClaw：gateway 进程只认 OPENCLAW_GATEWAY_PORT（它优先级最高），
-# 不透传的话 `EASEL_GATEWAY_PORT=xxx ./scripts/gateway.sh start` 会让我们探 xxx、它却听别的。
-if [ -n "${EASEL_GATEWAY_PORT:-}" ]; then
-    export OPENCLAW_GATEWAY_PORT="$EASEL_GATEWAY_PORT"
-fi
+# 把解析出的端口**无条件**钉给 OpenClaw：gateway 进程只认 OPENCLAW_GATEWAY_PORT。
+# 以前只在 EASEL_GATEWAY_PORT 显式设置时才透传，于是平时「Easel 探的端口」和
+# 「gateway 实际绑的端口」是两份独立推导（这里走 gateway_endpoint.py，那边走 OpenClaw
+# 自己的 resolveGatewayPort）。两份实现一旦版本错位就错配，而下面 start 带 --force ——
+# 错配的后果不是探不通，而是**杀掉占用那个端口的别人家 gateway**：实测老版 OpenClaw
+# 不认 profile 哈希端口、照旧绑 18789，于是 --force 干掉了默认 profile 的健康进程。
+# 无条件透传后两边同源，--force 最多只会动我们自己这个端口。
+# GATEWAY_PORT 已经把 OPENCLAW_GATEWAY_PORT / EASEL_GATEWAY_PORT 的覆盖算进去了
+# （见 gateway_endpoint.resolve_port 的优先级），所以这里直接赋值不会丢用户的设置。
+export OPENCLAW_GATEWAY_PORT="$GATEWAY_PORT"
 
 # ---- 跨平台兼容（macOS 没有 ss/setsid/procfs）--------------------------
 # ss/setsid 属 iproute2/util-linux，/proc 是 Linux 专属；macOS/BSD 三者都没有。
@@ -143,6 +147,13 @@ case "${1:-status}" in
             exit 0
         fi
         echo "[easel] Starting Easel gateway (profile: $PROFILE, port: $GATEWAY_PORT)..."
+        # healthz 不通但端口被占：下面的 --force 会强杀这个进程。先把它打出来 ——
+        # 「静默强杀」正是之前误伤别的 profile 时最难排查的一环。
+        OCCUPANT="$(gateway_pid)"
+        if [ -n "$OCCUPANT" ]; then
+            echo "[easel] 端口 $GATEWAY_PORT 被 PID $OCCUPANT 占用且 healthz 不通；--force 将强制接管" >&2
+            echo "[easel]   占用进程：$(_cmdline "$OCCUPANT" | cut -c1-120)" >&2
+        fi
         # 原始事件流由 gateway 进程按自己的 env 写到单个共享文件（web/app.py 会 tail 它做流式）。
         # 注意：`openclaw agent` 客户端没有 --raw-stream 标志，在客户端 env 上设这俩变量无效，
         # 必须在这里、真正跑模型的 gateway 上开启。setsid -f/nohup 会继承下面 export 的 env。
@@ -153,13 +164,21 @@ case "${1:-status}" in
         # web 的 cli 路径是每轮往客户端 env 里塞这个值，但 http 直连路径下 agent 跑在**本进程**里、
         # 拿不到那份 env —— 不在这里补，2026.9.x 上会从卡片模式悄悄退化成文字问答。该值只取决于
         # OpenClaw 版本有没有 question.* RPC，进程级导出一次即可。
-        export EASEL_ASKUSER_CARDS="$(
+        # 先赋值再 export：合成一句会让 export 的退出码掩盖命令替换里 python3 的失败。
+        ASKUSER_CARDS="$(
             PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
                 'from easel.gateway_questions import question_bridge_supported as s; print("1" if s() else "0")' \
-                2>/dev/null | tail -n 1)"
-        export EASEL_ASKUSER_CARDS="${EASEL_ASKUSER_CARDS:-0}"   # 探不出来就按"没有卡片"走文字问答
+                2>/dev/null | tail -n 1)" || ASKUSER_CARDS=""
+        export EASEL_ASKUSER_CARDS="${ASKUSER_CARDS:-0}"   # 探不出来就按"没有卡片"走文字问答
         _detach openclaw --profile "$PROFILE" gateway run --force --allow-unconfigured --bind loopback > "$LOGFILE" 2>&1
-        sleep 4
+        # 轮询到 healthz 通，而不是睡死 4 秒就下结论：OpenClaw 2026.9.x 要加载十几个插件，
+        # 实测冷启动 ~13s，固定 sleep 4 会让每次 start（以及 setup.sh 的第 8 步）都打出
+        # "may not be ready yet" 假告警 —— 网关其实好的。上限给到 60s 再认定失败。
+        # 与 start_adapter 的等待方式保持一致。
+        for _ in $(seq 1 120); do
+            gateway_live && break
+            sleep 0.5
+        done
         if gateway_live; then
             PID="$(gateway_pid)"
             echo "[easel] Gateway started${PID:+ (PID $PID)}"

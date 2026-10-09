@@ -8,6 +8,7 @@ Key 外泄。下面全是负向用例，配一条正向用例保证闸没修成�
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -38,11 +39,27 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "ENV_FILE", env_file)
     monkeypatch.setattr(web, "_openclaw_provider_creds",
                         lambda: {"myproxy": ("https://good.example.com/v1", "sk-fake-custom")})
+    # openclaw.json 也必须隔离：_sync_openclaw_chat 直连 Path.home()/'.openclaw-easel'/openclaw.json，
+    # 不隔离就会把夹具值写进用户真配置（models[0].id / baseUrl / apiKey），跑完 pytest 主模型与
+    # provider 目录失配，对话报 Unknown model（issue #62）。重定向 home 根一次覆盖所有运行时路径。
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    oc_dir = tmp_path / ".openclaw-easel"
+    oc_dir.mkdir()
+    (oc_dir / "openclaw.json").write_text(json.dumps({
+        "models": {"providers": {"openai": {
+            "api": "openai-completions",
+            "apiKey": "sk-fake-existing",
+            "baseUrl": "https://api.openai.com/v1",
+            "models": [{"id": "gpt-4o"}],
+        }}},
+        "agents": {"defaults": {"model": {"primary": "openai/gpt-4o"}}},
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     # local_write_guard 会把「非本机写请求」判 403。设置为本机来源。
     local = "http://127.0.0.1:7860"
     with TestClient(web.app, base_url=local, client=('127.0.0.1', 51234),
                     headers={'Origin': local}) as c:
         c.env_file = env_file          # 用例里用来断言「.env 一个字节都没变」
+        c.openclaw_cfg = oc_dir / "openclaw.json"   # 同理：真 openclaw.json 也不许被写
         yield c
 
 
@@ -254,6 +271,22 @@ def test_model_only_change_not_blocked(client):
          "baseUrl": "https://api.openai.com/v1", "key": ""}]})
     assert resp.status_code == 200, resp.text[:300]
     assert web._read_env()["OPENAI_MODEL"] == "gpt-4o-mini"
+
+
+def test_save_never_writes_real_openclaw_config(client):
+    """回归（#62）：保存模型只能落在沙箱 openclaw.json 上。
+
+    _sync_openclaw_chat 会改写 provider 目录与 primary。一旦 home 没被隔离，pytest 就会把夹具值
+    写进用户真配置，跑完测试对话报 Unknown model。这里既断言 home 确实被重定向，又读回沙箱文件
+    断言写入结果——若哪天隔离失效（例如路径改成 import 期常量），两条断言都会响亮失败。
+    """
+    assert Path.home() != Path("~").expanduser(), "fixture 必须把 home 重定向到沙箱"
+    resp = _save(client, {"channel": "chat", "rows": [
+        {"slot": "openai", "model": "deepseek-flash",
+         "baseUrl": "https://api.deepseek.com", "key": "sk-fake-new"}]})
+    assert resp.status_code == 200, resp.text[:300]
+    data = json.loads(client.openclaw_cfg.read_text(encoding="utf-8"))
+    assert data["models"]["providers"]["openai"]["models"][0]["id"] == "deepseek-flash"
 
 
 # ---- #48 传输层：直连常驻网关提速，但绝不能把会话历史搞丢 ----

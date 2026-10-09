@@ -36,4 +36,4 @@ The fix uses a four-layer strategy: unique full-content match, required terminal
   npm i -g openclaw@latest
   ```
 
-- Easel installs the OpenClaw global CLI (a prebuilt artifact), so we **do not vendor the patch inside the Easel repo**; instead we track the latest upstream release, and we plan to add an OpenClaw minimum-version check to `easel doctor`.
+- Easel installs the OpenClaw global CLI (a prebuilt artifact), so we **do not vendor the patch inside the Easel repo**; instead we track the latest upstream release. `easel doctor` already checks the minimum OpenClaw version (≥ 2026.6.11) and prompts users to upgrade when it is too old.

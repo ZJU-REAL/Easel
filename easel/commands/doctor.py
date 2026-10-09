@@ -198,9 +198,14 @@ def _env_key_valid() -> bool:
 
 
 def _openclaw_config_path() -> Path:
-    """easel 用独立 profile，不碰用户本机的 OpenClaw 配置（与 gateway_questions 同一约定）。"""
-    state = os.environ.get("EASEL_OPENCLAW_STATE_DIR")
-    return (Path(state) if state else Path.home() / ".openclaw-easel") / "openclaw.json"
+    """easel 用独立 profile，不碰用户本机的 OpenClaw 配置。
+
+    与 web/app.py、local_agents 同一真相源：委托 easel.openclaw_workspace.config_path()。
+    之前这里自己解析 EASEL_OPENCLAW_STATE_DIR，与 config_path() 有细微差别——
+    环境变量是空串时这里会返回 Path('')（相对路径），config_path() 会正确回落默认目录。
+    """
+    from easel.openclaw_workspace import config_path
+    return config_path()
 
 
 def _primary_model_routable() -> tuple[bool, str]:

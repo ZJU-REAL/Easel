@@ -8,6 +8,7 @@ import {
   IconDashboard,
 } from './icons';
 import { IconGear } from './settingsIcons';
+import ThemeToggle from './ThemeToggle';
 
 export type Page = 'dashboard' | 'chat' | 'trends' | 'ideas' | 'calendar' | 'publish' | 'breakdown' | 'skills' | 'outputs' | 'accounts' | 'profile';
 
@@ -20,7 +21,6 @@ interface SidebarProps {
   onNewProfile: () => void;
   sessions: ChatSession[];
   activeSessionId: string | null;
-  activeSessionHasMessages: boolean;
   onSessionSelect: (id: string) => void;
   onSessionDelete: (id: string) => void;
   onSessionRename: (id: string, title: string) => void;
@@ -49,7 +49,6 @@ export default function Sidebar({
   onNewProfile,
   sessions,
   activeSessionId,
-  activeSessionHasMessages,
   onSessionSelect,
   onSessionDelete,
   onSessionRename,
@@ -117,6 +116,7 @@ export default function Sidebar({
         <div className="sidebar-logo">
           <img className="sidebar-logo-icon" src="./static/easel-icon-transparent.png" alt="" />
           <h1>Easel</h1>
+          <ThemeToggle />
         </div>
         <select
           className="persona-select"
@@ -125,8 +125,7 @@ export default function Sidebar({
             if (e.target.value === '__new__') { onNewProfile(); return; }
             onPersonaChange(e.target.value);
           }}
-          disabled={activeSessionHasMessages}
-          title={activeSessionHasMessages ? '当前对话已绑定画像，切换画像将新建对话' : '选择用户画像'}
+          title="选择用户画像（一个对话对应一个画像：切换会新建一个对话）"
         >
           <option value="">通用模式</option>
           {personas.map((p) => (

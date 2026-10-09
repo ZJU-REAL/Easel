@@ -65,7 +65,8 @@ synced=0
 for skill_dir in "$OPENCLAW_SKILL_SRC"/*/; do
     [ -d "$skill_dir" ] || continue
     name=$(basename "$skill_dir")
-    rm -rf "$OPENCLAW_SKILL_DST/$name"
+    # ${VAR:?} 兜底：DST 若意外为空，裸写法会展开成 `rm -rf /<技能名>`。
+    rm -rf "${OPENCLAW_SKILL_DST:?}/$name"
     cp -r "$skill_dir" "$OPENCLAW_SKILL_DST/$name"
     echo "  ✓ $name"
     synced=$((synced + 1))

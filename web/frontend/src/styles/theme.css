@@ -1,0 +1,90 @@
+:root { color-scheme: light; }
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #14171e;
+  --bg-elev: #1b2029;
+  --surface: #1e242e;
+  --surface-2: #252c37;
+  --surface-hover: #2d3643;
+  --border: #333d4b;
+  --border-strong: #4a586a;
+  --text: #edf0f5;
+  --text-secondary: #b1bbc9;
+  --text-tertiary: #95a1b3;
+  --accent-start: #63c9cf;
+  --accent-end: #a1b4fa;
+  --accent-soft: rgba(115, 151, 222, 0.17);
+  --accent-gradient: linear-gradient(135deg, #167d89, #485eb4);
+  --accent-gradient-soft: linear-gradient(135deg, #25364b, #37303a);
+  --green: #6bd499;
+  --green-soft: rgba(70, 190, 128, 0.15);
+  --amber: #f1bd69;
+  --amber-soft: rgba(228, 163, 65, 0.15);
+  --red: #f58f98;
+  --red-soft: rgba(233, 102, 115, 0.15);
+  --trend-up: #83caa3;
+  --trend-down: #df969c;
+  --code-bg: #171c24;
+  --layer-discover: #64c6f2;
+  --layer-plan: #b69afa;
+  --layer-produce: #f38dbd;
+  --layer-publish: #64d3b0;
+  --layer-attribute: #f1bd69;
+  --layer-general: #a2b3c9;
+  --bg-elevated: var(--bg-elev);
+  --bg-subtle: var(--surface-2);
+  --text-strong: var(--text);
+  --danger: var(--red);
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.16);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.36);
+  --glow: 0 0 0 1px rgba(99, 201, 207, 0.25), 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 34px; height: 34px; margin-left: auto; padding: 7px;
+  border: none; border-radius: var(--radius); background: transparent;
+  color: var(--text-secondary); cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.theme-toggle:hover { background: var(--surface-hover); color: var(--text); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
+
+/* Legacy light surfaces that do not yet use the shared palette. */
+:root[data-theme='dark'] .sidebar { background: linear-gradient(180deg, #191e27, #1c222c); }
+:root[data-theme='dark'] :is(.main-content, .page-host, .chat-page) {
+  background:
+    radial-gradient(circle at 23% 8%, rgba(55, 87, 133, 0.17), transparent 36%),
+    radial-gradient(circle at 78% 12%, rgba(117, 76, 67, 0.12), transparent 38%),
+    var(--bg);
+}
+:root[data-theme='dark'] .composer { background: var(--bg-elev); border-color: var(--border); }
+:root[data-theme='dark'] .composer:focus-within { border-color: var(--accent-start); }
+:root[data-theme='dark'] .suggestion-card { background: var(--surface); }
+:root[data-theme='dark'] :is(.btn-primary, .send-btn, .brush-tab.on) { color: var(--bg); }
+:root[data-theme='dark'] :is(.brush-chip-pipe, .brush-item-pipe) { background: var(--accent-gradient-soft); border-color: var(--border-strong); }
+:root[data-theme='dark'] .message-bubble.user { color: var(--text); border-color: var(--border); }
+:root[data-theme='dark'] .thinking-block { background: var(--accent-soft); }
+:root[data-theme='dark'] .question-card__option--selected { background: var(--accent-soft); }
+:root[data-theme='dark'] .question-card__multi { background: var(--accent-soft); border-color: var(--border-strong); }
+:root[data-theme='dark'] .question-card__custom input { background: var(--bg-elev); color: var(--text); }
+:root[data-theme='dark'] :is(.question-card__chip, .question-card__custom button, .question-card__submit, .media-check) { color: var(--bg); }
+:root[data-theme='dark'] .question-card__error { color: var(--red); }
+:root[data-theme='dark'] .ana-plats .chip { background: var(--surface); border-color: var(--border); color: var(--text-secondary); }
+:root[data-theme='dark'] .ana-plats .chip:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+:root[data-theme='dark'] .ana-plats .chip.active { background: var(--accent-soft); border-color: var(--border-strong); color: var(--accent-end); }
+:root[data-theme='dark'] :is(.overlay, .drawer-overlay, .settings-overlay) { background: rgba(0, 0, 0, 0.6); }
+:root[data-theme='dark'] .settings-overlay :is(.pill.ok, .save-note) { color: var(--green); }
+:root[data-theme='dark'] .settings-overlay :is(.pill.warn, .card[data-state='busy'] .tile) { color: var(--amber); }
+:root[data-theme='dark'] .settings-overlay :is(.pill.fail, .env-error, .save-note.err, .card[data-state='fail'] .tile) { color: var(--red); }
+:root[data-theme='dark'] .settings-overlay .tag.main { color: var(--accent-end); }
+:root[data-theme='dark'] .settings-overlay :is(.prog .bar, .env-meter) { background: var(--surface-hover); }
+:root[data-theme='dark'] .settings-overlay .btn-fill { color: var(--bg); }
+:root[data-theme='dark'] .settings-overlay .btn-fill:hover:not(:disabled) { background: #b7c6ff; border-color: #b7c6ff; }
+:root[data-theme='dark'] .settings-overlay .btn-primary { color: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle { transition: none; }
+}
