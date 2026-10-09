@@ -84,7 +84,7 @@ Add `skills/openclaw/moneyprinterturbo-video/scripts/mpt_bridge.py` with a struc
 - `--aspect` with one of `9:16`, `16:9`, or `1:1`
 - A material source
 
-For `local`, one or more explicit material paths are required. Material paths must exist, must not be symlinks, and must remain within the Easel project, `assets/`, or the selected output project's `assets/` directory. Online stock sources use their existing MoneyPrinterTurbo configuration.
+For `local`, one or more explicit material paths are required. Material paths must exist, must not be symlinks, and must remain within either the project-level `assets/` directory or the selected output project's `assets/` directory. Other project files, including `.env`, source code, and runtime state, are never valid media inputs. Online stock sources use their existing MoneyPrinterTurbo configuration.
 
 The bridge will:
 
