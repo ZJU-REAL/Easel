@@ -322,6 +322,55 @@ def configure_managed_runtime(
             stage_path.unlink(missing_ok=True)
 
 
+def reconcile_webui_config(paths: MoneyPrinterTurboPaths) -> None:
+    source_config = paths.source / "config.toml"
+    if source_config.is_symlink():
+        try:
+            actual = source_config.resolve(strict=True)
+            expected = paths.config.resolve(strict=True)
+        except OSError as exc:
+            raise MoneyPrinterTurboError("managed WebUI config link is broken") from exc
+        if actual != expected:
+            raise MoneyPrinterTurboError("managed WebUI config link has an unexpected target")
+        return
+    if not source_config.is_file():
+        raise MoneyPrinterTurboError("WebUI config is missing or is not a regular file")
+    if paths.config.is_symlink() or not paths.config.is_file():
+        raise MoneyPrinterTurboError("managed state config is missing or unsafe")
+    try:
+        content = source_config.read_text(encoding="utf-8")
+        tomllib.loads(content)
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise MoneyPrinterTurboError("WebUI config is unreadable or invalid TOML") from exc
+
+    state_stage: Path | None = None
+    link_stage = paths.source / f".config.toml.link.partial.{uuid.uuid4().hex}"
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=paths.config.parent,
+            prefix=".config.toml.reconcile.",
+            delete=False,
+        ) as stage:
+            state_stage = Path(stage.name)
+            os.chmod(stage.name, 0o600)
+            stage.write(content)
+            stage.flush()
+            os.fsync(stage.fileno())
+        os.replace(state_stage, paths.config)
+        state_stage = None
+        relative_target = os.path.relpath(paths.config, paths.source)
+        os.symlink(relative_target, link_stage)
+        os.replace(link_stage, source_config)
+    except OSError as exc:
+        raise MoneyPrinterTurboError(f"could not reconcile WebUI config: {exc}") from exc
+    finally:
+        if state_stage is not None:
+            state_stage.unlink(missing_ok=True)
+        link_stage.unlink(missing_ok=True)
+
+
 def build_command(
     paths: MoneyPrinterTurboPaths,
     request: PreparedMoneyPrinterTurboRequest,

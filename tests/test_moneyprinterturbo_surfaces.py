@@ -61,6 +61,7 @@ def test_launcher_checks_installation_and_binds_loopback_only():
 
     assert "install-moneyprinterturbo.sh --check" in text
     assert "mpt_bridge.py configure" in text
+    assert "mpt_bridge.py reconcile" in text
     assert "MPT_WEBUI_HOST=127.0.0.1" in text
     assert "MPT_WEBUI_PORT=8501" in text
     assert "0.0.0.0" not in text
@@ -72,7 +73,7 @@ def test_launcher_starts_only_webui_in_foreground():
     lowered = text.casefold()
 
     assert "webui.sh" in lowered
-    assert "exec " in lowered
+    assert "trap " in lowered
     assert "main.py" not in lowered
     assert "api.py" not in lowered
     assert "nohup" not in lowered

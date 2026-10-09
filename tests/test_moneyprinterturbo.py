@@ -19,6 +19,7 @@ from easel.moneyprinterturbo import (
     build_command,
     parse_cli_result,
     prepare_request,
+    reconcile_webui_config,
     render_managed_config,
 )
 from skills.shared.scripts import output_paths
@@ -370,6 +371,27 @@ def test_atomic_delivery_preserves_existing_final_when_copy_fails(tmp_path, monk
     assert not list(destination.parent.glob(".final.mp4.partial.*"))
 
 
+def test_webui_config_reconciliation_preserves_changes_and_restores_link(tmp_path, monkeypatch):
+    paths = _paths(tmp_path, monkeypatch)
+    _runtime(paths)
+    webui_config = CONFIG_SAMPLE.replace("preserve-pexels", "webui-updated-key")
+    source_config = paths.source / "config.toml"
+    source_config.write_text(webui_config, encoding="utf-8")
+
+    reconcile_webui_config(paths)
+
+    assert source_config.is_symlink()
+    assert source_config.resolve() == paths.config.resolve()
+    assert paths.config.read_text(encoding="utf-8") == webui_config
+
+    source_config.unlink()
+    outside = paths.root / "outside.toml"
+    outside.write_text("outside", encoding="utf-8")
+    source_config.symlink_to(outside)
+    with pytest.raises(MoneyPrinterTurboError, match="unexpected"):
+        reconcile_webui_config(paths)
+
+
 def test_dry_run_returns_redacted_argv_without_launching(tmp_path, monkeypatch):
     paths = _paths(tmp_path, monkeypatch)
     _runtime(paths)
@@ -562,6 +584,13 @@ def test_bridge_cli_configure_run_and_dry_run_contract(tmp_path, monkeypatch, ca
     assert module.main(["configure", "--root", str(paths.root)]) == 0
     configure_payload = json.loads(capsys.readouterr().out)
     assert configure_payload == {"status": "configured"}
+
+    source_config = paths.source / "config.toml"
+    source_config.write_text(CONFIG_SAMPLE, encoding="utf-8")
+    assert module.main(["reconcile", "--root", str(paths.root)]) == 0
+    reconcile_payload = json.loads(capsys.readouterr().out)
+    assert reconcile_payload == {"status": "reconciled"}
+    assert source_config.is_symlink()
 
 
 def test_bridge_cli_prints_only_small_result_json(tmp_path, monkeypatch, capsys):

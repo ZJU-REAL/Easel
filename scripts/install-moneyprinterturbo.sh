@@ -26,7 +26,7 @@ check_tools() {
 check_source_checkout() {
   local checkout=$1
   local expected_commit=$2
-  local actual_commit status
+  local actual_commit status status_line runtime_name
 
   [[ -e "$checkout" || -L "$checkout" ]] || fail "source checkout is missing: $checkout"
   [[ ! -L "$checkout" ]] || fail "source checkout must not be a symlink: $checkout"
@@ -36,7 +36,16 @@ check_source_checkout() {
   [[ "$actual_commit" == "$expected_commit" ]] || fail "source checkout has wrong revision: $actual_commit"
 
   status=$(git -C "$checkout" status --porcelain --untracked-files=all 2>/dev/null) || fail "cannot inspect source checkout"
-  [[ -z "$status" ]] || fail "source checkout is dirty; preserve or remove those changes manually"
+  while IFS= read -r status_line; do
+    [[ -n "$status_line" ]] || continue
+    case "$status_line" in
+      "?? storage"|"?? config.toml")
+        runtime_name=${status_line:3}
+        [[ -L "$checkout/$runtime_name" ]] && continue
+        ;;
+    esac
+    fail "source checkout is dirty; preserve or remove those changes manually"
+  done <<< "$status"
 }
 
 check_managed_link() {
@@ -166,7 +175,10 @@ main() {
   root=$(cd "$root" && pwd -P)
 
   case "$mode" in
-    --check) check_runtime "$root" ;;
+    --check)
+      check_runtime "$root"
+      printf 'MoneyPrinterTurbo %s is ready at %s\n' "$MPT_TAG" "$root/.tools/moneyprinterturbo/source"
+      ;;
     --install) install_runtime "$root" ;;
   esac
 }

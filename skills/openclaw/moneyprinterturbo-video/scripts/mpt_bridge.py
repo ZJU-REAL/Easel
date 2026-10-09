@@ -25,6 +25,7 @@ from easel.moneyprinterturbo import (  # noqa: E402
     MoneyPrinterTurboRequest,
     configure_managed_runtime,
     prepare_request,
+    reconcile_webui_config,
 )
 
 
@@ -63,6 +64,8 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     configure = commands.add_parser("configure", help="configure the managed local-Qwen runtime")
     _add_root(configure)
+    reconcile = commands.add_parser("reconcile", help="restore managed config after WebUI exit")
+    _add_root(reconcile)
     _add_request(commands.add_parser("run", help="generate and deliver one video"))
     _add_request(commands.add_parser("dry-run", help="validate and print the redacted argv"))
     return parser
@@ -98,6 +101,14 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc)[:1_000], file=sys.stderr)
             return 1
         _emit({"status": "configured"})
+        return 0
+    if args.command == "reconcile":
+        try:
+            reconcile_webui_config(paths)
+        except MoneyPrinterTurboError as exc:
+            print(str(exc)[:1_000], file=sys.stderr)
+            return 1
+        _emit({"status": "reconciled"})
         return 0
 
     request = _request(args)

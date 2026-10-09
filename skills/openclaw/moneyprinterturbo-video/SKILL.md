@@ -69,3 +69,5 @@ Never publish automatically. If the user separately asks to publish after genera
 ## Optional WebUI
 
 `start-moneyprinterturbo.command` opens the upstream WebUI in the foreground on loopback, preferring `http://127.0.0.1:8501`. It is for interactive local configuration and inspection; the bridge remains the controlled delivery path.
+
+The launcher reconciles WebUI changes back into managed state and restores the runtime link when it exits normally. After a crash or forced termination, run `mpt_bridge.py reconcile --root "$PWD"` before the installer check.

@@ -9,10 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "install-moneyprinterturbo.sh"
 
 
-def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    *args: str,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [*args],
         cwd=cwd,
+        env=env,
         text=True,
         capture_output=True,
         check=False,
@@ -70,6 +75,19 @@ def test_check_rejects_missing_non_git_wrong_revision_and_dirty_source(tmp_path)
     assert wrong.returncode != 0
     assert "wrong revision" in (wrong.stdout + wrong.stderr).lower()
 
+    storage_target = tmp_path / ".state" / "moneyprinterturbo" / "storage"
+    storage_target.mkdir(parents=True)
+    (source / "storage").symlink_to(storage_target)
+    managed_link = _source_call(f'check_source_checkout "{source}" "{actual}"')
+    assert managed_link.returncode == 0, managed_link.stderr
+
+    unexpected = source / "unexpected.txt"
+    unexpected.write_text("must remain dirty\n", encoding="utf-8")
+    untracked = _source_call(f'check_source_checkout "{source}" "{actual}"')
+    assert untracked.returncode != 0
+    assert "dirty" in (untracked.stdout + untracked.stderr).lower()
+    unexpected.unlink()
+
     (source / "tracked.txt").write_text("dirty\n", encoding="utf-8")
     dirty = _source_call(f'check_source_checkout "{source}" "{actual}"')
     assert dirty.returncode != 0
@@ -118,3 +136,40 @@ def test_moneyprinterturbo_runtime_directories_are_gitignored():
 
     assert tools.returncode == 0
     assert state.returncode == 0
+
+
+def test_check_reports_ready_for_a_verified_runtime(tmp_path):
+    source = tmp_path / ".tools" / "moneyprinterturbo" / "source"
+    python = source / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    python.chmod(0o755)
+    (source / ".git").mkdir()
+    state = tmp_path / ".state" / "moneyprinterturbo"
+    storage = state / "storage"
+    storage.mkdir(parents=True)
+    config = state / "config.toml"
+    config.write_text("managed\n", encoding="utf-8")
+    (source / "config.toml").symlink_to(os.path.relpath(config, source))
+    (source / "storage").symlink_to(os.path.relpath(storage, source))
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_git.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  *'rev-parse HEAD'*) echo cf5a3aedad1741d012152d355aa909d224fc4557 ;;\n"
+        "  *'status --porcelain'*) : ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    env = dict(os.environ)
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = _run("bash", str(INSTALLER), "--check", "--root", str(tmp_path), env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "ready" in result.stdout.lower()
