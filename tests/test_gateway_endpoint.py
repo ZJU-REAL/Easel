@@ -182,109 +182,37 @@ def test_ipv6_host_gets_brackets(isolated, monkeypatch):
     assert ge.gateway_base_url() == "http://[::1]:37289"
 
 
-# ── Windows 镜像实现（scripts/gateway.ps1）：同一套优先级，不许漂移 ────────
-# gateway.ps1 没法 import Python，只能把解析逻辑镜像一份 —— 所以这里把两边拉到一起比。
-# 没装 pwsh/powershell 就跳过；装了就会真跑（CI 的 ubuntu / windows runner 两边都预装了 pwsh）。
-
-PWSH = shutil.which("pwsh") or shutil.which("powershell")
-
-PROFILE_CASES = ["easel", "EASEL", "default", "dev"]
-ENV_CASES = ["18789", "127.0.0.1:19007", "[::1]:19002", "1:2",
-             "not-a-port", "0", "65536", "1:2:3", "5.0"]
-CFG_FIXTURES = {
-    "number": '{"gateway":{"port":19004}}',
-    "string": '{"gateway":{"port":"19005"}}',
-    "bool": '{"gateway":{"port":true}}',
-    "zero": '{"gateway":{"port":0}}',
-    "toobig": '{"gateway":{"port":70000}}',
-    "fraction": '{"gateway":{"port":19006.5}}',
-    "nogateway": '{"agents":{}}',
-    "malformed": '{ not json',
-}
-
-# 只做两件事：① 从传进来的源码文本里取出三个函数的定义（不执行脚本主体）；② 把结果打成 JSON。
-# 用例内容与源码都用 base64 传入，**不传任何路径**：
-#   - 避免两边各维护一份用例造成二次漂移；
-#   - Windows pwsh 在 WSL 下不认 POSIX 绝对路径（/home/... 被当成盘符相对路径），
-#     而配置目录由 PS 自己建，两边都不需要路径翻译。
-#   - 临时目录用 [System.IO.Path]::GetTempPath() 而不是 $env:TEMP：后者在 Linux pwsh
-#     下是空的（CI ubuntu-latest 会跑到这条），前者两边都返回可用目录。
-#   - ParseInput 而不是 ParseFile：UNC 路径（\\wsl.localhost\...）会让 ParseFile 解析失败。
-_PS_HARNESS = r'''
-param(
-    [Parameter(Mandatory = $true)][string]$GatewayScriptB64,
-    [Parameter(Mandatory = $true)][string]$FixturesB64,
-    [Parameter(Mandatory = $true)][string]$EnvValues,
-    [Parameter(Mandatory = $true)][string]$ProfileNames
-)
-$ErrorActionPreference = 'Stop'
-function Decode-Utf8([string]$B64) {
-    return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($B64))
-}
-$src = Decode-Utf8 $GatewayScriptB64
-$tokens = $null
-$errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$tokens, [ref]$errors)
-if ($errors.Count -gt 0) { throw 'gateway.ps1 parse error: ' + $errors[0] }
-foreach ($fn in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
-    . ([scriptblock]::Create($fn.Extent.Text))
-}
-$out = [ordered]@{ hash = @(); env = [ordered]@{}; cfg = [ordered]@{} }
-# hash 用数组而不是哈希表：PS 的哈希表键**不区分大小写**，'easel' 与 'EASEL' 会撞成一个键。
-foreach ($name in $ProfileNames.Split(',')) { $out.hash += @{ name = $name; port = (Get-ProfilePort $name) } }
-foreach ($raw in $EnvValues.Split(',')) { $out.env[$raw] = ConvertTo-GatewayPort $raw }
-$fixtures = (Decode-Utf8 $FixturesB64) | ConvertFrom-Json
-$cfgDir = Join-Path ([System.IO.Path]::GetTempPath()) ('easel-cfg-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
-try {
-    foreach ($prop in $fixtures.PSObject.Properties) {
-        Set-Content -LiteralPath (Join-Path $cfgDir 'openclaw.json') -Value $prop.Value -Encoding UTF8
-        $out.cfg[$prop.Name] = Get-ConfiguredPort $cfgDir
-    }
-    Remove-Item -LiteralPath (Join-Path $cfgDir 'openclaw.json') -Force
-    $out.cfg['missing'] = Get-ConfiguredPort $cfgDir
-}
-finally {
-    Remove-Item -Recurse -Force $cfgDir -ErrorAction SilentlyContinue
-}
-$out | ConvertTo-Json -Depth 6 -Compress
-'''.lstrip()
+# ── Windows 侧：不许再镜像一份端口解析 ────────────────────────────────────
+# 这里原本有一整套「把 gateway.ps1 的 PowerShell 实现与 Python 解析器逐例对拍」的
+# 回归，前提是「gateway.ps1 没法 import Python，只能镜像一份」。那个前提是错的 ——
+# gateway.sh 一直就是 `python3 -c 'from easel.gateway_endpoint import ...'`，
+# gateway.ps1 同样可以。
+#
+# 镜像实现的代价是真实发生过的事故：同一个端口有三份独立推导（gateway.ps1、
+# gateway_endpoint.py、OpenClaw 自己），只要一份跟不上版本变化就错配，而 start 带
+# --force —— 错配的后果不是探不通，而是杀掉占用那个端口的别人家 gateway。
+# 现在 gateway.ps1 改为直接问 Python，对拍也就没有意义了：没有第二份实现可对。
+# 取而代之的是下面这几条结构性断言（另见 tests/test_setup_ps1_static.py）。
 
 
-def _b64(text: str) -> str:
-    import base64
-    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+def test_gateway_ps1_delegates_to_python_resolver():
+    """gateway.ps1 必须调用 easel/gateway_endpoint.py，而不是自己算端口。"""
+    text = (PROJECT_ROOT / "scripts" / "gateway.ps1").read_text(encoding="utf-8")
+    assert "gateway_endpoint" in text and "resolve_gateway_port" in text, \
+        "端口必须问单一真相源"
+    for const in ("2166136261", "16777619", "40000"):
+        assert const not in text, f"不该再出现自己实现端口推导的常量 {const}"
 
 
-@pytest.mark.skipif(not PWSH, reason="需要 pwsh / powershell 才能回归 Windows 镜像实现")
-def test_gateway_ps1_mirrors_resolver(isolated):
-    """gateway.ps1 的端口解析必须与 easel/gateway_endpoint.py 逐例同解。"""
-    harness = isolated / "harness.ps1"
-    harness.write_text(_PS_HARNESS, encoding="utf-8")
-    gateway_script = (PROJECT_ROOT / "scripts" / "gateway.ps1").read_text(encoding="utf-8")
+def test_gateway_ps1_fails_loudly_when_unresolvable():
+    """解析不出端口要明着失败，不能退到一个猜的端口。
 
-    proc = subprocess.run(
-        [PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(harness),
-         "-GatewayScriptB64", _b64(gateway_script),
-         "-FixturesB64", _b64(json.dumps(CFG_FIXTURES)),
-         "-EnvValues", ",".join(ENV_CASES),
-         "-ProfileNames", ",".join(PROFILE_CASES)],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
-    assert proc.returncode == 0, proc.stderr
-    got = json.loads(proc.stdout)
-
-    got_hash = {row["name"]: row["port"] for row in got["hash"]}
-    for name in PROFILE_CASES:
-        assert got_hash[name] == ge.profile_port(name), name
-    for raw in ENV_CASES:
-        assert got["env"][raw] == (ge.parse_port_value(raw) or 0), raw
-
-    state = isolated / "state"
-    state.mkdir(parents=True, exist_ok=True)
-    for key, payload in CFG_FIXTURES.items():
-        (state / "openclaw.json").write_text(payload, encoding="utf-8")
-        assert got["cfg"][key] == (ge.configured_port() or 0), key
-    assert got["cfg"]["missing"] == 0
+    「悄悄探错端口」会让 healthz 恒假，于是 start 反复 --force 重启一个健康的
+    gateway —— 这正是当初要根治的病。
+    """
+    text = (PROJECT_ROOT / "scripts" / "gateway.ps1").read_text(encoding="utf-8")
+    assert "无法解析 gateway 端口" in text
+    assert "if ($Port -le 0)" in text
 
 
 # ── 别再写死：源码层面钉住 ─────────────────────────────────────────────
@@ -316,21 +244,8 @@ def test_no_hardcoded_gateway_endpoint(rel):
     ("easel/commands/doctor.py", "from easel.gateway_endpoint import"),
     ("easel/commands/ping.py", "from easel.gateway_endpoint import"),
     ("scripts/gateway.sh", "resolve_gateway_port"),
-    ("scripts/gateway.ps1", "Get-ConfiguredPort"),
-    ("scripts/gateway.ps1", "Get-ProfilePort"),
+    ("scripts/gateway.ps1", "resolve_gateway_port"),
 ])
 def test_port_comes_from_resolver(rel, needle):
     """每个入口都必须真的去查端口，而不是自己造一个。"""
     assert needle in (PROJECT_ROOT / rel).read_text(encoding="utf-8")
-
-
-def test_gateway_ps1_resolution_order():
-    """gateway.ps1 的优先级顺序（环境变量 > 配置 > profile 哈希）不能被打乱。"""
-    text = (PROJECT_ROOT / "scripts" / "gateway.ps1").read_text(encoding="utf-8")
-    positions = [text.index(needle) for needle in (
-        "$Port = ConvertTo-GatewayPort $env:OPENCLAW_GATEWAY_PORT",
-        "$Port = ConvertTo-GatewayPort $env:EASEL_GATEWAY_PORT",
-        "$Port = Get-ConfiguredPort $ConfigDir",
-        "$Port = Get-ProfilePort $Profile",
-    )]
-    assert positions == sorted(positions)

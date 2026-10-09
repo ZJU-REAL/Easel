@@ -170,7 +170,7 @@ export function deletePersona(name: string): Promise<{ ok: boolean; deleted: str
 
 // ---- 热点雷达 ----
 export interface TrendItem { title: string; hot: string; url: string; }
-export interface TrendGroup { platform: string; label: string; items: TrendItem[]; }
+export interface TrendGroup { platform: string; label: string; items: TrendItem[]; ok?: boolean; }
 export function fetchTrends(platforms: string, limit = 12): Promise<{ trends: TrendGroup[]; updated: number }> {
   return request(`/api/trends?platforms=${encodeURIComponent(platforms)}&limit=${limit}`);
 }
@@ -760,6 +760,7 @@ export interface ModelRow {
   keyMasked: string;
   role: string;
   result: string;
+  protocol?: string;
   keyNew?: string;
   keyNew2?: string;
   key2Label?: string;
@@ -779,6 +780,8 @@ export interface ModelSaveRow {
   key: string;
   key2?: string;
   primary?: boolean;
+  /** 自定义供应商上游协议：openai（默认）| anthropic */
+  protocol?: string;
 }
 
 export interface ModelSaveResponse extends ModelChannelsResponse {

@@ -1220,7 +1220,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .settings-overlay .pill.sum { background: var(--accent-soft); color: var(--accent-end); font-weight: 650; }
 
 .settings-overlay .board { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: 0 1px 3px rgba(23,25,28,.05); overflow: hidden; }
-.settings-overlay .prow { display: grid; grid-template-columns: 50px .98fr .64fr 1.1fr 1.56fr .95fr 54px 80px 30px; gap: 11px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.settings-overlay .prow { display: grid; grid-template-columns: 50px .92fr .58fr 1.5fr 1.4fr .92fr 54px 80px 30px; gap: 11px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); }
 .settings-overlay .prow.head { padding: 8px 16px; color: var(--text-tertiary); font-size: 12px; }
 .settings-overlay .prow:last-child { border-bottom: none; }
 .settings-overlay .step { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-end); font-weight: 700; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; }
@@ -1316,22 +1316,66 @@ textarea.field { resize: vertical; min-height: 90px; }
 
 /* 本机 Agent 区块（设置 → 对话与脚本）：贴在本机装了 CLI agent 的提示与一键接入。
    grid 对齐上面的 prow，但列数更少（名称/状态/操作/说明）。 */
-.settings-overlay .local-agents { margin: 10px 16px 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
-.settings-overlay .la-head { display: flex; align-items: baseline; gap: 10px; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.settings-overlay .local-agents { margin: 12px 0 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: 0 1px 3px rgba(23,25,28,.05); overflow: hidden; }
+.settings-overlay .la-head { display: flex; align-items: baseline; gap: 10px; font-size: 12.5px; font-weight: 600; padding: 9px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
 .settings-overlay .la-head .desc { font-weight: 400; color: var(--text-tertiary); }
-.settings-overlay .la-row { display: grid; grid-template-columns: 1.2fr 62px 84px 1.6fr; gap: 10px; align-items: center; padding: 6px 0; }
-.settings-overlay .la-name { display: flex; flex-direction: column; min-width: 0; font-size: 12px; }
+.settings-overlay .la-row { display: flex; gap: 12px; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--border); }
+.settings-overlay .la-name { flex: 0 0 180px; }
+.settings-overlay .la-state { flex: 0 0 auto; }
+.settings-overlay .la-act { display: flex; align-items: center; gap: 8px; flex: 0 0 300px; }
+.settings-overlay .la-hint { flex: 1 1 auto; }
+.settings-overlay .la-row:last-of-type { border-bottom: none; }
+.settings-overlay .la-row:hover { background: var(--surface-hover, var(--surface-2)); }
+.settings-overlay .la-name { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
 .settings-overlay .la-name small { color: var(--text-tertiary); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-overlay .la-state { font-size: 11px; text-align: center; border-radius: 999px; padding: 1px 6px; border: 1px solid var(--border); }
-.settings-overlay .la-state.ok { color: var(--green); border-color: var(--green); }
-.settings-overlay .la-model { max-width: 180px; font-size: 12px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg, transparent); color: inherit; }
-.settings-overlay .la-state.todo { color: var(--text); }
-.settings-overlay .la-state.na { color: var(--text-tertiary); }
+
+.settings-overlay .la-state { font-size: 11px; text-align: center; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--border); justify-self: start; }
+.settings-overlay .la-state.ok { color: var(--green); border-color: var(--green); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.settings-overlay .la-model {
+  width: 100%; max-width: 200px; font: inherit; font-size: 12px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg);
+  color: inherit; cursor: pointer; transition: border-color .12s ease;
+}
+.settings-overlay .la-model:hover { border-color: var(--text-tertiary); }
+.settings-overlay .la-model:focus { outline: none; border-color: var(--accent-end); }
 .settings-overlay .la-hint { font-size: 11px; color: var(--text-tertiary); min-width: 0; }
 
-/* 模型列：输入框 + 「拉取」按钮（datalist 补全列出端点返回的模型名）。
-   用 flex 让按钮贴着输入框，不改变 prow 的九列 grid 结构。 */
-.settings-overlay .model-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 模型列：输入框 + 「拉取」按钮。拉取成功后输入框下方浮出自定义下拉面板
+   （原生 datalist 样式不可控且选中后无明显反馈），点选项填入，面板外点击关闭。 */
+.settings-overlay .model-cell { display: flex; align-items: center; gap: 6px; min-width: 0; position: relative; }
 .settings-overlay .model-cell input.mock { min-width: 0; flex: 1 1 auto; }
-.settings-overlay .model-cell .adv-btn { flex: 0 0 auto; }
+.settings-overlay .fetch-btn {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 3px 9px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary);
+  cursor: pointer; white-space: nowrap; transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.settings-overlay .fetch-btn:hover:not(:disabled) { color: var(--accent-end); border-color: var(--accent-end); background: color-mix(in srgb, var(--accent-end) 6%, var(--surface)); }
+.settings-overlay .fetch-btn:disabled { opacity: .55; cursor: default; }
+.settings-overlay .fetch-btn.ok { color: var(--green); border-color: var(--green); padding: 3px 7px; }
+.settings-overlay .fetch-btn .spin { width: 10px; height: 10px; border-width: 1.5px; }
+.model-dd {
+  z-index: 100; min-width: 240px; max-width: 380px;
+  max-height: 240px; overflow: auto; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 10px 28px -8px rgba(23,25,28,.25);
+}
+.model-dd .dd-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 9px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; color: var(--text);
+}
+.model-dd .dd-item:hover, .model-dd .dd-item.active { background: var(--accent-soft); }
+.model-dd .dd-item small { color: var(--text-tertiary); font-size: 11px; }
+.model-dd .dd-empty { padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 12px; }
+.model-dd .dd-pull {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 4px 12px;
+  border: 1px solid var(--accent-end); border-radius: var(--radius-sm); background: var(--accent-soft);
+  color: var(--accent-end); cursor: pointer; font-weight: 500;
+}
+.model-dd .dd-pull:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-end) 16%, var(--surface)); }
+.model-dd .dd-pull:disabled { opacity: .6; cursor: default; }
+.settings-overlay .model-cell .fetch-err { color: var(--red, #dc2626); font-size: 12px; flex: 0 0 auto; cursor: help; }
 
+
+/* 自定义供应商行的协议选择：与行内 mock 输入同风格，宽度收敛 */
+.prow select.proto-sel { min-width: 0; width: 100%; padding: 4px 6px; font-size: 12px; }

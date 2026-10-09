@@ -34,7 +34,7 @@
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/195527?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-195527" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/195527/daily?language=Python" alt="ZJU-REAL%2FEasel | Trendshift" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/195527?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-195527" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/195527/daily?language=Python" alt="ZJU-REAL%2FEasel | Trendshift" width="250" height="55"/></a> <a href="https://trendshift.io/repositories/195527?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-195527" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/195527/weekly?language=Python" alt="ZJU-REAL%2FEasel | Trendshift" width="250" height="55"/></a>
 </p>
 
 ![Easel 产品宣传海报](assets/readme/poster.png)
@@ -201,7 +201,7 @@ README 的品牌图、海报、案例图片和视频统一保存在 `assets/read
 
 ## 🚀 快速开始
 
-环境要求：Linux、macOS 或 Windows 10/11、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 22.19+、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
+环境要求：Linux、macOS 或 Windows 10/11、Python 3.10 及以上、Python `venv` 模块和 `git`。安装向导会检查 Node.js 24.16+（24.x）、26.1+（26.x）或 27+（25.x 与 26.0 不兼容）、FFmpeg、Playwright/Chromium；缺少 Node.js 时会按系统给出安装引导。
 
 ```bash
 git clone https://github.com/ZJU-REAL/Easel.git
@@ -218,18 +218,19 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 ```
 
-Windows 安装器会优先通过 `winget` 自动安装缺失的 Python 3.10+、Node.js 22.19+、Git 和 FFmpeg；如果系统没有 `winget`，再使用官方安装器安装并加入 PATH。随后安装器会创建项目内 `.venv`，安装 Python/Node 依赖、前端生产包和 Playwright Chromium，并使用独立的 `easel` OpenClaw profile。安装完成后可运行 `.venv\Scripts\easel.exe doctor` 检查环境。
+Windows 安装器会优先通过 `winget` 自动安装缺失的 Python 3.10+、Node.js 24.16+（24.x）、26.1+（26.x）或 27+、Git 和 FFmpeg；25.x 与 26.0 不兼容。如果系统没有 `winget`，再使用官方安装器安装并加入 PATH。随后安装器会创建项目内 `.venv`，安装 Python/Node 依赖、前端生产包和 Playwright Chromium，并使用独立的 `easel` OpenClaw profile。安装完成后可运行 `.venv\Scripts\easel.exe doctor` 检查环境。
 
 `bash setup.sh` 是可重复运行的引导式安装器，直接执行即可，不需要先手动安装 Easel 依赖。安装过程中会：
 
-1. 检查 Python、Python `venv`、Node.js 和 Git；FFmpeg 缺失时会尝试通过系统包管理器安装，仍无法安装则停止并提示处理方式。
+1. 检查 Python、Python `venv`、Node.js 和 Git；FFmpeg 缺失时会尝试通过系统包管理器安装，装不上只会降级提示（视频/音频类技能不可用），不再中断安装。
 2. 询问是否创建或复用项目虚拟环境 `.venv/`；默认选择 `Y`。如果系统缺少 `venv`，会提示安装对应系统包（例如 Debian/Ubuntu 的 `python3-venv`）。
 3. 检查或安装 OpenClaw，并创建独立的 `easel` profile，不覆盖用户已有的 `~/.openclaw/`。
-4. 安装 Python、Web、媒体和浏览器发布依赖，构建 React Web 工作台并安装 Chromium；这些步骤任一失败都会停止，不会回退成不完整安装。
-5. 在终端中引导配置 Agent 模型：可选择 Anthropic、OpenAI/OpenAI-compatible、其他 Anthropic-compatible 服务，API Key 输入不会回显。
-6. 同步 skills、校验 OpenClaw 配置并启动 gateway。
+4. 安装 Python、Web、媒体和浏览器发布依赖，构建 React Web 工作台并安装 Chromium。Python 依赖与前端构建失败会停止；Chromium 下载失败只降级提示（浏览器登录/发布不可用）。
+5. 同步 skills、校验 OpenClaw 配置并启动 gateway。
 
-如果已经提前配置了有效的 `.env`，安装器会复用配置，不会重复询问；如果使用重定向或 CI 等非交互模式，安装器会跳过提问并明确提示缺少的配置。
+**模型 API Key 在浏览器里配，安装器不再在终端询问。** 装完运行 `easel web`，首次打开会直接停在「设置 → 模型配置」，填入 Key 保存即可 —— Easel 会自动写好 OpenClaw 配置并重启 gateway，不需要再跑一遍 `setup.sh`。相比终端向导，这里还能拉取可用模型列表、做连通性自测。也可以直接编辑 `.env` 填好 Key，再运行 `easel doctor` 复检。
+
+安装器全程非交互（只有「是否创建 `.venv`」一问，非交互环境下按默认值），适合 CI 与自动化。非致命问题（FFmpeg、Chromium、gateway 启动、模型未配置等）会收集起来在结尾汇总，并写入 `outputs/_install/last-install.json` 供 `easel doctor` 复述，安装本身仍以 0 退出。若希望这些问题直接让安装失败，设 `EASEL_SETUP_STRICT=1`。
 
 安装完成后，`easel` 命令安装在项目的 `.venv` 中。先激活虚拟环境再运行（每次新开终端都要先激活）：
 

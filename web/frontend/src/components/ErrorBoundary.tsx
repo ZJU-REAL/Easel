@@ -27,7 +27,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <h2 style={{ margin: 0 }}>页面出错了</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 420 }}>{this.state.message}</p>
           <button onClick={() => window.location.reload()}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--text, #17191c)', color: '#fff', cursor: 'pointer' }}>
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--text, #17191c)', color: 'var(--bg, #fff)', cursor: 'pointer' }}>
             刷新页面
           </button>
         </div>

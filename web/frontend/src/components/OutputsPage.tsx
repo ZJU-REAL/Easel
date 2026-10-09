@@ -18,14 +18,16 @@ const KIND_LABEL: Record<string, string> = {
   poster: '海报', audio: '音频', other: '其他',
 };
 const STATUS_LABEL: Record<string, string> = { draft: '草稿', ready: '待发', published: '已发' };
-const STATUS_COLOR: Record<string, string> = { draft: '#94a3b8', ready: '#d97706', published: '#16a34a' };
+const STATUS_COLOR: Record<string, string> = { draft: 'var(--text-tertiary)', ready: 'var(--amber)', published: 'var(--green)' };
 
 const badge: CSSProperties = {
   fontSize: 11, padding: '1px 7px', borderRadius: 999,
-  background: 'rgba(0,0,0,0.05)', color: 'var(--text-secondary)', whiteSpace: 'nowrap',
+  background: 'var(--surface-hover)', color: 'var(--text-secondary)', whiteSpace: 'nowrap',
 };
 const statusBadge = (s: string): CSSProperties => ({
-  ...badge, background: `${STATUS_COLOR[s] || '#94a3b8'}22`, color: STATUS_COLOR[s] || '#64748b',
+  ...badge,
+  background: `color-mix(in srgb, ${STATUS_COLOR[s] || 'var(--text-tertiary)'} 13%, transparent)`,
+  color: STATUS_COLOR[s] || 'var(--text-secondary)',
 });
 
 function kindIcon(kind: string | undefined, size = 30) {
@@ -95,14 +97,6 @@ export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProp
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // 对话里的目录路径跳转：展开到对应层级（路径失效时 resolvePath 自动停在能到的层）
-  useEffect(() => {
-    if (!jumpPath) return;
-    setStack(jumpPath.split('/').filter(Boolean));
-    setFilter('all');
-    onJumpHandled?.();
-  }, [jumpPath, onJumpHandled]);
-
   const currentNodes = useMemo(() => resolvePath(roots, stack), [roots, stack]);
   const dirs = useMemo(
     () => currentNodes.filter((n) => n.type === 'dir').sort((a, b) => (b.mtime || 0) - (a.mtime || 0)),
@@ -157,6 +151,27 @@ export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProp
       } finally { if (seq === reqSeq.current) setLoading(false); }
     }
   }, []);
+
+  // 等内容树加载后区分文件与目录；文件链接直接打开预览。
+  useEffect(() => {
+    if (!jumpPath || roots.length === 0) return;
+    const parts = jumpPath.split('/').filter(Boolean);
+    const parent: string[] = [];
+    let nodes = roots;
+    let node: OutputNode | undefined;
+    for (const part of parts) {
+      node = nodes.find(candidate => candidate.name === part);
+      if (!node || node.type !== 'dir') break;
+      parent.push(part);
+      nodes = node.children || [];
+    }
+    if (node?.path !== parts.join('/')) node = undefined;
+    setStack(parent);
+    setFilter('all');
+    if (node?.type === 'file') void open(node);
+    else setSelected(null);
+    onJumpHandled?.();
+  }, [jumpPath, roots, open, onJumpHandled]);
 
   const preview = () => {
     if (!selected) return null;
