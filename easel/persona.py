@@ -26,7 +26,7 @@ def list_personas() -> list[str]:
         return []
     return sorted(
         d.name for d in PROFILES_DIR.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
+        if d.is_dir() and valid_persona_name(d.name)
     )
 
 
@@ -37,7 +37,13 @@ def profile_exists(name: str) -> bool:
 
 def valid_persona_name(name: str) -> bool:
     """Return whether ``name`` is a single, user-facing profile directory name."""
-    return bool(name) and "/" not in name and "\\" not in name and not name.startswith((".", "_"))
+    return (
+        isinstance(name, str)
+        and bool(name)
+        and not name.startswith((".", "_"))
+        and not any(character in name for character in ("/", "\\", ":"))
+        and not any(ord(character) < 32 for character in name)
+    )
 
 
 def load_profile_text(name: str) -> str:

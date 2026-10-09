@@ -519,7 +519,7 @@ def list_personas() -> list[dict]:
         return []
     result = []
     for d in sorted(PROFILES_DIR.iterdir()):
-        if d.is_dir() and d.name.startswith('_'):
+        if not d.is_dir() or not valid_persona_name(d.name):
             continue
         desc = ''
         identity = d / 'identity.md'
