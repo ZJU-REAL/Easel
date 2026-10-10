@@ -63,8 +63,8 @@ def test_enable_and_echo(client, thinking_format):
     assert saved_row["thinkingFormat"] == thinking_format
 
 
-def test_enable_without_format_defaults_to_openai(client):
-    assert save(client, thinking=True)["models"][0]["compat"]["thinkingFormat"] == "openai"
+def test_enable_without_format_preserves_automatic_detection(client):
+    assert save(client, thinking=True)["models"][0]["compat"] == {"supportsReasoningEffort": True}
 
 
 def test_enable_preserves_other_model_metadata_and_effort_mapping(client):

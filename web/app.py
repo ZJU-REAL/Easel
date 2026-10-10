@@ -1760,9 +1760,8 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
                     compat = dict(compat) if isinstance(compat, dict) else {}
                     if thinking and prov.get('api') != 'anthropic-messages':
                         compat.setdefault('supportsReasoningEffort', True)
-                        compat['thinkingFormat'] = (
-                            vals.get('thinkingFormat') or compat.get('thinkingFormat') or 'openai'
-                        )
+                        if vals.get('thinkingFormat'):
+                            compat['thinkingFormat'] = vals['thinkingFormat']
                         models[0]['compat'] = compat
                     elif not thinking:
                         for compat_key in THINKING_COMPAT_KEYS:
