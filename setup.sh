@@ -204,13 +204,13 @@ step "3/8" "检测 OpenClaw" "已有安装将直接复用"
 info "检查 OpenClaw..."
 if command -v openclaw >/dev/null 2>&1; then
     OPENCLAW_BIN="$(command -v openclaw)"
-    ok "检测到 OpenClaw：$($OPENCLAW_BIN --version 2>&1 | head -1)"
+    ok "检测到 OpenClaw：$("$OPENCLAW_BIN" --version 2>&1 | head -1)"
 else
     info "安装 OpenClaw..."
     npm install -g openclaw@latest --loglevel warn 2>&1 | tail -1
     # npm 全局 bin 目录未必在当前 shell 的 PATH 上：macOS Homebrew 的 Node 会把全局包装到
     # $(npm prefix -g)/bin（如 /opt/homebrew/Cellar/node/<ver>/bin），而 /opt/homebrew/bin 里
-    # 并没有 openclaw 链接。此时 command -v 拿到空值，后面 $OPENCLAW_BIN --version 会直接崩。
+    # 并没有 openclaw 链接。此时 command -v 拿到空值，后面 "$OPENCLAW_BIN" --version 会直接崩。
     # 先把 npm 全局 bin 补进 PATH 再检测。
     if ! command -v openclaw >/dev/null 2>&1; then
         NPM_GLOBAL_BIN="$(npm prefix -g 2>/dev/null)/bin"
@@ -223,9 +223,9 @@ else
         echo "OpenClaw 安装后仍未在 PATH 中找到。请把 npm 全局 bin 目录（$(npm prefix -g 2>/dev/null)/bin）加入 PATH 后重新运行 setup.sh（幂等，会跳过已装部分）。" >&2
         exit 1
     fi
-    ok "OpenClaw 已安装：$($OPENCLAW_BIN --version 2>&1 | head -1)"
+    ok "OpenClaw 已安装：$("$OPENCLAW_BIN" --version 2>&1 | head -1)"
 fi
-OC="$OPENCLAW_BIN --profile $PROFILE"
+oc() { "$OPENCLAW_BIN" --profile "$PROFILE" "$@"; }
 
 # ---- 4. 初始化 Easel 专属 OpenClaw profile ----
 step "4/8" "初始化 Easel profile" "独立配置、独立 workspace、独立 Gateway"
@@ -233,7 +233,7 @@ info "初始化 Easel profile (--profile $PROFILE)..."
 if [ -f "$HOME/.openclaw-${PROFILE}/openclaw.json" ]; then
     ok "Profile 已存在"
 else
-    ONBOARD_HELP="$($OPENCLAW_BIN onboard --help 2>/dev/null || true)"
+    ONBOARD_HELP="$("$OPENCLAW_BIN" onboard --help 2>/dev/null || true)"
     if [ -n "$ONBOARD_HELP" ]; then
         ONBOARD_ARGS=(onboard --non-interactive --mode local --accept-risk)
         for optional_arg in --skip-health --skip-channels --skip-skills \
@@ -247,9 +247,9 @@ else
         elif printf '%s\n' "$ONBOARD_HELP" | grep -q -- '--no-install-daemon'; then
             ONBOARD_ARGS+=(--no-install-daemon)
         fi
-        $OPENCLAW_BIN --profile "$PROFILE" "${ONBOARD_ARGS[@]}" 2>&1 | tail -2
-    elif $OPENCLAW_BIN setup --help >/dev/null 2>&1; then
-        $OC setup --non-interactive --mode local --accept-risk 2>&1 | tail -2
+        "$OPENCLAW_BIN" --profile "$PROFILE" "${ONBOARD_ARGS[@]}" 2>&1 | tail -2
+    elif "$OPENCLAW_BIN" setup --help >/dev/null 2>&1; then
+        oc setup --non-interactive --mode local --accept-risk 2>&1 | tail -2
     else
         echo "当前 OpenClaw 不支持可用的非交互初始化命令，请升级 OpenClaw 后重试。" >&2
         exit 1
@@ -364,12 +364,12 @@ if hdr or ver:
     if ver: h["anthropic-version"] = ver
     p["headers"] = h
 print(json.dumps(p))')"
-    $OC config set models.providers.anthropic "$seed" --json 2>&1 | sed '/^No change$/d'
+    oc config set models.providers.anthropic "$seed" --json 2>&1 | sed '/^No change$/d'
 }
 
 # 若用户已有默认 OpenClaw 配置，复用其模型名称；密钥不会从别的 profile 复制。
 if [ -z "${CLAUDE_MODEL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -t 0 ]; then
-    EXISTING_MODEL="$($OPENCLAW_BIN config get agents.defaults.model.primary 2>/dev/null || true)"
+    EXISTING_MODEL="$("$OPENCLAW_BIN" config get agents.defaults.model.primary 2>/dev/null || true)"
     if [ -n "$EXISTING_MODEL" ] && [ "$EXISTING_MODEL" != "null" ]; then
         echo "  检测到已有 OpenClaw 默认模型：$EXISTING_MODEL"
         USE_EXISTING="$(ask '复用这个模型到 Easel？[Y/n]')"
@@ -477,10 +477,10 @@ fi
 if usable_key "${OPENAI_API_KEY:-}" && ! usable_key "${ANTHROPIC_API_KEY:-}" \
    && ! { usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; }; then
     OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
-    $OC config set models.providers.openai.api "openai-completions" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.openai.apiKey "$OPENAI_API_KEY" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.openai.baseUrl "${OPENAI_BASE_URL:-https://api.openai.com/v1}" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers.openai.models \
+    oc config set models.providers.openai.api "openai-completions" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers.openai.apiKey "$OPENAI_API_KEY" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers.openai.baseUrl "${OPENAI_BASE_URL:-https://api.openai.com/v1}" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers.openai.models \
         "[{\"id\":\"$OPENAI_MODEL\",\"name\":\"OpenAI model\",\"reasoning\":true,\"input\":[\"text\",\"image\"]}]" \
         --strict-json 2>&1 | sed '/^No change$/d'
     DEFAULT_PRIMARY_MODEL="openai/$OPENAI_MODEL"
@@ -526,7 +526,7 @@ print(json.dumps({
 }))
 PY
 )
-    $OC config set models.providers."$OPENAI_PROVIDER" "$OPENAI_PROVIDER_CONFIG" \
+    oc config set models.providers."$OPENAI_PROVIDER" "$OPENAI_PROVIDER_CONFIG" \
         --strict-json 2>&1 | sed '/^No change$/d'
     DEFAULT_PRIMARY_MODEL="$OPENAI_PROVIDER/$OPENAI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
@@ -534,32 +534,32 @@ PY
 elif [ "$STANDARD_LLM_CONFIGURED" = false ] && usable_key "${GEMINI_MAAS_API_KEY:-}"; then
     GEMINI_PROVIDER="rednote-gemini"
     GEMINI_MODEL="${GEMINI_MAAS_MODEL:-gemini-3.1-pro-preview}"
-    $OC config set models.providers."$GEMINI_PROVIDER".baseUrl \
+    oc config set models.providers."$GEMINI_PROVIDER".baseUrl \
         "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/v1" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".api "openai-completions" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".apiKey "local-adapter" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".models \
+    oc config set models.providers."$GEMINI_PROVIDER".api "openai-completions" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".apiKey "local-adapter" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".models \
         "[{\"id\":\"$GEMINI_MODEL\",\"name\":\"Gemini-compatible model\",\"reasoning\":true,\"input\":[\"text\",\"image\"],\"contextWindow\":1048576,\"maxTokens\":65535}]" \
         --strict-json 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".timeoutSeconds 600 --strict-json 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".request.allowPrivateNetwork true --strict-json 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.command "/usr/bin/python3" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.args \
+    oc config set models.providers."$GEMINI_PROVIDER".timeoutSeconds 600 --strict-json 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".request.allowPrivateNetwork true --strict-json 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".localService.command "/usr/bin/python3" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".localService.args \
         "[\"$PROJECT_ROOT/scripts/gemini_maas_adapter.py\",\"--port\",\"${GEMINI_ADAPTER_PORT:-18790}\"]" \
         --strict-json 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.cwd "$PROJECT_ROOT" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.healthUrl \
+    oc config set models.providers."$GEMINI_PROVIDER".localService.cwd "$PROJECT_ROOT" 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".localService.healthUrl \
         "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/health" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.idleStopMs 0 --strict-json 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_API_KEY \
+    oc config set models.providers."$GEMINI_PROVIDER".localService.idleStopMs 0 --strict-json 2>&1 | sed '/^No change$/d'
+    oc config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_API_KEY \
         "$GEMINI_MAAS_API_KEY" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_ENDPOINT \
+    oc config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_ENDPOINT \
         "${GEMINI_MAAS_ENDPOINT:?GEMINI_MAAS_ENDPOINT is required}" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_MODEL \
+    oc config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_MAAS_MODEL \
         "$GEMINI_MODEL" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_THINKING_LEVEL \
+    oc config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_THINKING_LEVEL \
         "${GEMINI_THINKING_LEVEL:-HIGH}" 2>&1 | sed '/^No change$/d'
-    $OC config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_INCLUDE_THOUGHTS \
+    oc config set models.providers."$GEMINI_PROVIDER".localService.env.GEMINI_INCLUDE_THOUGHTS \
         "${GEMINI_INCLUDE_THOUGHTS:-true}" 2>&1 | sed '/^No change$/d'
     DEFAULT_PRIMARY_MODEL="$GEMINI_PROVIDER/$GEMINI_MODEL"
     CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
@@ -594,7 +594,7 @@ fi
 # CLAUDE_MODEL 保留旧变量名以兼容现有环境，值必须是 OpenClaw 的 provider/model。
 # 不要填内部 proxy 映射名（如 claude-4.6-opus-google），否则 OpenClaw 不认识。
 if [ "$AUTH_CONFIGURED" = true ]; then
-    $OC config set agents.defaults.model.primary "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" 2>&1 | sed '/^No change$/d'
+    oc config set agents.defaults.model.primary "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" 2>&1 | sed '/^No change$/d'
 else
     # 上面一个 provider 都没写。这时还去写 primary 只会把 agent 指向一个不存在的
     # provider（CLAUDE_MODEL 直接来自 .env），对话时报 "No route-compatible
@@ -603,7 +603,7 @@ else
     warn "未写入 agents.defaults.model.primary；openclaw 中已有的模型设置保持不变"
 fi
 # 整个 agent run 的总时长上限。制作层任务（OpenClaw 自执行短剧/长稿/多镜）很久 → 给足。
-$OC config set agents.defaults.timeoutSeconds 7200 2>&1 | sed '/^No change$/d'
+oc config set agents.defaults.timeoutSeconds 7200 2>&1 | sed '/^No change$/d'
 # Easel 使用 profiles/<当前画像>/memory.md；关闭 OpenClaw 全局记忆索引，避免旧索引跨画像召回。
 # Easel 使用 profiles/<当前画像>/memory.md；向量记忆必须使用单独的 embedding API。
 # 否则 OpenClaw 会默认请求 text-embedding-3-small，很多聊天 MaaS 并不提供该模型。
@@ -614,28 +614,28 @@ EMBEDDING_MODEL="${EASEL_EMBEDDING_MODEL:-${EASEL_EMBEDDINGS_MODEL:-${OPENAI_EMB
 # 之前（<=2026.6.x）在 agents.defaults.memorySearch.*。两者互斥（各自把对方的 key 判为 Unrecognized）。
 # 用「先试新 key、失败再退老 key」自适应：第一条写入既是真实配置也是版本探测（失败输出静默）。
 if [ -n "$EMBEDDING_API_KEY" ] && [ -n "$EMBEDDING_BASE_URL" ] && [ -n "$EMBEDDING_MODEL" ]; then
-    if $OC config set memory.search.provider openai-compatible >/dev/null 2>&1; then
+    if oc config set memory.search.provider openai-compatible >/dev/null 2>&1; then
         # 新 schema：顶层 memory.search（OpenClaw 2026.9.x+）
-        $OC config set memory.search.enabled true --strict-json 2>&1 | sed '/^No change$/d'
-        $OC config set memory.search.model "$EMBEDDING_MODEL" 2>&1 | sed '/^No change$/d'
-        $OC config set memory.search.remote.baseUrl "$EMBEDDING_BASE_URL" 2>&1 | sed '/^No change$/d'
-        $OC config set memory.search.remote.apiKey "$EMBEDDING_API_KEY" 2>&1 | sed '/^No change$/d'
+        oc config set memory.search.enabled true --strict-json 2>&1 | sed '/^No change$/d'
+        oc config set memory.search.model "$EMBEDDING_MODEL" 2>&1 | sed '/^No change$/d'
+        oc config set memory.search.remote.baseUrl "$EMBEDDING_BASE_URL" 2>&1 | sed '/^No change$/d'
+        oc config set memory.search.remote.apiKey "$EMBEDDING_API_KEY" 2>&1 | sed '/^No change$/d'
         ok "独立向量模型已配置（memory.search）：$EMBEDDING_MODEL"
     else
         # 老 schema：agents.defaults.memorySearch（OpenClaw <=2026.6.x）
-        $OC config set agents.defaults.memorySearch.provider openai-compatible 2>&1 | sed '/^No change$/d'
-        $OC config set agents.defaults.memorySearch.model "$EMBEDDING_MODEL" 2>&1 | sed '/^No change$/d'
-        $OC config set agents.defaults.memorySearch.remote.baseUrl "$EMBEDDING_BASE_URL" 2>&1 | sed '/^No change$/d'
-        $OC config set agents.defaults.memorySearch.remote.apiKey "$EMBEDDING_API_KEY" 2>&1 | sed '/^No change$/d'
+        oc config set agents.defaults.memorySearch.provider openai-compatible 2>&1 | sed '/^No change$/d'
+        oc config set agents.defaults.memorySearch.model "$EMBEDDING_MODEL" 2>&1 | sed '/^No change$/d'
+        oc config set agents.defaults.memorySearch.remote.baseUrl "$EMBEDDING_BASE_URL" 2>&1 | sed '/^No change$/d'
+        oc config set agents.defaults.memorySearch.remote.apiKey "$EMBEDDING_API_KEY" 2>&1 | sed '/^No change$/d'
         ok "独立向量模型已配置（memorySearch）：$EMBEDDING_MODEL"
     fi
 else
     # Deliberate FTS-only mode: never fall back to the chat endpoint for embeddings.
     # 新 schema 用 memory.search.enabled=false 关闭向量检索；老 schema 用 provider=none。
-    if $OC config set memory.search.enabled false --strict-json >/dev/null 2>&1; then
+    if oc config set memory.search.enabled false --strict-json >/dev/null 2>&1; then
         :
     else
-        $OC config set agents.defaults.memorySearch.provider none 2>&1 | sed '/^No change$/d'
+        oc config set agents.defaults.memorySearch.provider none 2>&1 | sed '/^No change$/d'
     fi
     if [ -n "$EMBEDDING_API_KEY$EMBEDDING_BASE_URL$EMBEDDING_MODEL" ]; then
         warn "向量 API 配置不完整，已关闭向量检索；需要同时设置 EASEL_EMBEDDING_API_KEY、EASEL_EMBEDDING_BASE_URL、EASEL_EMBEDDING_MODEL"
@@ -650,22 +650,22 @@ fi
 # 并拒绝该次写入。这里吞掉这条噪音、绝不让它中断安装（|| true）；新版本 OpenClaw 才会真正把它调到 600s。
 # 想彻底拿到更长的 provider 超时，请 npm i -g openclaw@latest 升级到支持该字段的版本。
 if [ "$ANTHROPIC_PROVIDER_SYNCED" = true ]; then
-    $OC config set models.providers.anthropic.timeoutSeconds 600 2>&1 \
+    oc config set models.providers.anthropic.timeoutSeconds 600 2>&1 \
         | sed -e '/^No change$/d' -e '/[Uu]nrecognized key/d' -e '/timeoutSeconds/d' || true
 fi
-$OC config set gateway.mode local 2>&1 | sed '/^No change$/d'
-$OC config set gateway.bind loopback 2>&1 | sed '/^No change$/d'
-$OC config set gateway.auth.mode none 2>&1 | sed '/^No change$/d'
+oc config set gateway.mode local 2>&1 | sed '/^No change$/d'
+oc config set gateway.bind loopback 2>&1 | sed '/^No change$/d'
+oc config set gateway.auth.mode none 2>&1 | sed '/^No change$/d'
 # 对话直连常驻网关（web/app.py 的 http 传输层）要用 OpenAI 兼容端点，而 openclaw 默认
 # 不挂这条路由（chatCompletions.enabled 默认 false），不开的话 POST /v1/chat/completions
 # 一律 404、只能退回每轮 spawn 客户端的老路径。端点只绑 loopback + auth.mode=none 的本机
 # 网关，不额外扩暴露面。旧版本没这个键时会报 Unrecognized key，吞掉即可（照常走 cli）。
-$OC config set gateway.http.endpoints.chatCompletions.enabled true --strict-json 2>&1 \
+oc config set gateway.http.endpoints.chatCompletions.enabled true --strict-json 2>&1 \
     | sed -e '/^No change$/d' -e '/[Uu]nrecognized key/d' || true
 
 # Refuse to start with a config rejected by the installed OpenClaw version.
 # This catches schema changes early instead of producing opaque Gateway errors.
-if ! $OC config validate; then
+if ! oc config validate; then
     echo "OpenClaw 配置校验失败：请检查上方报错，并确认使用受支持的 OpenClaw 版本。" >&2
     exit 1
 fi

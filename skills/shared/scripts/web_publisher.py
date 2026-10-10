@@ -263,6 +263,24 @@ LAUNCH_ARGS = [
 ]
 
 
+# 防渲染崩溃（2026-10-10 ARM64 容器实测：channels.weixin 页面加载约 2s 后 renderer 必崩
+# "Page crashed"；拦截字体/视频等重型静态资源后页面可稳定渲染。二维码与接口不受影响）。
+_HEAVY_EXT = (".mp4", ".webm", ".woff2", ".woff", ".ttf")
+
+
+def _block_heavy(page) -> None:
+    def _route(route, request):
+        u = request.url.lower()
+        if any(x in u for x in _HEAVY_EXT):
+            route.abort()
+        else:
+            route.continue_()
+    try:
+        page.route("**/*", _route)
+    except Exception:
+        pass
+
+
 def _die(msg: str, code: int = 1) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
     sys.exit(code)
@@ -1125,6 +1143,7 @@ def cmd_login_qr(a) -> int:
             str(profile), headless=True, locale="zh-CN",
             args=LAUNCH_ARGS + ["--no-proxy-server"])
         page = browser.pages[0] if browser.pages else browser.new_page()
+        _block_heavy(page)  # ARM64 容器防 renderer 崩溃（二维码是接口/图片不受影响）
         try:
             page.goto(cfg["login_url"], wait_until="domcontentloaded")
             # 给客户端 redirect + 登录态渲染时间：已登录常从入口页跳到 /profile 等，
@@ -1257,6 +1276,7 @@ def cmd_whoami(a) -> int:
                 str(profile), headless=True, locale="zh-CN",
                 args=LAUNCH_ARGS + ["--no-proxy-server"])
             page = browser.pages[0] if browser.pages else browser.new_page()
+            _block_heavy(page)  # ARM64 容器防 renderer 崩溃
             try:
                 page.goto(cfg["publish_url"], wait_until="domcontentloaded", timeout=30000)
                 _settle_login(page, cfg)  # 等客户端跳转落定，避免 SPA 未跳转期误判已登录
