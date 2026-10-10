@@ -1695,9 +1695,9 @@ def _sync_anthropic_provider(base: str, key: str) -> str:
         # 免得老用户升级后 key 变成孤儿；迁移后删掉 relay，避免两处并存各写一半。
         legacy = providers.get('relay')
         if isinstance(legacy, dict):
-            if not new_prov.get('apiKey') and legacy.get('apiKey'):
+            if not key and not base and not _is_set(new_prov.get('apiKey')) \
+                    and _is_set(legacy.get('apiKey')) and legacy.get('baseUrl'):
                 new_prov['apiKey'] = legacy['apiKey']
-            if not base and legacy.get('baseUrl'):
                 new_prov['baseUrl'] = legacy['baseUrl']
             providers.pop('relay', None)
         providers['anthropic'] = new_prov
@@ -1904,28 +1904,26 @@ async def api_settings_models_save(req: ModelSaveRequest):
         # 但同样要落到 openclaw.json 才真正生效 —— setup.sh 写的 provider 可能已过时。
         # 两者共用同一个 anthropic provider，和 setup.sh 的映射保持一致。
         _slots = {(r.slot or '').strip() for r in req.rows}
-        if 'anthropic' in _slots:
-            _an = _sync_anthropic_provider(
-                updates.get('ANTHROPIC_BASE_URL',
-                            _cur_env.get('ANTHROPIC_BASE_URL', '')
-                            if _is_set(_cur_env.get('ANTHROPIC_API_KEY')) else '')
-                or ('' if _is_set(_cur_env.get('ANTHROPIC_API_KEY'))
-                    else _cur_prov.get('anthropic', ('', ''))[0]),
-                updates.get('ANTHROPIC_API_KEY',
-                            _cur_env.get('ANTHROPIC_API_KEY', '')
-                            if _is_set(_cur_env.get('ANTHROPIC_API_KEY')) else ''))
-            if _an:
-                note = f'{note}；{_an}' if note else _an
-        elif 'relay' in _slots:
-            _an = _sync_anthropic_provider(
-                updates.get('EASEL_LLM_BASE_URL',
-                            _cur_env.get('EASEL_LLM_BASE_URL', '')
-                            if _is_set(_cur_env.get('EASEL_LLM_API_KEY')) else '')
-                or ('' if _is_set(_cur_env.get('EASEL_LLM_API_KEY'))
-                    else _cur_prov.get('anthropic', ('', ''))[0]),
-                updates.get('EASEL_LLM_API_KEY',
-                            _cur_env.get('EASEL_LLM_API_KEY', '')
-                            if _is_set(_cur_env.get('EASEL_LLM_API_KEY')) else ''))
+        effective_env = {**_cur_env, **updates}
+        sync_slot = ''
+        for candidate in ('relay', 'anthropic'):
+            base_var, key_var = _SLOT_ENV_KEYS[candidate]
+            if candidate in _slots and _is_set(effective_env.get(key_var)) \
+                    and (candidate == 'anthropic' or effective_env.get(base_var, '').strip()):
+                sync_slot = candidate
+                break
+        if not sync_slot:
+            sync_slot = next((candidate for candidate in ('relay', 'anthropic')
+                              if candidate in _slots), '')
+        if sync_slot:
+            base_var, key_var = _SLOT_ENV_KEYS[sync_slot]
+            if _is_set(effective_env.get(key_var)):
+                sync_base = effective_env.get(base_var, '').strip().rstrip('/')
+                sync_key = effective_env[key_var].strip()
+            else:
+                sync_base = _cur_prov.get('anthropic', ('', ''))[0]
+                sync_key = ''
+            _an = _sync_anthropic_provider(sync_base, sync_key)
             if _an:
                 note = f'{note}；{_an}' if note else _an
     resp = {"ok": True, "note": note}
