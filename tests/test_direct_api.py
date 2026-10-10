@@ -351,7 +351,7 @@ def test_queued_turn_does_not_overwrite_running_snapshot(sandbox, monkeypatch):
         await started.wait()
         queued = asyncio.create_task(web._run_direct_chat(second, "queue", "second", "", lambda *args: None))
         await asyncio.sleep(0)
-        snapshot = json.loads(web._turn_file("web:queue").read_text())
+        snapshot = json.loads(web._turn_file("web:queue").read_text(encoding="utf-8"))
         assert snapshot["status"] == "running" and snapshot["turn_id"] == "first"
         finish.set()
         await asyncio.gather(active, queued)
@@ -428,7 +428,7 @@ def test_cancelled_queue_releases_tracking_without_overwriting_active_turn(sandb
         assert not web._DIRECT_CHAT_TASKS
         assert lock.locked()
         lock.release()
-        snapshot = json.loads(web._turn_file("web:queue").read_text())
+        snapshot = json.loads(web._turn_file("web:queue").read_text(encoding="utf-8"))
         assert snapshot["turn_id"] == "owner" and snapshot["status"] == "running"
     asyncio.run(scenario())
 
@@ -446,11 +446,11 @@ def test_doctor_recognizes_local_openclaw_backend(tmp_path, monkeypatch):
 
 
 def test_direct_save_rejects_placeholder_and_keeps_valid_config(sandbox):
-    before = web.ENV_FILE.read_text()
+    before = web.ENV_FILE.read_text(encoding="utf-8")
     response = sandbox.post("/api/settings/models/save", json={"channel": "chat", "rows": [
         {"slot": "direct-api", "baseUrl": BASE, "model": "another", "key": "your-api-key"}]})
     assert response.status_code == 400
-    assert web.ENV_FILE.read_text() == before
+    assert web.ENV_FILE.read_text(encoding="utf-8") == before
 
 
 def test_snapshot_write_failure_still_releases_session(sandbox, monkeypatch):
