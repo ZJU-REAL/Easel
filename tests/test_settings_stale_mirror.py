@@ -151,3 +151,95 @@ def test_mirror_only_credentials_keep_their_url_on_model_only_save(sandbox, slot
     mirror = json.loads(config_path.read_text())["models"]["providers"][provider]
     assert mirror["baseUrl"] == "https://old.example/v1"
     assert mirror["apiKey"] == "sk-mirror-test"
+
+
+@pytest.mark.parametrize("anthropic_key", ["", "sk-ant-REPLACE_ME", "sk-official-test"])
+@pytest.mark.parametrize("reverse_rows", [False, True])
+def test_full_panel_save_uses_complete_relay_pair_like_setup(sandbox, anthropic_key, reverse_rows):
+    client, env_path, config_path = sandbox
+    seed(env_path, config_path, "relay")
+    with env_path.open("a") as output:
+        output.write(f"ANTHROPIC_API_KEY={anthropic_key}\n")
+    rows = [
+        {"slot": "anthropic", "model": "new-model", "key": ""},
+        {"slot": "relay", "model": "new-model", "baseUrl": "https://new-relay.example/v1",
+         "key": "sk-new-relay-test", "primary": True},
+    ]
+    if reverse_rows:
+        rows.reverse()
+    response = client.post("/api/settings/models/save", json={"rows": rows})
+    assert response.status_code == 200, response.text
+    mirror = json.loads(config_path.read_text())["models"]["providers"]["anthropic"]
+    assert mirror["baseUrl"] == "https://new-relay.example/v1"
+    assert mirror["apiKey"] == "sk-new-relay-test"
+    assert "EASEL_LLM_BASE_URL=https://new-relay.example/v1" in env_path.read_text()
+
+
+@pytest.mark.parametrize("relay_key", ["", "sk-ant-REPLACE_ME", "sk-incomplete-relay-test"])
+def test_full_panel_save_does_not_prefer_incomplete_relay(sandbox, relay_key):
+    client, env_path, config_path = sandbox
+    seed(env_path, config_path, "anthropic", base="")
+    with env_path.open("a") as output:
+        output.write(f"EASEL_LLM_API_KEY={relay_key}\n")
+    response = client.post("/api/settings/models/save", json={"rows": [
+        {"slot": "anthropic", "model": "new-model"},
+        {"slot": "relay", "model": "new-model"},
+    ]})
+    assert response.status_code == 200, response.text
+    mirror = json.loads(config_path.read_text())["models"]["providers"]["anthropic"]
+    assert mirror["baseUrl"] == "https://api.anthropic.com"
+    assert mirror["apiKey"] == "sk-env-test"
+
+
+def test_full_panel_without_authoritative_credentials_keeps_mirror_pair(sandbox):
+    client, env_path, config_path = sandbox
+    seed(env_path, config_path, "anthropic", env_key="sk-ant-REPLACE_ME",
+         base="https://unused-official.example")
+    with env_path.open("a") as output:
+        output.write("EASEL_LLM_API_KEY=sk-ant-REPLACE_ME\n"
+                     "EASEL_LLM_BASE_URL=https://unused-relay.example/v1\n")
+    response = client.post("/api/settings/models/save", json={"rows": [
+        {"slot": "anthropic", "model": "new-model"},
+        {"slot": "relay", "model": "new-model"},
+    ]})
+    assert response.status_code == 200, response.text
+    mirror = json.loads(config_path.read_text())["models"]["providers"]["anthropic"]
+    assert mirror["baseUrl"] == "https://old.example/v1"
+    assert mirror["apiKey"] == "sk-mirror-test"
+
+
+@pytest.mark.parametrize("authoritative_key", [True, False])
+def test_legacy_relay_migration_does_not_redirect_existing_key(sandbox, authoritative_key):
+    client, env_path, config_path = sandbox
+    seed(env_path, config_path, "anthropic", base="",
+         env_key="sk-env-test" if authoritative_key else "")
+    data = json.loads(config_path.read_text())
+    data["models"]["providers"]["relay"] = {
+        "baseUrl": "https://legacy-relay.example/v1", "apiKey": "sk-legacy-test",
+    }
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+    response = client.post("/api/settings/models/save", json={"rows": [
+        {"slot": "anthropic", "model": "new-model"},
+    ]})
+    assert response.status_code == 200, response.text
+    providers = json.loads(config_path.read_text())["models"]["providers"]
+    assert "relay" not in providers
+    mirror = providers["anthropic"]
+    assert mirror["baseUrl"] == (
+        "https://api.anthropic.com" if authoritative_key else "https://old.example/v1")
+    assert mirror["apiKey"] == ("sk-env-test" if authoritative_key else "sk-mirror-test")
+
+
+def test_legacy_relay_migration_keeps_orphaned_key_and_url_together(sandbox):
+    client, env_path, config_path = sandbox
+    config_path.write_text(json.dumps({"models": {"providers": {"relay": {
+        "baseUrl": "https://legacy-relay.example/v1", "apiKey": "sk-legacy-test",
+    }}}}), encoding="utf-8")
+    response = client.post("/api/settings/models/save", json={"rows": [
+        {"slot": "relay", "model": "new-model"},
+    ]})
+    assert response.status_code == 200, response.text
+    providers = json.loads(config_path.read_text())["models"]["providers"]
+    assert "relay" not in providers
+    assert providers["anthropic"]["baseUrl"] == "https://legacy-relay.example/v1"
+    assert providers["anthropic"]["apiKey"] == "sk-legacy-test"
