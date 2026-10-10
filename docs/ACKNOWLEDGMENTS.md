@@ -69,6 +69,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 | [jiji262/wechat-publisher](https://github.com/jiji262/wechat-publisher) | skill-wechat-publisher | 原始来源：公众号发布 |
 | [lucasygu/redbook](https://github.com/lucasygu/redbook) | skill-xhs-analyzer | 原始来源：小红书分析 CLI |
 | [white0dew/XiaohongshuSkills](https://github.com/white0dew/XiaohongshuSkills) | skill-xhs-publisher | 主来源（祖先 Angiin/Post-to-xhs） |
+| [Upload-Post](https://upload-post.com)（[API 文档](https://docs.upload-post.com)，托管服务）| skill-upload-post-publisher | 海外平台发布 API（TikTok / Instagram / YouTube / LinkedIn / X 等） |
 | [NanmiCoder/MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) | competitor-analysis / content-gap-analysis / ugc-discovery / data-tracker / cross-platform-diff | 多平台采集字段、反爬现状、节奏参数 |
 | [cv-cat/Spider_XHS](https://github.com/cv-cat/Spider_XHS) | competitor-analysis | 小红书竞品报表维度 |
 | [ReaJason/xhs](https://github.com/ReaJason/xhs) | competitor-analysis | 小红书笔记公开字段 |

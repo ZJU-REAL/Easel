@@ -50,7 +50,7 @@ PROJECT_ROOT = _find_root()
 DEFAULT_DATA = PROJECT_ROOT / "outputs" / "_schedule.json"
 CST = timezone(timedelta(hours=8))
 
-CONTENT_STATUSES = {"idea", "draft", "scheduled", "published"}
+CONTENT_STATUSES = {"idea", "draft", "scheduled", "published", "unknown"}  # unknown：已提交但发布结果待确认
 KINDS = {"content", "event"}
 SOURCES = {"manual", "publish-page", "chat", "scheduler"}
 # 平台码 → 中文名（与 web/app.py LOGIN_RUNNERS 的 cfg['name'] 对齐，日历页按中文名展示）
@@ -145,9 +145,11 @@ def _forward_publish_log(platform: str, title: str, url: str, ptype: str,
 # --------------------------------------------------------------------------- #
 def record_publish(platform: str, title: str, url: str = "", ptype: str = "",
                    tags: str = "", note: str = "", source: str = "chat",
-                   data_path: Path | None = None, forward_log: bool = True) -> bool:
+                   data_path: Path | None = None, forward_log: bool = True,
+                   status: str = "published") -> bool:
     """追加一条已发布记录到日历底座。返回是否写入。全程异常安全。
-    env EASEL_CALENDAR_AUTORECORD=0 时直接跳过（发布页由 web 记录，防重复）。"""
+    env EASEL_CALENDAR_AUTORECORD=0 时直接跳过（发布页由 web 记录，防重复）。
+    status="unknown"：已提交但结果待确认（如 5xx / 超时）——只进日历，不转发 publish-log。"""
     if os.environ.get("EASEL_CALENDAR_AUTORECORD") == "0":
         return False
     try:
@@ -159,7 +161,7 @@ def record_publish(platform: str, title: str, url: str = "", ptype: str = "",
             "date": now.strftime("%Y-%m-%d"),
             "platform": _norm_platform(platform),
             "time": now.strftime("%H:%M"),
-            "status": "published",
+            "status": status if status in CONTENT_STATUSES else "published",
             "note": (note or "")[:200],
             "kind": "content",
             "url": url or "",
@@ -170,7 +172,7 @@ def record_publish(platform: str, title: str, url: str = "", ptype: str = "",
         atomic_write(path, items)
     except Exception:
         return False  # 记录失败绝不影响发布
-    if forward_log:
+    if forward_log and item["status"] == "published":
         _forward_publish_log(_norm_platform(platform), item["title"], url, ptype,
                              tags, "calendar-auto")
     return True
