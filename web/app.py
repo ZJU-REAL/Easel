@@ -2203,7 +2203,7 @@ async def api_models_available(req: ModelsFetchRequest):
             _bk, _kk = _FETCH_KEY_BY_SLOT.get(slot, ("", ""))
             _b, _k = _env.get(_bk, ""), _env.get(_kk, "")
         key = (_k or "").strip()
-        if key and base and base != (_b or "").strip().rstrip("/"):
+        if slot == "direct-api" and key and base and base != (_b or "").strip().rstrip("/"):
             raise HTTPException(400, "更换根地址时必须重新填写 Key，不能把已存 Key 发给其他地址")
         if not base and _b:
             base = _b.strip().rstrip("/")
@@ -2886,7 +2886,8 @@ async def api_chat_stream(req: ChatRequest):
 
         if direct:
             try:
-                await _run_direct_chat(req, sk, content, system, to_client)
+                await _run_direct_chat(
+                    req.model_copy(update={"turnId": turn_id}), sk, content, system, to_client)
             finally:
                 to_client("done", sessionKey=sk)
                 client_q.put_nowait(CLIENT_DONE)

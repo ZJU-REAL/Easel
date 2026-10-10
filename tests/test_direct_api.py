@@ -469,6 +469,17 @@ def test_snapshot_write_failure_still_releases_session(sandbox, monkeypatch):
     assert not web._session_lock("disk").locked()
 
 
+def test_generated_stream_turn_id_matches_recovery_and_replay(sandbox, monkeypatch):
+    upstream(monkeypatch, lambda request: httpx.Response(
+        200, text=sse(chunk("complete", finish="stop"), "[DONE]")))
+    response = sandbox.post("/api/chat/stream", json={"message": "test", "sessionId": "generated"})
+    snapshot = sandbox.get("/api/chat/last/generated").json()
+    assert "event: done" in response.text
+    assert web._job_event_file(snapshot["turn_id"]).is_file()
+    recovered = sandbox.get("/api/chat/last/generated", params={"turn_id": snapshot["turn_id"]}).json()
+    assert recovered["status"] == "done" and recovered["text"] == "complete"
+
+
 @pytest.mark.skipif(os.name == "nt", reason="setup.sh is the Linux/macOS installer")
 def test_local_openclaw_provider_configuration_and_check_mode(tmp_path):
     root = Path(__file__).resolve().parents[1]
