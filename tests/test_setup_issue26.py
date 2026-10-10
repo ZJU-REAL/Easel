@@ -97,7 +97,8 @@ def _openai_models_written(tmp_path: Path, **env: str) -> str:
     """跑 setup.sh 的 OpenAI 分支，返回写进 models 的那条 JSON。"""
     lines = SETUP_SH.read_text(encoding="utf-8").splitlines()
     helper = _slice(lines, "usable_key() {", "}", keep_end=True)
-    body = _slice(lines, 'if usable_key "${OPENAI_API_KEY:-}"', "# ---- 10. OpenClaw agent 模型", keep_end=False)
+    body = _slice(lines, 'if [ "${LOCAL_API_CONFIGURED:-false}" = true ]; then',
+                  "# ---- 10. OpenClaw agent 模型", keep_end=False)
     calls = tmp_path / "oc.log"
     script = textwrap.dedent(f"""
         set -u
@@ -113,6 +114,14 @@ def _openai_models_written(tmp_path: Path, **env: str) -> str:
             fi
             return 0
         }}
+        # setup.sh 的 config 写入现在统一经过容忍层（oc_set / oc_try / oc_set_first）。
+        # 这里按签名 stub 成「把 key = value 记进 CFG」，断言对象仍是「写了哪些 key」，
+        # 不依赖容忍层的内部实现。
+        oc_set()       {{ shift; echo "$1 = $2" >> "$CFG"; }}
+        oc_try()       {{ echo "$1 = $2" >> "$CFG"; return 0; }}
+        oc_set_first() {{ v="$2"; shift 3; echo "$1 = $v" >> "$CFG"; return 0; }}
+        oc_supports()  {{ return 1; }}
+        warn_collect() {{ echo "WARN|$1：$2"; }}
         OC=_oc
     """) + "\n" + helper + "\n\n" + body
     proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True,

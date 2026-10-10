@@ -7,7 +7,7 @@
    整条 OpenAI 分支被跳过 —— provider 一个字没写，却照样把 primary 设成了 openai/xxx，
    对话直接报 "No route-compatible authentication source is configured for openai"。
 2. `easel doctor` 只静态查 .env，查不出上面那种「.env 填了但 openclaw 没写」，于是全绿。
-3. setup.ps1 里 `if (Is-UsableKey $x -and $y.ContainsKey(...))` 会进命令解析模式，
+3. setup.ps1 里 `if (Test-UsableKey $x -and $y.ContainsKey(...))` 会进命令解析模式，
    `-and` 被当成参数名静默吞掉，后半个守卫失效（PS 5.1 与 7 同样中招）。
 4. install_tool 用 [Environment]::GetEnvironmentVariable 读用户 PATH 会展开 %VAR%，
    写回又是 REG_SZ，把用户 PATH 里的间接引用永久压平。
@@ -91,6 +91,14 @@ def _run_auth(tmp_path: Path, **env: str) -> tuple[str, dict[str, str]]:
             fi
             return 0
         }}
+        # setup.sh 的 config 写入现在统一经过容忍层（oc_set / oc_try / oc_set_first）。
+        # 这里按签名 stub 成「把 key = value 记进 CFG」，断言对象仍是「写了哪些 key」，
+        # 不依赖容忍层的内部实现。
+        oc_set()       {{ shift; echo "$1 = $2" >> "$CFG"; }}
+        oc_try()       {{ echo "$1 = $2" >> "$CFG"; return 0; }}
+        oc_set_first() {{ v="$2"; shift 3; echo "$1 = $v" >> "$CFG"; return 0; }}
+        oc_supports()  {{ return 1; }}
+        warn_collect() {{ echo "WARN|$1：$2"; }}
         OC=_oc
     """) + "\n" + _auth_block()
 
@@ -269,7 +277,7 @@ def test_ps1_auth_branches_guard_base_url():
         ("EASEL_LLM_API_KEY", "EASEL_LLM_BASE_URL"),
         ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"),
     ]:
-        pattern = rf"\(\(Is-UsableKey \$envValues\['{key}'\]\) -and " \
+        pattern = rf"\(\(Test-UsableKey \$envValues\['{key}'\]\) -and " \
                   rf"\$envValues\.ContainsKey\('{companion}'\)\)"
         assert re.search(pattern, text), f"{key} 分支缺少括号化的 {companion} 守卫"
 

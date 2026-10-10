@@ -54,6 +54,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "_session_locks", {})
     monkeypatch.setattr(web, "_RUNNING_CHAT", {})
     monkeypatch.setattr(web, "_STOPPED_CHAT", set())
+    monkeypatch.setattr(web, "_DIRECT_CHAT_TASKS", set())
     def forbidden(*args, **kwargs):
         raise AssertionError("API mode must not call OpenClaw")
     for name in ("openclaw_base_cmd", "_gateway_http_ready", "check_gateway",
@@ -262,3 +263,247 @@ def test_api_installer_skips_openclaw_and_gateway(tmp_path):
     assert "openclaw" not in log.read_text().splitlines()
     assert "EASEL_CHAT_TRANSPORT=api" in (tmp_path / ".env").read_text()
     assert "API 直连模式" in process.stdout
+
+
+def test_bootstrap_and_restart_skip_openclaw(sandbox, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("direct mode must not start or probe OpenClaw")
+    monkeypatch.setattr(web.subprocess, "run", forbidden)
+    response = sandbox.get("/api/settings/bootstrap")
+    assert response.status_code == 200
+    assert response.json()["modelConfigured"] is True
+    assert sandbox.post("/api/gateway/restart").json()["ok"] is True
+    web.ENV_FILE.write_text("EASEL_CHAT_TRANSPORT=api\n")
+    assert sandbox.get("/api/settings/bootstrap").json()["modelConfigured"] is False
+
+
+@pytest.mark.parametrize("prefix", ["", "web:"])
+def test_existing_cli_history_cannot_be_discarded(sandbox, monkeypatch, prefix):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("existing CLI sessions must never reach a direct upstream")
+    monkeypatch.setattr(web, "stream_chat", forbidden)
+    web.OPENCLAW_SESSIONS_DIR.mkdir()
+    session = "old-cli"
+    transcript = web.OPENCLAW_SESSIONS_DIR / f"{web._openclaw_session_id(prefix + session)}.jsonl"
+    transcript.write_text("{}\n")
+    response = sandbox.post("/api/chat/stream", json={"message": "test", "sessionId": session})
+    assert "event: error" in response.text and "新建会话" in response.text
+    assert not direct_api.history_path(web.SESSIONS_DIR, session).exists()
+
+
+@pytest.mark.parametrize("ending", ["\n", ""])
+def test_terminal_event_without_blank_line_is_processed(sandbox, monkeypatch, ending):
+    payload = sse(chunk("complete")) + "data: " + json.dumps(chunk(finish="stop")) + ending
+    upstream(monkeypatch, lambda request: httpx.Response(200, text=payload))
+    response = sandbox.post("/api/chat", json={"message": "test", "sessionId": "eof"})
+    assert response.status_code == 200
+    assert response.json()["response"] == "complete"
+    assert direct_api.history_path(web.SESSIONS_DIR, "eof").is_file()
+
+
+def test_done_without_finish_reason_is_not_success(sandbox, monkeypatch):
+    upstream(monkeypatch, lambda request: httpx.Response(200, text=sse(chunk("partial"), "[DONE]")))
+    response = sandbox.post("/api/chat/stream", json={"message": "test", "sessionId": "partial"})
+    assert "event: error" in response.text
+    assert not direct_api.history_path(web.SESSIONS_DIR, "partial").exists()
+
+
+@pytest.mark.parametrize("key", ["your-api-key", "YOUR_API_KEY", "xxx", "...", "<key>"])
+def test_placeholder_credentials_are_rejected(key):
+    with pytest.raises(direct_api.DirectAPIError):
+        direct_api.api_config({**SETTINGS, "EASEL_DIRECT_API_KEY": key})
+
+
+def test_model_listing_before_model_selection(sandbox, monkeypatch):
+    web.ENV_FILE.write_text("EASEL_CHAT_TRANSPORT=api\n" + "\n".join(
+        f"{key}={value}" for key, value in SETTINGS.items() if key != "EASEL_DIRECT_API_MODEL"))
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def read(self):
+            return b'{"data":[{"id":"model-a"}]}'
+    class Opener:
+        def open(self, request, **kwargs):
+            assert request.full_url == BASE + "/models"
+            assert request.get_header("Authorization") == "Bearer gateway-secret"
+            return Response()
+    monkeypatch.setattr(web.urllib.request, "build_opener", lambda *args: Opener())
+    response = sandbox.post("/api/settings/models/available", json={"slot": "direct-api"})
+    assert response.status_code == 200, response.text
+    assert "model-a" in response.text
+
+
+def test_queued_turn_does_not_overwrite_running_snapshot(sandbox, monkeypatch):
+    async def scenario():
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        async def fake_stream(*args, **kwargs):
+            started.set()
+            await finish.wait()
+            yield "token", "complete"
+            yield "finish", "stop"
+        monkeypatch.setattr(web, "stream_chat", fake_stream)
+        first = web.ChatRequest(message="first", sessionId="queue", turnId="first")
+        second = web.ChatRequest(message="second", sessionId="queue", turnId="second")
+        active = asyncio.create_task(web._run_direct_chat(first, "queue", "first", "", lambda *args: None))
+        await started.wait()
+        queued = asyncio.create_task(web._run_direct_chat(second, "queue", "second", "", lambda *args: None))
+        await asyncio.sleep(0)
+        snapshot = json.loads(web._turn_file("web:queue").read_text())
+        assert snapshot["status"] == "running" and snapshot["turn_id"] == "first"
+        finish.set()
+        await asyncio.gather(active, queued)
+        assert not web._RUNNING_CHAT
+        assert not web._session_lock("queue").locked()
+    asyncio.run(scenario())
+
+
+def test_model_listing_does_not_send_stored_key_to_draft_url(sandbox, monkeypatch):
+    monkeypatch.setattr(web, "_ssrf_safe", lambda url: True)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("must not send stored credentials to a new URL")
+    monkeypatch.setattr(web.urllib.request, "build_opener", forbidden)
+    response = sandbox.post("/api/settings/models/available", json={
+        "slot": "direct-api", "baseUrl": "https://another.example/v1"})
+    assert response.status_code == 400 and "Key" in response.text
+
+
+def test_keyless_models_and_selftest_have_no_authorization(sandbox, monkeypatch):
+    web.ENV_FILE.write_text("EASEL_CHAT_TRANSPORT=api\n" + "\n".join(
+        f"{key}={value}" for key, value in SETTINGS.items() if key != "EASEL_DIRECT_API_KEY"))
+    captured = []
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def read(self):
+            return b'{"data":[{"id":"model-a"}]}'
+    class Opener:
+        def open(self, request, **kwargs):
+            assert request.get_header("Authorization") is None
+            captured.append(request.full_url)
+            return Response()
+    monkeypatch.setattr(web.urllib.request, "build_opener", lambda *args: Opener())
+    assert sandbox.post("/api/settings/models/available", json={"slot": "direct-api"}).status_code == 200
+    assert sandbox.post("/api/settings/models/selftest", json={"channel": "chat"}).status_code == 200
+    assert captured == [BASE + "/models"] * 2
+
+
+def test_environment_pinned_direct_config_is_not_silently_saved(sandbox, monkeypatch):
+    monkeypatch.setenv("EASEL_DIRECT_API_MODEL", "from-process")
+    response = sandbox.post("/api/settings/models/save", json={"channel": "chat", "rows": [
+        {"slot": "direct-api", "baseUrl": BASE, "model": "another"}]})
+    assert response.status_code == 409
+
+
+def test_cross_process_timeout_does_not_overwrite_active_snapshot(sandbox, monkeypatch):
+    web._save_turn("web:busy", "running", "active", {"turn_id": "owner"})
+    monkeypatch.setattr(web._CrossProcLock, "acquire", lambda *args: False)
+    monkeypatch.setattr(web, "TIMEOUT_CHAT", 0)
+    response = sandbox.post("/api/chat", json={"message": "test", "sessionId": "busy"})
+    assert response.status_code == 502
+    snapshot = sandbox.get("/api/chat/last/busy").json()
+    assert snapshot["status"] == "running" and snapshot["turn_id"] == "owner"
+    assert not web._DIRECT_CHAT_TASKS
+
+
+def test_cancelled_queue_releases_tracking_without_overwriting_active_turn(sandbox, monkeypatch):
+    async def scenario():
+        lock = web._session_lock("queue")
+        await lock.acquire()
+        web._save_turn("web:queue", "running", "active", {"turn_id": "owner"})
+        request = web.ChatRequest(message="queued", sessionId="queue")
+        queued = asyncio.create_task(web._run_direct_chat(request, "queue", "", "", lambda *args: None))
+        await asyncio.sleep(0)
+        assert web._DIRECT_CHAT_TASKS
+        with pytest.raises(web.HTTPException) as error:
+            await web.api_chat_transport_save(web.ChatTransportRequest(transport="openclaw"))
+        assert error.value.status_code == 409
+        queued.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await queued
+        assert not web._DIRECT_CHAT_TASKS
+        assert lock.locked()
+        lock.release()
+        snapshot = json.loads(web._turn_file("web:queue").read_text())
+        assert snapshot["turn_id"] == "owner" and snapshot["status"] == "running"
+    asyncio.run(scenario())
+
+
+def test_doctor_recognizes_local_openclaw_backend(tmp_path, monkeypatch):
+    from easel.commands import doctor
+    for key in SETTINGS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(doctor, "PROJECT_ROOT", tmp_path)
+    (tmp_path / ".env").write_text("\n".join(
+        f"{key}={value}" for key, value in SETTINGS.items() if key != "EASEL_DIRECT_API_KEY"))
+    assert doctor._env_key_valid()
+    (tmp_path / ".env").write_text("EASEL_DIRECT_API_BASE_URL=" + BASE)
+    assert not doctor._env_key_valid()
+
+
+def test_direct_save_rejects_placeholder_and_keeps_valid_config(sandbox):
+    before = web.ENV_FILE.read_text()
+    response = sandbox.post("/api/settings/models/save", json={"channel": "chat", "rows": [
+        {"slot": "direct-api", "baseUrl": BASE, "model": "another", "key": "your-api-key"}]})
+    assert response.status_code == 400
+    assert web.ENV_FILE.read_text() == before
+
+
+def test_snapshot_write_failure_still_releases_session(sandbox, monkeypatch):
+    original = web._save_turn
+    def save(session, status, *args, **kwargs):
+        if status == "done":
+            raise OSError("disk failure")
+        return original(session, status, *args, **kwargs)
+    monkeypatch.setattr(web, "_save_turn", save)
+    upstream(monkeypatch, lambda request: httpx.Response(
+        200, text=sse(chunk("complete", finish="stop"), "[DONE]")))
+    with pytest.raises(OSError):
+        sandbox.post("/api/chat", json={"message": "test", "sessionId": "disk"})
+    assert not web._RUNNING_CHAT
+    assert not web._DIRECT_CHAT_TASKS
+    assert not web._session_lock("disk").locked()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="setup.sh is the Linux/macOS installer")
+def test_local_openclaw_provider_configuration_and_check_mode(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "setup.sh").read_text()
+    start = script.index("    LOCAL_API_PROVIDER_CONFIG=$(")
+    end = script.index('    CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"', start)
+    snippet = script[start:end]
+    preamble = """
+oc_supports() { return 0; }
+oc_set() { printf '%s\\n' "$3" > "$PROVIDER_CAPTURE"; }
+"""
+    capture = tmp_path / "provider.json"
+    environment = {**os.environ, **SETTINGS, "PROJECT_ROOT": str(root),
+                   "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
+                   "PROVIDER_CAPTURE": str(capture)}
+    result = subprocess.run(["bash", "-c", "set -e\n" + preamble + snippet],
+                            env=environment, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    provider = json.loads(capture.read_text())
+    assert provider["baseUrl"] == BASE
+    assert provider["apiKey"] == SETTINGS["EASEL_DIRECT_API_KEY"]
+    assert provider["request"]["allowPrivateNetwork"] is True
+    assert provider["agentRuntime"] == {"id": "openclaw"}
+    assert provider["models"][0]["agentRuntime"] == {"id": "openclaw"}
+    environment["EASEL_DIRECT_API_KEY"] = ""
+    result = subprocess.run(["bash", "-c", "set -e\n" + preamble + snippet],
+                            env=environment, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(capture.read_text())["authHeader"] is False
+    start = script.index('if [ "$SETUP_MODE" = check ]; then\n    emit_action env_set EASEL_CHAT_TRANSPORT')
+    end = script.index('if [ "$CHAT_MODE" = "api" ]; then', start)
+    env_file = tmp_path / ".env"
+    env_file.write_text("EASEL_CHAT_TRANSPORT=http\n")
+    result = subprocess.run(["bash", "-c", "set -e\nemit_action() { :; }\n" + script[start:end]],
+                            env={**environment, "SETUP_MODE": "check", "CHAT_MODE": "api",
+                                 "PROJECT_ROOT": str(tmp_path)}, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert env_file.read_text() == "EASEL_CHAT_TRANSPORT=http\n"

@@ -43,7 +43,8 @@ if str(PROJECT_ROOT / "scripts") not in sys.path:
 
 from easel.gateway_endpoint import chat_completions_url, healthz_url, port_source
 from easel.openclaw_cmd import openclaw_base_cmd
-from easel.persona import load_profile_text, persona_prefix, chat_turn_message, profile_exists, _FILE_ORDER
+from easel.persona import (load_profile_text, persona_prefix, chat_turn_message,
+                           profile_exists, valid_persona_name, _FILE_ORDER)
 from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
 from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_config, api_mode,
                               history_path, read_settings, stream_chat)
@@ -524,7 +525,7 @@ def list_personas() -> list[dict]:
         return []
     result = []
     for d in sorted(PROFILES_DIR.iterdir()):
-        if d.is_dir() and d.name.startswith('_'):
+        if not d.is_dir() or not valid_persona_name(d.name):
             continue
         desc = ''
         identity = d / 'identity.md'
@@ -705,6 +706,25 @@ def _mask(val: str) -> str:
     return '••••' + v[-4:]
 
 
+# 要从回显文本里抹掉的 .env 键：命中这些词的一律当机密处理
+_SECRETISH_RE = re.compile(r'KEY|TOKEN|SECRET|PASSWORD|COOKIE', re.I)
+
+
+def _scrub_secrets(text: str) -> str:
+    """把 .env 里的机密值从要回显给前端的文本里抹掉。
+
+    子进程 stderr 会被原样带到浏览器，而 openclaw 的报错可能回显配置值；
+    按「已知机密的字面量」替换最稳妥，不依赖猜正则能否匹配各家 key 的格式。
+    """
+    out = text
+    for key, val in _read_env().items():
+        v = val.strip().strip('"').strip("'")
+        # 太短的值（占位符、枚举值如 none/http）替换会误伤正常文本
+        if len(v) >= 8 and _SECRETISH_RE.search(key):
+            out = out.replace(v, _mask(v))
+    return out
+
+
 def _key_configured(key: dict, env: dict[str, str]) -> bool:
     '某个 key（含别名）是否已配置。'
     if _is_set(env.get(key['env'])):
@@ -805,7 +825,7 @@ def _model_target_allowed(base: str, slot: str = "") -> bool:
     configured = settings.get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/")
     if slot == "direct-api" and api_mode(settings) and base.rstrip("/") == configured:
         try:
-            api_config(settings)
+            api_config(settings, require_model=False)
             return True
         except DirectAPIError:
             return False
@@ -890,7 +910,21 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
         return '⏳ 这个会话正在另一个窗口运行，请稍候再试'
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=timeout + 30, env=_proxy_env())
-        return clean_agent_output(r.stdout or '') or '（无输出）'
+        out = clean_agent_output(r.stdout or '')
+        if out:
+            return out
+        # 以前这里直接 `or '（无输出）'`：returncode 与 stderr 全部丢弃，于是子进程的
+        # 任何失败（参数不被当前 OpenClaw 版本支持、配置校验不过、provider 报错）都长
+        # 成同一句「（无输出）」，排查只能靠手动把整条命令行复现一遍。
+        # 实测 `--session-key` 在老版 OpenClaw 上不存在，就是被这里藏掉一整轮的。
+        err = clean_agent_output(r.stderr or '')
+        if r.returncode != 0:
+            detail = _scrub_secrets(err)[-400:].strip() or f'退出码 {r.returncode}'
+            return f'❌ agent 执行失败（rc={r.returncode}）：{detail}'
+        # rc=0 但没有任何产出：stderr 里通常有线索（如模型拒答、工具被拦）
+        if err:
+            return f'（无输出）\n\n{_scrub_secrets(err)[-400:].strip()}'
+        return '（无输出）'
     except subprocess.TimeoutExpired:
         return '⏱️ 请求超时'
     except Exception as e:
@@ -1073,6 +1107,88 @@ async def api_status():
             "skills": get_skills(), "personas": list_personas()}
 
 
+@app.get("/api/settings/bootstrap")
+async def api_settings_bootstrap():
+    """首次打开时的自检：模型配好了吗、网关活着吗、上次安装留了什么没做完。
+
+    安装脚本不再在终端问 API Key（改为引导到这里配），所以前端需要一个可靠的
+    「还缺什么」判据。modelConfigured 必须同时满足两件事，这正是 doctor 里那条
+    「全绿却对话报错」防线：
+      - .env 里有可用的认证（_env_key_valid，带占位符识别）；
+      - primary 指向的 provider 在 openclaw.json 里真的配了认证
+        （_primary_model_routable）—— 只查 .env 查不出 provider 一个字没写的情况。
+    """
+    direct = _direct_api_enabled()
+    env_ok = False
+    route_ok = False
+    route_detail = ''
+    try:
+        if direct:
+            api_config(read_settings(ENV_FILE))
+            env_ok = route_ok = True
+        else:
+            from easel.commands.doctor import _env_key_valid, _primary_model_routable
+            env_ok = bool(_env_key_valid())
+            route_ok, route_detail = _primary_model_routable()
+    except DirectAPIError as error:
+        route_detail = str(error)
+    except Exception as e:  # noqa: BLE001
+        route_detail = f'自检失败：{e}'
+
+    warnings: list[dict] = []
+    try:
+        rep = PROJECT_ROOT / 'outputs' / '_install' / 'last-install.json'
+        if rep.is_file():
+            warnings = json.loads(rep.read_text(encoding='utf-8')).get('warnings') or []
+    except Exception:  # noqa: BLE001
+        warnings = []
+
+    return {
+        'modelConfigured': bool(env_ok and route_ok),
+        'envKeyOk': env_ok,
+        'routeOk': bool(route_ok),
+        'routeDetail': route_detail,
+        'gatewayUp': bool(route_ok) if direct else bool(check_gateway()),
+        'openclawConfigExists': _oc_config_path().is_file(),
+        'installWarnings': warnings,
+    }
+
+
+@app.post("/api/gateway/restart")
+async def api_gateway_restart():
+    """重启本机 gateway，让刚保存的模型配置立刻生效。
+
+    为什么需要：默认传输层是 http（见 CHAT_TRANSPORT），对话走的是一个常驻 gateway，
+    由 setup.sh 启动一次。配置改了之后它是否重新读 openclaw.json 取决于 OpenClaw 版本，
+    不是一条该押在安装流程上的假设。
+
+    安全性：web/app.py 绑 0.0.0.0 且无鉴权，所以这个端点刻意做成**无参数**，argv
+    完全固定（复用 easel.commands.gateway 的同一条分发），不接受任何外部输入拼进命令。
+    """
+    if _direct_api_enabled():
+        return {'ok': True, 'note': 'API 直连配置下一轮生效，无需重启 OpenClaw'}
+    script = PROJECT_ROOT / 'scripts' / ('gateway.ps1' if os.name == 'nt' else 'gateway.sh')
+    if not script.is_file():
+        raise HTTPException(500, '找不到 gateway 启动脚本')
+    cmd = (['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script), 'restart']
+           if os.name == 'nt' else ['bash', str(script), 'restart'])
+    try:
+        r = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: subprocess.run(cmd, cwd=str(PROJECT_ROOT), capture_output=True,
+                                   text=True, timeout=120, env=_proxy_env()),
+        )
+    except subprocess.TimeoutExpired:
+        # 超时返回提示而不是 500：网关可能只是起得慢，用户刷新一下就好。
+        return {'ok': False, 'note': '重启超时；可稍后刷新，或手动运行 bash scripts/gateway.sh restart'}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'note': f'重启失败：{e}'}
+    up = check_gateway()
+    tail = clean_agent_output(r.stdout or '')[-200:]
+    return {'ok': bool(up), 'gatewayUp': bool(up),
+            'note': tail or ('网关已重启' if up else '网关未就绪，请查看 /tmp/easel-gateway.log')}
+
+
 @app.get("/api/personas")
 async def api_personas():
     return list_personas()
@@ -1087,7 +1203,7 @@ async def api_persona(name: str):
 
 
 def _valid_persona_name(name: str) -> bool:
-    return bool(name) and "/" not in name and "\\" not in name and not name.startswith((".", "_"))
+    return valid_persona_name(name)
 
 
 def _persona_file_path(name: str, filename: str) -> Path:
@@ -1347,7 +1463,7 @@ def _model_channels() -> dict:
     chat_rows = []
     ob = (env.get("OPENAI_BASE_URL") or "").strip()
     om = (env.get("OPENAI_MODEL") or "").strip()
-    ok_key = bool((env.get("OPENAI_API_KEY") or "").strip())
+    ok_key = _is_set(env.get("OPENAI_API_KEY"))
     if direct:
         chat_rows.append({
             "slot": "direct-api", "order": 1, "name": "本地 / 内网 API 直连",
@@ -1362,27 +1478,46 @@ def _model_channels() -> dict:
             "slot": "openai", "order": 1, "name": "deepseek",
             "sub": "官方直连",
             "type": "openai", "model": om or "deepseek-chat",
-            "baseUrl": ob, "keyMasked": _mask_key(env.get("OPENAI_API_KEY", "")),
+            "baseUrl": ob, "keyMasked": _mask_key(env.get("OPENAI_API_KEY", "") if ok_key else ""),
             "role": "主" if primary.startswith("openai/") else "备",
             "result": "已配置" if ok_key else "缺 key",
         })
+    def _is_primary(pkey: str, model: str) -> bool:
+        """这一行是不是当前的主模型。
+
+        不能像 openai 行那样只比 provider 前缀：anthropic 与 relay 两个槽位现在都落在
+        同一个 anthropic provider 上（见 _sync_anthropic_provider），只比前缀会让两行
+        同时显示「主」。所以连模型一起比；model 本身可能已是 provider/model 形式
+        （CLAUDE_MODEL 按约定就这么写），两种写法都要认。
+        """
+        if not primary or not model:
+            return False
+        return primary == model or primary == f"{pkey}/{model}"
+
     ab = (env.get("ANTHROPIC_BASE_URL") or "").strip()
     ak = (env.get("ANTHROPIC_API_KEY") or "").strip()
+    ak_ok = _is_set(ak)
     if not direct and (ab or ak):
         chat_rows.append({
             "slot": "anthropic", "order": len(chat_rows) + 1, "name": "anthropic", "sub": "官方直连",
             "type": "anthropic", "model": (env.get("CLAUDE_MODEL") or "claude-sonnet-4-6").strip(),
-            "baseUrl": ab or "官方", "keyMasked": _mask_key(ak),
-            "role": "备", "result": "已配置" if ak else "缺 key",
+            "baseUrl": ab or "官方", "keyMasked": _mask_key(ak if ak_ok else ""),
+            # 原来写死「备」：主模型明明是 anthropic/... 时面板也显示备用，和 openai 行
+            # 的处理不一致，用户据此判断「哪个在生效」会判错。
+            "role": "主" if _is_primary("anthropic", (env.get("CLAUDE_MODEL") or "").strip()) else "备",
+            "result": "已配置" if ak_ok else "缺 key",
         })
     lb = (env.get("EASEL_LLM_BASE_URL") or "").strip()
     lk = (env.get("EASEL_LLM_API_KEY") or "").strip()
+    lk_ok = _is_set(lk)
     if not direct and (lb or lk):
         chat_rows.append({
             "slot": "relay", "order": len(chat_rows) + 1, "name": "relay", "sub": "中转站",
             "type": "openai", "model": (env.get("CLAUDE_MODEL") or "deepseek-chat").strip(),
-            "baseUrl": lb or "（未配置）", "keyMasked": _mask_key(lk),
-            "role": "备", "result": "已配置" if lk else "缺 key",
+            "baseUrl": lb or "（未配置）", "keyMasked": _mask_key(lk if lk_ok else ""),
+            # relay 槽位落的也是 anthropic provider（与 setup.sh 的 EASEL_LLM_* 分支一致）
+            "role": "主" if _is_primary("anthropic", (env.get("CLAUDE_MODEL") or "").strip()) else "备",
+            "result": "已配置" if lk_ok else "缺 key",
         })
 
     custom_rows = []
@@ -1401,9 +1536,10 @@ def _model_channels() -> dict:
                     "type": "openai",
                     "protocol": "anthropic" if pv.get("api") == "anthropic-messages" else "openai",
                     "model": mid or "", "baseUrl": pv.get("baseUrl") or "",
-                    "keyMasked": _mask_key(str(pv.get("apiKey") or "")),
+                    "keyMasked": _mask_key(str(pv.get("apiKey") or "")
+                                           if _is_set(str(pv.get("apiKey") or "")) else ""),
                     "role": "主" if primary == f"{pkey}/{mid}" else "备",
-                    "result": "已配置" if str(pv.get("apiKey") or "").strip() else "缺 key",
+                    "result": "已配置" if _is_set(str(pv.get("apiKey") or "")) else "缺 key",
                     "deletable": True,
                 })
     except Exception:  # noqa: BLE001
@@ -1475,7 +1611,7 @@ async def api_chat_transport_save(req: ChatTransportRequest):
         raise HTTPException(400, "请选择 api 或 openclaw")
     if "EASEL_CHAT_TRANSPORT" in os.environ:
         raise HTTPException(409, "运行环境已指定 EASEL_CHAT_TRANSPORT，请修改启动环境后重启")
-    if _RUNNING_CHAT or _BG_TASKS:
+    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS:
         raise HTTPException(409, "请等待当前对话完成或停止后切换模式")
     _write_env_direct({"EASEL_CHAT_TRANSPORT": "api" if req.transport == "api" else "http"})
     return _model_channels()
@@ -1578,6 +1714,10 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
                 if models[0].get('id') != model:
                     models[0]['id'] = model
                     changed = True
+                model_name = models[0].get('name')
+                if not isinstance(model_name, str) or not model_name.strip():
+                    models[0]['name'] = model
+                    changed = True
                 prov['models'] = models
         if primary_ref:
             ref = data.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})
@@ -1612,14 +1752,34 @@ def _sync_anthropic_provider(base: str, key: str) -> str:
         providers = data.setdefault('models', {}).setdefault('providers', {})
         prov = providers.get('anthropic')
         target_base = base or 'https://api.anthropic.com'
+        # 早退判据必须把 api 一起算上：否则一个「baseUrl/apiKey 都对、但缺 api」的
+        # 残缺 provider（旧版本 Web 面板写出来的就是这样）永远修不回来。
         if isinstance(prov, dict) and prov.get('baseUrl') == target_base \
+                and prov.get('api') == 'anthropic-messages' \
                 and (not key or prov.get('apiKey') == key):
             return ''
         new_prov = dict(prov) if isinstance(prov, dict) else {'models': []}
         new_prov['baseUrl'] = target_base
+        # api 必须显式写死。上面的 docstring 一直这么说，但代码此前漏了这一行 ——
+        # 不写时 OpenClaw 2026.2.x 会把该 provider 当成 openai-responses、请求打到
+        # /responses，上游的报错被 gateway 当成正常回复塞进 choices[0].message.content，
+        # 于是 Web 对话静默显示「（无输出）」。与 setup.sh 的 oc_write_anthropic 对齐。
+        new_prov['api'] = 'anthropic-messages'
+        # setup.sh 同样会设这个；两边都写，provider 才不会因为「谁后写」而缺字段。
+        new_prov.setdefault('timeoutSeconds', 600)
         if key:
             new_prov['apiKey'] = key
         new_prov.setdefault('models', [])
+        # 一次性迁移：更早的 Web 面板会把中转站写成一个名叫 relay 的 provider，但从来
+        # 不给它填内容，primary 却指过去。本次若没拿到 key，就把 relay 里的捡回来，
+        # 免得老用户升级后 key 变成孤儿；迁移后删掉 relay，避免两处并存各写一半。
+        legacy = providers.get('relay')
+        if isinstance(legacy, dict):
+            if not key and not base and not _is_set(new_prov.get('apiKey')) \
+                    and _is_set(legacy.get('apiKey')) and legacy.get('baseUrl'):
+                new_prov['apiKey'] = legacy['apiKey']
+                new_prov['baseUrl'] = legacy['baseUrl']
+            providers.pop('relay', None)
         providers['anthropic'] = new_prov
         shutil.copy2(oc, oc.parent / (oc.name + '.bak-web'))
         tmp = oc.parent / (oc.name + '.tmp')
@@ -1657,6 +1817,10 @@ async def api_settings_models_save(req: ModelSaveRequest):
         raise HTTPException(400, "API 直连模式请使用独立的 API 直连通道")
     if any(row.slot == "direct-api" for row in req.rows) and not (direct and ch0 == "chat"):
         raise HTTPException(400, "请先切换到 API 直连模式再保存直连配置")
+    if direct and ch0 == "chat" and any(
+            name in os.environ for name in (
+                "EASEL_DIRECT_API_BASE_URL", "EASEL_DIRECT_API_MODEL", "EASEL_DIRECT_API_KEY")):
+        raise HTTPException(409, "运行环境已指定直连配置，请修改启动环境后重启")
     if ch0 in ("speech", "image", "video", "music"):
         import model_registry as _mr2
         _gid0 = {"speech": "voice", "image": "image", "video": "video", "music": "music"}[ch0]
@@ -1758,7 +1922,12 @@ async def api_settings_models_save(req: ModelSaveRequest):
             if key:
                 updates['EASEL_LLM_API_KEY'] = key
             if is_chat:
-                pkey = 'relay'
+                # 落进 anthropic provider，而不是造一个名叫 relay 的 provider。
+                # setup.sh 的 EASEL_LLM_* 分支写的就是 models.providers.anthropic
+                # （见 oc_write_anthropic）。此前这里只写 .env、从不创建 provider，
+                # 却把 primary 指向 relay/<model> —— 对话直接报
+                # 「No route-compatible authentication source is configured for relay」。
+                pkey = 'anthropic'
         elif slot == 'anthropic':
             if model:
                 updates['CLAUDE_MODEL'] = model
@@ -1793,13 +1962,40 @@ async def api_settings_models_save(req: ModelSaveRequest):
         # 这道闸会把网关用户彻底锁死（连只改模型都保存不了）；而且下面 _sync_openclaw_chat
         # 本来就不会改网关的 baseUrl，没有「拿旧 Key 打新地址」这个风险。
         if is_chat and pkey and base and not key:
-            _pb, _pk = _cur_prov.get(pkey, ('', ''))
-            if _pk and base != _pb.strip().rstrip('/') and not _is_local_gateway_base(_pb):
+            # 换址校验的「现值」要跟配置的权威来源比：openai/relay/anthropic 的权威在 .env
+            # （面板与 setup.sh 都写它），openclaw.json 只是保存时的镜像——setup.sh 配置后
+            # 用户从没用面板保存过的话，镜像可能停在初始值（如 api.openai.com），拿它比对
+            # 会把「原样回传真值」误判成「换址没填 key」，整个面板都保存不了（真机踩中）。
+            # custom 供应商权威就在 openclaw.json，维持原比对。
+            _be, _ke = _SLOT_ENV_KEYS.get(slot, ('', ''))
+            if _be and _is_set(_cur_env.get(_ke)):
+                _pb = (_cur_env.get(_be, '') or '').strip().rstrip('/')
+                _pk = (_cur_env.get(_ke, '') or '').strip()
+                if slot == 'anthropic' and not _pb:
+                    _pb = 'https://api.anthropic.com'
+            else:
+                _pb, _pk = _cur_prov.get(pkey, ('', ''))
+                _pb = _pb.strip().rstrip('/')
+            if _pk and base != _pb and not _is_local_gateway_base(_pb):
                 raise HTTPException(400, f'更换 Base URL 时必须重新填写 API Key（{pkey}）')
+        if is_chat and slot == 'openai' and not key and _is_set(_cur_env.get('OPENAI_API_KEY')) \
+                and (_cur_env.get('OPENAI_BASE_URL') or '').strip() \
+                and not _is_local_gateway_base(_cur_prov.get('openai', ('', ''))[0]):
+            provider_updates['openai']['key'] = _cur_env['OPENAI_API_KEY'].strip()
+            provider_updates['openai']['base'] = (
+                base or _cur_env['OPENAI_BASE_URL'].strip().rstrip('/'))
         if is_chat and pkey and getattr(row, 'primary', False) and model:
-            primary_ref = f'{pkey}/{model}'
+            # model 可能本来就是 provider/model 形式：anthropic 行的 model 直接取自
+            # .env 的 CLAUDE_MODEL，而那个值按约定就写成 anthropic/claude-opus-4-7。
+            # 无脑拼前缀会写出 anthropic/anthropic/claude-opus-4-7，主模型随即不可路由。
+            primary_ref = model if '/' in model else f'{pkey}/{model}'
     if not updates and not provider_updates and not primary_ref:
         raise HTTPException(400, '没有可保存的改动（key 留空表示不改）')
+    if is_chat and direct:
+        try:
+            api_config({**_cur_env, **updates})
+        except DirectAPIError as error:
+            raise HTTPException(400, str(error)) from None
     if updates:
         _write_env_direct(updates)
     note = ''
@@ -1807,11 +2003,30 @@ async def api_settings_models_save(req: ModelSaveRequest):
         note = "API 直连配置已保存，下一轮生效；无需同步 OpenClaw"
     elif is_chat:
         note = _sync_openclaw_chat(provider_updates, keep_custom, primary_ref)
-        # anthropic 槽位不在 provider_updates 里（它不是自定义供应商），但同样要
-        # 落到 openclaw.json 才真正生效 —— setup.sh 写的 provider 可能已过时。
-        if any((r.slot or '').strip() == 'anthropic' for r in req.rows):
-            _an = _sync_anthropic_provider(updates.get('ANTHROPIC_BASE_URL', ''),
-                                          updates.get('ANTHROPIC_API_KEY', ''))
+        # anthropic / relay 两个槽位都不在 provider_updates 里（它们不是自定义供应商），
+        # 但同样要落到 openclaw.json 才真正生效 —— setup.sh 写的 provider 可能已过时。
+        # 两者共用同一个 anthropic provider，和 setup.sh 的映射保持一致。
+        _slots = {(r.slot or '').strip() for r in req.rows}
+        effective_env = {**_cur_env, **updates}
+        sync_slot = ''
+        for candidate in ('relay', 'anthropic'):
+            base_var, key_var = _SLOT_ENV_KEYS[candidate]
+            if candidate in _slots and _is_set(effective_env.get(key_var)) \
+                    and (candidate == 'anthropic' or effective_env.get(base_var, '').strip()):
+                sync_slot = candidate
+                break
+        if not sync_slot:
+            sync_slot = next((candidate for candidate in ('relay', 'anthropic')
+                              if candidate in _slots), '')
+        if sync_slot:
+            base_var, key_var = _SLOT_ENV_KEYS[sync_slot]
+            if _is_set(effective_env.get(key_var)):
+                sync_base = effective_env.get(base_var, '').strip().rstrip('/')
+                sync_key = effective_env[key_var].strip()
+            else:
+                sync_base = _cur_prov.get('anthropic', ('', ''))[0]
+                sync_key = ''
+            _an = _sync_anthropic_provider(sync_base, sync_key)
             if _an:
                 note = f'{note}；{_an}' if note else _an
     resp = {"ok": True, "note": note}
@@ -1988,6 +2203,8 @@ async def api_models_available(req: ModelsFetchRequest):
             _bk, _kk = _FETCH_KEY_BY_SLOT.get(slot, ("", ""))
             _b, _k = _env.get(_bk, ""), _env.get(_kk, "")
         key = (_k or "").strip()
+        if key and base and base != (_b or "").strip().rstrip("/"):
+            raise HTTPException(400, "更换根地址时必须重新填写 Key，不能把已存 Key 发给其他地址")
         if not base and _b:
             base = _b.strip().rstrip("/")
     if not base:
@@ -2004,7 +2221,7 @@ async def api_models_available(req: ModelsFetchRequest):
                    "Authorization": f"Bearer {key}"}
     else:
         url = base + "/models"
-        headers = {"Authorization": f"Bearer {key}"}
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *_a, **_kw):
@@ -2094,7 +2311,8 @@ async def api_models_selftest(req: SelftestRequest):
                     "Authorization": f"Bearer {key}",
                 })
             else:
-                rq = urllib.request.Request(base + "/models", headers={"Authorization": f"Bearer {key}"})
+                headers = {"Authorization": f"Bearer {key}"} if key else {}
+                rq = urllib.request.Request(base + "/models", headers=headers)
             opener = _opener
             if slot == "direct-api" and base == env.get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/"):
                 opener = urllib.request.build_opener(_NoRedirect, urllib.request.ProxyHandler({}))
@@ -2445,6 +2663,7 @@ def _save_turn(sk: str, status: str, text: str, extra: dict | None = None) -> No
 # 后台 supervisor 任务集合：持有强引用防被 GC；每个对话流的 openclaw run 跑在这里，
 # 与客户端 SSE 连接解耦（断线不杀 run）。
 _BG_TASKS: set = set()
+_DIRECT_CHAT_TASKS: set = set()
 
 # 正在跑的对话 openclaw 进程（sk→proc），供用户**显式「停止」**终止；断线**不**经此路径（断线不杀）。
 _RUNNING_CHAT: dict = {}
@@ -2464,19 +2683,35 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
     xlock = _CrossProcLock(sk)
     proc = _GatewayHttpProc()
     acquired = False
-    _save_turn(pk, "running", "", {"turn_id": turn_id})
+    claimed = False
+    locked = False
+    settings = read_settings(ENV_FILE)
+    task = asyncio.current_task()
+    _DIRECT_CHAT_TASKS.add(task)
     if lock.locked():
         emit("activity", "⏳ 这个会话上一条还在跑，排队等它结束…")
-    await lock.acquire()
     try:
-        acquired = await asyncio.to_thread(xlock.acquire, min(TIMEOUT_CHAT, 300))
+        await lock.acquire()
+        locked = True
+        deadline = time.monotonic() + min(TIMEOUT_CHAT, 300)
+        while True:
+            acquired = xlock.acquire(0)
+            if acquired:
+                break
+            xlock.release()
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.2)
         if not acquired:
             raise DirectAPIError("这个会话正在另一个窗口运行，请稍候再试")
         # Existing OpenClaw conversations have different histories. Require a new
         # session rather than silently discard their context when switching modes.
         if (_transport_pin_file(sk).is_file()
-                or (OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(sk)}.jsonl").is_file()):
+                or (OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(sk)}.jsonl").is_file()
+                or (OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(pk)}.jsonl").is_file()):
             raise DirectAPIError("此会话属于 OpenClaw，请新建会话使用 API 直连")
+        _save_turn(pk, "running", "", {"turn_id": turn_id})
+        claimed = True
         proc._task = asyncio.current_task()
         _RUNNING_CHAT[sk] = proc
         emit("activity", "🧠 正在通过 API 思考…")
@@ -2484,7 +2719,7 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
         async def consume():
             nonlocal clean_end, reason
             async for kind, text in stream_chat(
-                    read_settings(ENV_FILE), content, system=system,
+                    settings, content, system=system,
                     history_file=history_path(SESSIONS_DIR, sk), timeout=TIMEOUT_CHAT):
                 if kind == "finish":
                     clean_end, reason = True, text
@@ -2507,14 +2742,20 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
     finally:
         proc.finish()
         snapshot = "".join(full_text) + (f"\n\n❌ {error_message}" if error_message else "")
-        _save_turn(pk, "done", snapshot, {
-            "turn_id": turn_id, "clean_end": clean_end, "stop_reason": reason,
-        })
-        if _RUNNING_CHAT.get(sk) is proc:
-            _RUNNING_CHAT.pop(sk, None)
-        _STOPPED_CHAT.discard(sk)
-        xlock.release()
-        lock.release()
+        try:
+            if claimed:
+                _save_turn(pk, "done", snapshot, {
+                    "turn_id": turn_id, "clean_end": clean_end, "stop_reason": reason,
+                })
+        finally:
+            if _RUNNING_CHAT.get(sk) is proc:
+                _RUNNING_CHAT.pop(sk, None)
+            if claimed:
+                _STOPPED_CHAT.discard(sk)
+            xlock.release()
+            if locked:
+                lock.release()
+            _DIRECT_CHAT_TASKS.discard(task)
     return "".join(full_text)
 
 
@@ -2550,10 +2791,20 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
                 idle_since = time.monotonic()
                 for event in batch:
                     cursor = int(event["id"])
+                    raw = event.get("data")
+                    # job 日志里 question 的 data 已是序列化 JSON 字符串（实时流
+                    # forward() 对 question 原样透传），这里若再 json.dumps 会双层
+                    # 转义 → 前端 JSON.parse 拿到字符串而非对象 → ask_user 选项
+                    # 卡片渲染成空壳。其余事件存原文/dict，与实时流的 dumps 规则
+                    # 一致。因此仅 question 按实时流规则原样透传。
+                    if event["event"] == "question" and isinstance(raw, str):
+                        data_out = raw
+                    else:
+                        data_out = json.dumps(raw, ensure_ascii=False)
                     yield {
                         "id": str(cursor),
                         "event": event["event"],
-                        "data": json.dumps(event.get("data"), ensure_ascii=False),
+                        "data": data_out,
                     }
                     if event["event"] in ("done", "error"):
                         return
@@ -2607,7 +2858,8 @@ async def api_chat_stream(req: ChatRequest):
         timed_out = False                # 只有真·超时才 terminate 进程；断线绝不杀
 
         # Claim this turn before waiting for locks, so recovery cannot return the previous turn.
-        _save_turn(pk, "running", "", {"turn_id": turn_id})
+        if not direct:
+            _save_turn(pk, "running", "", {"turn_id": turn_id})
 
         event_path = _job_event_file(turn_id)
         try:
@@ -4344,12 +4596,13 @@ async def api_delete_session(session_key: str):
 
 
 TREND_SOURCES: dict[str, tuple[str, str | None]] = {
-    "weibo": ("https://60s.viki.moe/v2/weibo", "https://v2.xxapi.cn/api/weibohot"),
-    "douyin": ("https://60s.viki.moe/v2/douyin", "https://v2.xxapi.cn/api/douyinhot"),
-    "zhihu": ("https://60s.viki.moe/v2/zhihu", None),
-    "bilibili": ("https://60s.viki.moe/v2/bili", "https://v2.xxapi.cn/api/bilibilihot"),
-    "baidu": ("https://60s.viki.moe/v2/baidu/hot", "https://v2.xxapi.cn/api/baiduhot"),
-    "toutiao": ("https://60s.viki.moe/v2/toutiao", None),
+    "weibo": ("https://v2.xxapi.cn/api/weibohot", "https://60s.viki.moe/v2/weibo"),
+    "douyin": ("https://v2.xxapi.cn/api/douyinhot", "https://60s.viki.moe/v2/douyin"),
+    "zhihu": ("https://api.zhihu.com/topstory/hot-list?limit=50", "https://60s.viki.moe/v2/zhihu"),
+    "bilibili": ("https://v2.xxapi.cn/api/bilibilihot", "https://60s.viki.moe/v2/bili"),
+    "baidu": ("https://v2.xxapi.cn/api/baiduhot", "https://60s.viki.moe/v2/baidu/hot"),
+    "toutiao": ("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
+                "https://60s.viki.moe/v2/toutiao"),
 }
 TREND_LABELS = {
     "weibo": "微博",
@@ -4360,31 +4613,58 @@ TREND_LABELS = {
     "toutiao": "头条",
 }
 _TREND_CACHE: dict[str, tuple[float, list]] = {}
+_HOT_TITLE_KEYS = ("title", "Title", "word", "name", "keyword")
+_HOT_HOT_KEYS = ("hot", "hot_value", "HotValue", "hotValue", "num", "detail_text")
+_HOT_URL_KEYS = ("url", "Url", "link", "mobil_url")
 
 
 def _http_get_json(url: str, timeout: int = 8):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Easel"})
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+    })
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
-def _parse_hot(obj: dict) -> list[dict]:
-    data = obj.get("data")
+def _pick_str(data: object, keys: tuple[str, ...]) -> str:
+    if not isinstance(data, dict):
+        return ""
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _trend_web_url(url: str) -> str:
+    match = re.fullmatch(r'https?://api\.zhihu\.com/questions/(\d+)', url)
+    return f'https://www.zhihu.com/question/{match.group(1)}' if match else url
+
+
+def _parse_hot(obj: object) -> list[dict]:
+    data = obj.get("data") if isinstance(obj, dict) else None
     if isinstance(data, dict):
         data = data.get("data") or data.get("list") or []
-    out = []
-    if isinstance(data, list):
-        for it in data:
-            if not isinstance(it, dict):
-                continue
-            title = it.get("title") or it.get("word") or it.get("name") or it.get("keyword")
-            if not title:
-                continue
-            out.append({
-                "title": str(title),
-                "hot": str(it.get("hot") or it.get("hot_value") or it.get("num") or ""),
-                "url": it.get("url") or it.get("link") or it.get("mobil_url") or "",
-            })
+    out: list[dict] = []
+    if not isinstance(data, list):
+        return out
+    for item in data:
+        if isinstance(item, str):
+            if item.strip():
+                out.append({"title": item.strip(), "hot": "", "url": ""})
+            continue
+        if not isinstance(item, dict):
+            continue
+        target = item.get("target") if isinstance(item.get("target"), dict) else {}
+        title = _pick_str(item, _HOT_TITLE_KEYS) or _pick_str(target, _HOT_TITLE_KEYS)
+        if not title:
+            continue
+        hot = _pick_str(item, _HOT_HOT_KEYS) or _pick_str(target.get("metrics_area"), ("text",))
+        url = _pick_str(item, _HOT_URL_KEYS) or _pick_str(target, _HOT_URL_KEYS)
+        out.append({"title": title, "hot": hot, "url": _trend_web_url(url)})
     return out
 
 
@@ -4422,6 +4702,7 @@ async def api_trends(platforms: str = "weibo,douyin,zhihu", limit: int = 12):
             "platform": pf,
             "label": TREND_LABELS.get(pf, pf),
             "items": items[:max(1, min(limit, 30))],
+            "ok": bool(items),
         })
     return {"trends": result, "updated": int(now)}
 

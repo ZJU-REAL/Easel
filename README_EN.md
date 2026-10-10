@@ -34,7 +34,7 @@
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/195527?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-195527" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/195527/daily?language=Python" alt="ZJU-REAL%2FEasel | Trendshift" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/195527?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-195527" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/195527/daily?language=Python" alt="ZJU-REAL%2FEasel | Trendshift" width="250" height="55"/></a> <a href="https://trendshift.io/repositories/195527?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-195527" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/195527/weekly?language=Python" alt="ZJU-REAL%2FEasel | Trendshift" width="250" height="55"/></a>
 </p>
 
 ![Easel product poster](assets/readme/poster.png)
@@ -44,6 +44,25 @@
 Easel is an open-source content workspace for social media creators. It connects an OpenClaw Agent, account profiles, content Skills, and real media tools, enabling the Agent to produce and archive content instead of merely explaining what to do, with direct or on-demand publishing when needed.
 
 Think of Easel as a content partner that remembers your positioning, audience, voice, platform constraints, preferences, and past performance. It stays with you from trend discovery through publishing, then carries what it learns into the next creation cycle.
+
+### Local OpenAI-Compatible Gateways
+
+Configure an independent gateway in `.env`:
+
+```dotenv
+EASEL_DIRECT_API_BASE_URL=http://localhost:50288/v1
+EASEL_DIRECT_API_MODEL=your-model-id
+EASEL_DIRECT_API_KEY=your-real-gateway-key
+```
+
+Use a base URL including `/v1`, not the full `/chat/completions` URL. Leave the key empty for gateways without authentication.
+
+- `bash setup.sh` uses OpenClaw by default. A complete independent configuration creates the `local-api` provider with OpenClaw's tool runtime and permits requests to the configured private gateway. The model must support tool calling. Configure `.env` before installation; there is no terminal model-selection wizard.
+- `bash setup.sh --api` skips OpenClaw installation, skills synchronization, and Gateway startup. Alternatively, select **API direct** in the Web model settings, or set `EASEL_CHAT_TRANSPORT=api` manually.
+- Direct mode supports streaming chat, separate multi-turn history, profiles, text/image attachments, stop, and reconnection. It cannot execute local tools, skills, or publishing. Start a new conversation after changing modes.
+- Direct configuration only reads `EASEL_DIRECT_API_*`; it never falls back to `OPENAI_*`. CLI `chat`, `ping`, and `doctor` recognize direct mode. `ping` verifies actual connectivity; a configured badge alone does not.
+
+These installer options apply to Linux/macOS `setup.sh`. Windows users can configure direct mode in `.env` or Web settings.
 
 Easel promotional demo:
 
@@ -174,11 +193,21 @@ easel web
 
 > If you see `easel: command not found`, the virtual environment is not activated. You can also run it by full path without activating, e.g. `.venv/bin/easel doctor` (Windows: `.venv\Scripts\easel.exe doctor`).
 
-`bash setup.sh` is a rerunnable guided installer. It detects and reuses an existing local OpenClaw
+`bash setup.sh` is a rerunnable installer. It detects and reuses an existing local OpenClaw
 installation without touching `~/.openclaw/`; Easel uses its isolated `~/.openclaw-easel/` profile.
-When an existing OpenClaw default model is found, the installer asks whether to reuse its model name.
-If no model is configured, it interactively asks for an Anthropic API key and model name. You may also
-copy `.env.example` and fill it in before running the installer.
+
+**Configure your model API key in the browser — the installer no longer asks for it in the terminal.**
+After installing, run `easel web`; on first open it takes you straight to *Settings → Model config*.
+Enter your key and save, and Easel writes the OpenClaw configuration and restarts the gateway for you
+— no need to rerun `setup.sh`. The panel can also list a provider's available models and run a
+connectivity self-test, neither of which the old terminal prompt could do. Alternatively, copy
+`.env.example`, fill in a key, and run `easel doctor` to re-check.
+
+The installer is fully non-interactive apart from one question (whether to create `.venv`, which takes
+its default when stdin is not a TTY), so it is safe for CI. Non-fatal problems — FFmpeg, Chromium,
+gateway startup, missing model config — are collected into a summary at the end and written to
+`outputs/_install/last-install.json` for `easel doctor` to repeat; the install itself still exits 0.
+Set `EASEL_SETUP_STRICT=1` to turn those warnings back into hard failures.
 
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
 

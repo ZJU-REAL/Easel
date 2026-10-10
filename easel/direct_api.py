@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -39,7 +40,7 @@ def api_mode(settings: dict[str, str]) -> bool:
     return settings.get("EASEL_CHAT_TRANSPORT", "http").strip().lower() == "api"
 
 
-def api_config(settings: dict[str, str]) -> tuple[str, str, str]:
+def api_config(settings: dict[str, str], *, require_model: bool = True) -> tuple[str, str, str]:
     base = settings.get("EASEL_DIRECT_API_BASE_URL", "").strip().rstrip("/")
     model = settings.get("EASEL_DIRECT_API_MODEL", "").strip()
     key = settings.get("EASEL_DIRECT_API_KEY", "").strip()
@@ -53,15 +54,28 @@ def api_config(settings: dict[str, str]) -> tuple[str, str, str]:
         valid = False
     if not valid:
         raise DirectAPIError("请填写有效的 EASEL_DIRECT_API_BASE_URL，例如 http://localhost:50288/v1")
-    if not model or any(c in model for c in "\r\n"):
+    if (require_model and not model) or any(c in model for c in "\r\n"):
         raise DirectAPIError("请填写 EASEL_DIRECT_API_MODEL，例如 gpt-6.1-sol")
-    if any(c.isspace() for c in key) or "REPLACE_ME" in key.upper():
+    if any(c.isspace() for c in key) or re.search(
+            r"replace_me|your[-_]?api[-_]?key|^xxx$|^\.{3}$|^<.*>$", key, re.I):
         raise DirectAPIError("EASEL_DIRECT_API_KEY 无效，请填写网关的真实 Key；无需鉴权时可留空")
     return base, model, key
 
 
 def history_path(directory: Path, session: str) -> Path:
     return directory / "api" / f"{hashlib.sha256(session.encode()).hexdigest()}.json"
+
+
+async def _sse_payloads(response: httpx.Response):
+    data_lines = []
+    async for line in response.aiter_lines():
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+        if not line and data_lines:
+            yield "\n".join(data_lines)
+            data_lines = []
+    if data_lines:
+        yield "\n".join(data_lines)
 
 
 async def stream_chat(settings: dict[str, str], content: str | list, *,
@@ -83,7 +97,6 @@ async def stream_chat(settings: dict[str, str], content: str | list, *,
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     text = []
     finish_reason = None
-    done = False
     try:
         # Local/private gateways must bypass inherited system HTTP proxies.
         # Redirects must never forward the credential to a different destination.
@@ -93,16 +106,8 @@ async def stream_chat(settings: dict[str, str], content: str | list, *,
                                      json=body, headers=headers) as response:
                 if response.status_code != 200:
                     raise DirectAPIError(f"API 返回 HTTP {response.status_code}，请检查地址、Key 和模型")
-                data_lines = []
-                async for line in response.aiter_lines():
-                    if line.startswith("data:"):
-                        data_lines.append(line[5:].lstrip())
-                    if line or not data_lines:
-                        continue
-                    payload = "\n".join(data_lines)
-                    data_lines = []
+                async for payload in _sse_payloads(response):
                     if payload == "[DONE]":
-                        done = True
                         break
                     try:
                         event = json.loads(payload)
@@ -133,7 +138,7 @@ async def stream_chat(settings: dict[str, str], content: str | list, *,
         raise DirectAPIError("回复达到模型长度上限，已保留收到的内容，请重试或缩小请求")
     if finish_reason not in (None, "stop"):
         raise DirectAPIError("模型未正常完成回复，请检查网关的 finish_reason")
-    if not text or not (done or finish_reason == "stop"):
+    if not text or finish_reason != "stop":
         raise DirectAPIError("API 流中断或返回空回复，请重试")
     if history_file is not None:
         history_file.parent.mkdir(parents=True, exist_ok=True)

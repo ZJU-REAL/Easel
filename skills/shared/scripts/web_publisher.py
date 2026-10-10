@@ -263,6 +263,19 @@ LAUNCH_ARGS = [
 ]
 
 
+def _block_heavy(context, platform: str) -> None:
+    if platform != "weixin-channels":
+        return
+
+    def handle_route(route, request):
+        if request.resource_type in {"media", "font"}:
+            route.abort()
+        else:
+            route.continue_()
+
+    context.route("**/*", handle_route)
+
+
 def _die(msg: str, code: int = 1) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
     sys.exit(code)
@@ -1126,6 +1139,7 @@ def cmd_login_qr(a) -> int:
             args=LAUNCH_ARGS + ["--no-proxy-server"])
         page = browser.pages[0] if browser.pages else browser.new_page()
         try:
+            _block_heavy(browser, a.platform)
             page.goto(cfg["login_url"], wait_until="domcontentloaded")
             # 给客户端 redirect + 登录态渲染时间：已登录常从入口页跳到 /profile 等，
             # 固定 1.2s 经常不够（快手实测 → 误判未登录去截整页）。等 login_check 出现最多 6s。
@@ -1258,6 +1272,7 @@ def cmd_whoami(a) -> int:
                 args=LAUNCH_ARGS + ["--no-proxy-server"])
             page = browser.pages[0] if browser.pages else browser.new_page()
             try:
+                _block_heavy(browser, a.platform)
                 page.goto(cfg["publish_url"], wait_until="domcontentloaded", timeout=30000)
                 _settle_login(page, cfg)  # 等客户端跳转落定，避免 SPA 未跳转期误判已登录
                 logged = _is_logged_in(page, cfg)

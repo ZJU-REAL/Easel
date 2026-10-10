@@ -26,13 +26,20 @@
       })();
     </script>
     <link rel="icon" type="image/png" href="./static/easel-icon-transparent.png" />
+    <!-- Google Fonts 改为非阻塞加载：stylesheet 的 <link> 默认阻塞首屏渲染，而
+         fonts.googleapis.com 在中国大陆网络下是 net::ERR_TIMED_OUT，于是整个页面要
+         等到连接超时才画出来。media="print" + onload 切回 all 是标准的 non-blocking
+         写法：拿得到就用设计字体，拿不到就安静地回退到 index.css 里的本地字体栈。
+         两组字体合并成一次请求，preconnect 也去重。 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&family=Manrope:wght@400;500;600&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet" />
+    <link
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&family=Manrope:wght@400;500;600&family=Noto+Serif+SC:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <title>Easel</title>
   </head>
   <body>

@@ -12,6 +12,8 @@ build/
 .env
 .env.local
 .env.xhs
+# setup.sh 默认把 Python 依赖装进项目内的 .venv（见 setup.sh 的虚拟环境分支）
+.venv/
 
 # Docker
 docker/data/

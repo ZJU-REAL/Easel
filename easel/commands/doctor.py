@@ -156,6 +156,14 @@ def _env_key_valid() -> bool:
 
     ping 才是权威连通性测试；这里只做静态配置存在性检查。
     """
+    settings = read_settings(PROJECT_ROOT / ".env")
+    if any(settings.get(name, "").strip() for name in (
+            "EASEL_DIRECT_API_BASE_URL", "EASEL_DIRECT_API_MODEL", "EASEL_DIRECT_API_KEY")):
+        try:
+            api_config(settings)
+            return True
+        except DirectAPIError:
+            return False
     env_file = PROJECT_ROOT / ".env"
     if not env_file.is_file():
         return False

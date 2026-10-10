@@ -12,7 +12,7 @@ import { mediaUrl } from './api';
  * - 其他文件      → 可点击链接（/api/media 直开/下载，新标签页）
  * - 目录          → `#/outputs/<路径>` 锚点，由 App 监听 hashchange 跳内容库对应层级
  * - 绝对路径      → 先归一成 outputs/ 相对路径再分类（盘符 / ~ / POSIX 前缀都收敛掉）
- * - 围栏代码块 / 已有 markdown 链接 → 一律不动（防破坏命令示例，保证幂等）
+ * - 围栏代码块 → 原样保留；已有 markdown 链接仅转换本地产物目标
  * - 行内代码      → agent 习惯把路径包在反引号里；仅当整个 code span 就是一个
  *                   产物路径时转为链接，路径嵌在命令中（如 `py x.py --output outputs/`）则不动
  */
@@ -35,7 +35,7 @@ const REST = '[^\\s`|~～<>"\'“”‘’()\\[\\]{}:,;，。；：！？、（�
  *  都会被当成本项目产物路径，把原文搅烂。 */
 const OUT_RE = new RegExp(`(?<![A-Za-z0-9:.\\/])outputs\\/(?:${REST})+`, 'g');
 
-/** 受保护区：围栏代码块、行内代码、已有的 markdown 链接 —— 原样保留 */
+/** 将代码与已有链接独立分段，避免把链接标签和代码当作裸路径处理。 */
 const PROTECT = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)\n]*\))/g;
 
 function toMediaUrl(outputsPath: string): string {
@@ -90,6 +90,27 @@ function asWholePath(codeSpan: string): string | null {
   return WHOLE_PATH_RE.test(t) ? t : null;
 }
 
+/** 已有链接也可能由 agent 写成绝对文件路径，不能作为网站路径直接打开。 */
+function transformLink(seg: string): string {
+  const match = seg.match(/^(\[[^\]]*\])\((?:<([^>]+)>|([^\s]+))\)$/);
+  if (!match) return seg;
+  let target = match[2] || match[3];
+  // 外部 URL、API 地址和已转换的锚点保持不变。
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target) || target.startsWith('//') || target.startsWith('#') || target.startsWith('/api/')) return seg;
+  try { target = decodeURIComponent(target); } catch { return seg; }
+  target = target.replace(ABS_PREFIX, 'outputs/').replace(/\\/g, '/');
+  if (!target.startsWith('outputs/')) return seg;
+  const rel = target.slice('outputs/'.length);
+  if (!rel || rel.split('/').some(part => part === '..' || part === '.')) return seg;
+  // 文件进入内容库预览；图片保留媒体目标，以便已有 ![图片] 正常内联。
+  try {
+    const url = IMG_RE.test(target) ? toMediaUrl(target) : toJumpUrl(target);
+    return `${match[1]}(${url})`;
+  } catch {
+    return seg;
+  }
+}
+
 /** 入口：整段 markdown 先按受保护区切开；普通文本段做变换，
  *  行内代码仅在「整体就是产物路径」时整体替换为链接。 */
 export function linkifyOutputs(md: string): string {
@@ -102,7 +123,7 @@ export function linkifyOutputs(md: string): string {
         const whole = asWholePath(seg);
         if (whole) return renderPath(whole);
       }
-      return seg;
+      return transformLink(seg);
     })
     .join('');
 }

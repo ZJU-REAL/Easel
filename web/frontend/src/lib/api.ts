@@ -171,7 +171,7 @@ export function deletePersona(name: string): Promise<{ ok: boolean; deleted: str
 
 // ---- 热点雷达 ----
 export interface TrendItem { title: string; hot: string; url: string; }
-export interface TrendGroup { platform: string; label: string; items: TrendItem[]; }
+export interface TrendGroup { platform: string; label: string; items: TrendItem[]; ok?: boolean; }
 export function fetchTrends(platforms: string, limit = 12): Promise<{ trends: TrendGroup[]; updated: number }> {
   return request(`/api/trends?platforms=${encodeURIComponent(platforms)}&limit=${limit}`);
 }
@@ -596,7 +596,13 @@ export function streamChat(
         } else if (currentEvent === 'activity' && onActivity) {
           try { onActivity(JSON.parse(data) as string); } catch { onActivity(data); }
         } else if (currentEvent === 'question' && onQuestion) {
-          try { onQuestion(JSON.parse(data) as ChatQuestion); } catch { /* 解析失败忽略 */ }
+          // 防御：question 事件负载必须是对象且带 questions 数组。旧后端重放流曾把
+          // question 双层序列化（JSON.parse 后得到字符串），透传会渲染出无法作答的
+          // 空壳卡片——宁可不显示，交给用户手动追问。
+          try {
+            const q = JSON.parse(data) as ChatQuestion;
+            if (q && typeof q === 'object' && Array.isArray(q.questions)) onQuestion(q);
+          } catch { /* 解析失败忽略 */ }
         } else if (currentEvent === 'heartbeat') {
           // 防呆心跳：独立于 activity/thinking，仅作「未卡住」提示，不覆盖真实状态。
           if (onHeartbeat) { try { onHeartbeat(JSON.parse(data) as string); } catch { onHeartbeat(data); } }
@@ -876,10 +882,11 @@ export interface ModelsFetchResponse { baseUrl: string; models: string[]; fetche
  */
 export function fetchAvailableModels(
   baseUrl: string, key: string, protocol: string, slot = '',
+  name = '',
 ): Promise<ModelsFetchResponse> {
   return request('/api/settings/models/available', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ baseUrl, key, protocol, slot }),
+    body: JSON.stringify({ baseUrl, key, protocol, slot, name }),
   });
 }
