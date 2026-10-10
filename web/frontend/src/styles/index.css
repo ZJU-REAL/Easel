@@ -1344,6 +1344,11 @@ textarea.field { resize: vertical; min-height: 90px; }
    （原生 datalist 样式不可控且选中后无明显反馈），点选项填入，面板外点击关闭。 */
 .settings-overlay .model-cell { display: flex; align-items: center; gap: 6px; min-width: 0; position: relative; }
 .settings-overlay .model-cell input.mock { min-width: 0; flex: 1 1 auto; }
+.settings-overlay .custom-model-cell { flex-wrap: wrap; }
+.settings-overlay .thinking-controls { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+.settings-overlay .thinking-controls label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.settings-overlay .thinking-controls input { accent-color: var(--accent-end); margin: 0; }
+.settings-overlay .thinking-controls select { min-width: 0; max-width: 100%; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
 .settings-overlay .fetch-btn {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; padding: 3px 9px; border-radius: var(--radius-sm);

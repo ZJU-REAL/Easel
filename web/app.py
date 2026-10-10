@@ -31,7 +31,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from sse_starlette.sse import EventSourceResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -894,6 +894,28 @@ def _api_spec_status(skill: str, env: dict[str, str]) -> dict:
     }
 
 
+def _agent_thinking_level() -> str:
+    try:
+        data = json.loads(_oc_config_path().read_text(encoding="utf-8"))
+        agents = data.get("agents", {})
+        reference = agents.get("defaults", {}).get("model", {})
+        for agent in agents.get("list", []):
+            if isinstance(agent, dict) and agent.get("id") == "main" and agent.get("model"):
+                reference = agent["model"]
+                break
+        primary = reference.get("primary", "") if isinstance(reference, dict) else reference
+        if not isinstance(primary, str) or "/" not in primary:
+            return THINKING_LEVEL
+        provider, model_id = primary.split("/", 1)
+        models = data.get("models", {}).get("providers", {}).get(provider, {}).get("models", [])
+        for model in models:
+            if isinstance(model, dict) and model.get("id") == model_id:
+                return "off" if model.get("reasoning") is False else THINKING_LEVEL
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    return THINKING_LEVEL
+
+
 def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | None = None) -> str:
     if _direct_api_enabled():
         raise HTTPException(409, "API 直连模式支持聊天；此操作需要具备文件和技能执行工具的 Agent 运行时")
@@ -902,7 +924,7 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
     # 钉死 --session-id 让 OpenClaw 每轮续同一 transcript（防跨天空闲后新起空会话丢历史，见 _openclaw_session_id）
     cmd = openclaw_base_cmd() + ['--profile', OPENCLAW_PROFILE, 'agent', '--agent', 'main',
            '--session-key', f'agent:main:{sk}', '--session-id', _openclaw_session_id(sk),
-           '--thinking', THINKING_LEVEL,
+           '--thinking', _agent_thinking_level(),
            '--timeout', str(timeout), '--message', msg]
     # 跨进程锁：同一会话同时刻只跑一个 openclaw，防并发 takeover 崩溃（rc=1）
     xlock = _CrossProcLock(sk)
@@ -1531,10 +1553,15 @@ def _model_channels() -> dict:
                     continue
                 models = pv.get("models") if isinstance(pv.get("models"), list) else []
                 mid = models[0].get("id", "") if models and isinstance(models[0], dict) else ""
+                model_entry = models[0] if models and isinstance(models[0], dict) else {}
+                compat = model_entry.get("compat")
+                compat = compat if isinstance(compat, dict) else {}
                 custom_rows.append({
                     "slot": "custom", "order": 0, "name": pkey, "sub": "自定义",
                     "type": "openai",
                     "protocol": "anthropic" if pv.get("api") == "anthropic-messages" else "openai",
+                    "thinking": model_entry.get("reasoning") is True,
+                    "thinkingFormat": compat.get("thinkingFormat", ""),
                     "model": mid or "", "baseUrl": pv.get("baseUrl") or "",
                     "keyMasked": _mask_key(str(pv.get("apiKey") or "")
                                            if _is_set(str(pv.get("apiKey") or "")) else ""),
@@ -1656,6 +1683,12 @@ def _write_env_direct(updates: dict[str, str]) -> None:
 
 
 RESERVED_PROVIDER_KEYS = {"openai", "anthropic", "relay"}
+THINKING_FORMATS = {
+    "openai", "openrouter", "deepseek", "together", "qwen", "qwen-chat-template", "zai",
+}
+THINKING_COMPAT_KEYS = {
+    "thinkingFormat", "supportsReasoningEffort", "supportedReasoningEfforts", "reasoningEffortMap",
+}
 
 
 def _openclaw_provider_creds() -> dict[str, tuple[str, str]]:
@@ -1719,6 +1752,27 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
                     models[0]['name'] = model
                     changed = True
                 prov['models'] = models
+                thinking = vals.get('thinking')
+                if thinking is not None:
+                    before = json.dumps(models[0], sort_keys=True)
+                    models[0]['reasoning'] = thinking
+                    compat = models[0].get('compat')
+                    compat = dict(compat) if isinstance(compat, dict) else {}
+                    if thinking and prov.get('api') != 'anthropic-messages':
+                        compat.setdefault('supportsReasoningEffort', True)
+                        compat['thinkingFormat'] = (
+                            vals.get('thinkingFormat') or compat.get('thinkingFormat') or 'openai'
+                        )
+                        models[0]['compat'] = compat
+                    elif not thinking:
+                        for compat_key in THINKING_COMPAT_KEYS:
+                            compat.pop(compat_key, None)
+                        if compat:
+                            models[0]['compat'] = compat
+                        else:
+                            models[0].pop('compat', None)
+                    if json.dumps(models[0], sort_keys=True) != before:
+                        changed = True
         if primary_ref:
             ref = data.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})
             if ref.get('primary') != primary_ref:
@@ -1801,6 +1855,8 @@ class ModelSaveRow(BaseModel):
     # 自定义供应商的上游协议：openai（默认，/chat/completions）或 anthropic
     # （原生 /v1/messages；中转站卖原生 Claude 格式时选它）。
     protocol: str = ""
+    thinking: StrictBool | None = None
+    thinkingFormat: str | None = None
 
 
 class ModelSaveRequest(BaseModel):
@@ -1952,7 +2008,18 @@ async def api_settings_models_save(req: ModelSaveRequest):
             proto = (getattr(row, 'protocol', '') or '').strip().lower()
             if proto not in ('', 'openai', 'anthropic'):
                 raise HTTPException(400, f'协议只支持 openai / anthropic：{proto}')
+            thinking_format = (row.thinkingFormat or '').strip().lower()
+            if thinking_format and thinking_format not in THINKING_FORMATS:
+                raise HTTPException(400, f'不支持的思考格式：{thinking_format}')
+            if thinking_format and row.thinking is None:
+                raise HTTPException(400, '选择思考格式时需要显式声明是否启用思考')
+            if proto == 'anthropic' and thinking_format:
+                raise HTTPException(400, 'Anthropic 原生协议无需选择 OpenAI 兼容思考格式')
             provider_updates[name] = {'model': model, 'base': base, 'key': key, 'protocol': proto}
+            if row.thinking is not None:
+                provider_updates[name]['thinking'] = row.thinking
+                if thinking_format:
+                    provider_updates[name]['thinkingFormat'] = thinking_format
             keep_custom.add(name)
             pkey = name
         # 同一条规矩也得覆盖 openclaw.json 这一侧：_sync_openclaw_chat 只在 key 非空时改
@@ -2984,7 +3051,7 @@ async def api_chat_stream(req: ChatRequest):
         cmd = openclaw_base_cmd() + [
             "--profile", OPENCLAW_PROFILE, "agent", "--agent", "main",
             "--session-key", f"agent:main:{sk}", "--session-id", _openclaw_session_id(sk),
-            "--thinking", THINKING_LEVEL,
+            "--thinking", _agent_thinking_level(),
             "--timeout", str(TIMEOUT_CHAT), "--message", message,
         ]
         env = _proxy_env()

@@ -762,6 +762,8 @@ export interface ModelRow {
   role: string;
   result: string;
   protocol?: string;
+  thinking?: boolean;
+  thinkingFormat?: string;
   keyNew?: string;
   keyNew2?: string;
   key2Label?: string;
@@ -783,6 +785,8 @@ export interface ModelSaveRow {
   primary?: boolean;
   /** 自定义供应商上游协议：openai（默认）| anthropic */
   protocol?: string;
+  thinking?: boolean;
+  thinkingFormat?: string;
 }
 
 export interface ModelSaveResponse extends ModelChannelsResponse {

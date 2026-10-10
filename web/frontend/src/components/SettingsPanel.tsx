@@ -295,6 +295,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
         primary: r.role === '主',
         // 协议只对自定义供应商有意义；其余行后端不读这个字段
         protocol: r.slot === 'custom' ? (r.protocol || 'openai') : undefined,
+        thinking: r.slot === 'custom' ? r.thinking : undefined,
+        thinkingFormat: r.slot === 'custom' && r.thinking && r.protocol !== 'anthropic'
+          ? (r.thinkingFormat || undefined) : undefined,
       }));
     if (!payload.length) {
       setSavedNote('当前通道没有可保存的配置');
@@ -364,6 +367,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     setChatRows((rs) => [...rs, {
       slot: 'custom', order: 0, name: '', sub: '自定义', type: 'openai',
       model: '', baseUrl: '', keyMasked: '', role: '备', result: '待保存',
+      thinking: false, thinkingFormat: 'openai',
     }]);
   };
 
@@ -490,7 +494,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 <span>{r.type}</span>
               )}
               {ed && ed.model && (!ops?.media || r.adv) ? (
-                <span className="model-cell" ref={(el) => { modelCellRefs.current[i] = el; }}>
+                <span className={`model-cell${isCustom ? ' custom-model-cell' : ''}`} ref={(el) => { modelCellRefs.current[i] = el; }}>
                   <input
                     className="mock"
                     value={r.model}
@@ -535,6 +539,34 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                   {modelLists[i]?.err && (
                     <span className="fetch-err" title={modelLists[i].err}>⚠</span>
                   )}
+                  {isCustom ? (
+                    <span className="thinking-controls">
+                      <label title="仅在上游模型支持推理时开启；格式须与供应商接口一致">
+                        <input
+                          type="checkbox"
+                          checked={r.thinking === true}
+                          onChange={(e) => ops?.onRow?.(i, { thinking: e.target.checked })}
+                        />
+                        该模型会思考
+                      </label>
+                      {r.thinking && r.protocol !== 'anthropic' ? (
+                        <select
+                          aria-label={`${r.name || '自定义供应商'}思考格式`}
+                          value={r.thinkingFormat || ''}
+                          onChange={(e) => ops?.onRow?.(i, { thinkingFormat: e.target.value })}
+                        >
+                          <option value="">保留现有 / 自动</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="deepseek">DeepSeek</option>
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="together">Together</option>
+                          <option value="qwen">Qwen</option>
+                          <option value="qwen-chat-template">Qwen chat template</option>
+                          <option value="zai">ZAI</option>
+                        </select>
+                      ) : null}
+                    </span>
+                  ) : null}
                 </span>
               ) : (
                 <span className={`cell-text${ops?.media && !r.model ? ' dim' : ''}`} title={r.model || '内建默认'}>

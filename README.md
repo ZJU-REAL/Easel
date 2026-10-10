@@ -278,6 +278,10 @@ easel web                    # 启动 Web 工作台
 启动 Web 工作台后访问 `http://localhost:7860`。安装完成后可以运行 `easel doctor` 检查环境，
 运行 `easel ping` 检查 gateway 和 Agent 连通性。
 
+如果 Easel 运行在 VSCode Remote SSH 连接的服务器上，需要在 VSCode 的“端口”面板
+转发服务器端口 `7860`，再打开面板显示的本地转发地址（本地端口可能不同）。
+服务器的 `localhost` 不是你电脑的 `localhost`；不要为了访问而把无认证的工作台暴露到公网。
+
 安装器会统一安装 Web、媒体处理和浏览器发布所需的 Python 依赖：
 
 ```bash
@@ -329,6 +333,19 @@ CLAUDE_MODEL=你的模型名
 
 安装器会把这些标准配置同步到 OpenClaw。OpenClaw 支持但 Easel 没有预设环境变量映射的其他 provider，
 可以按 OpenClaw 自身的 provider/auth 配置方式配置；Easel 不会覆盖这些自定义配置。
+
+在 Web 设置的聊天通道中，自定义供应商可勾选“该模型会思考”，保存后会写入模型的
+`reasoning: true`。OpenAI 兼容协议还可选择思考格式（OpenAI、DeepSeek 等），需与上游
+接口实际支持的格式一致；原生 Anthropic 协议使用其自身的思考格式，无需另选。
+新增行默认关闭，避免对非推理模型发送不支持的参数；已有声明会回显。取消勾选会写入
+`reasoning: false`，仅移除该模型的思考相关兼容项，不影响工具等其它能力声明。
+保存 API 不传 `thinking` 时保持原有声明；启用时保留已有努力档位映射，不推测上游支持的档位。
+思考格式会写入 OpenClaw 的 `compat.thinkingFormat`，实际发送哪些参数由其版本和模型适配器决定；
+例如 OpenClaw 2026.9.8 对普通自定义模型仍可能只发送 `reasoning_effort`，不是任意方言转换器。
+这只是能力声明，不保证网关支持推理，亦不覆盖 `EASEL_THINKING_LEVEL=off`；
+API 直连模式不提供此 OpenClaw 专用开关。
+对显式声明 `reasoning: false` 的当前模型，Web 调用 OpenClaw CLI 时会使用 `--thinking off`，
+避免禁用后仍请求不支持的 `medium` 档位。
 
 `.env.example` 还列出了视频、音乐、语音等可选模型配置。只需要配置实际使用的能力，也可以在 Web
 工作台的“技能库”中填写；没有配置的媒体 Skill 不会影响聊天、策划和文本创作。常见可选项包括：

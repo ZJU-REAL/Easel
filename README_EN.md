@@ -211,6 +211,10 @@ Set `EASEL_SETUP_STRICT=1` to turn those warnings back into hard failures.
 
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
 
+When Easel runs on a server accessed through VSCode Remote SSH, forward server port `7860`
+in VSCode's Ports panel and open the displayed local forwarded address; the local port may differ.
+The server's `localhost` is not your computer's. Do not expose an unauthenticated workspace publicly.
+
 The installer installs the Python dependencies required by the Web UI, media processing, and browser publishing:
 
 ```bash
@@ -229,6 +233,21 @@ CLAUDE_MODEL=anthropic/claude-sonnet-4-6
 ```
 
 `.env.example` also documents optional video, music, voice, and Anthropic-compatible provider settings. Configure only the capabilities you use. Missing media-provider credentials do not prevent chat, planning, or text creation.
+
+Custom chat providers in Web Settings expose a “该模型会思考” (reasoning-capable) checkbox.
+Enabling it writes `reasoning: true`; OpenAI-compatible providers also offer a thinking format
+(OpenAI, DeepSeek, etc.) that must match the upstream API. Native Anthropic uses its own format.
+New rows default to off, while existing declarations are shown. Disabling reasoning writes
+`reasoning: false` and removes only reasoning-related compatibility keys, preserving other
+capabilities. Omitting `thinking` from the save API preserves existing declarations; enabling
+it preserves existing effort mappings rather than guessing supported effort levels.
+The format is stored as OpenClaw's `compat.thinkingFormat`; actual wire parameters depend
+on its version and model adapter. For example, OpenClaw 2026.9.8 may still send only
+`reasoning_effort` for generic custom models; this is not an arbitrary dialect converter.
+This declares capability, not verified upstream support, and does not override
+`EASEL_THINKING_LEVEL=off`. The switch is not available in direct API mode.
+For a current model explicitly marked `reasoning: false`, Web uses `--thinking off`
+when invoking the OpenClaw CLI rather than requesting an unsupported `medium` level.
 
 | Capability | Configuration | Additional dependency |
 |---|---|---|
