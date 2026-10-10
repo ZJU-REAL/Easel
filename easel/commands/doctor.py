@@ -13,6 +13,7 @@ from pathlib import Path
 
 from easel.gateway_endpoint import healthz_url, port_source, resolve_gateway_port
 from easel.openclaw_cmd import openclaw_base_cmd
+from easel.direct_api import DirectAPIError, api_config, api_mode, read_settings
 
 # 项目根目录（Easel/）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +156,14 @@ def _env_key_valid() -> bool:
 
     ping 才是权威连通性测试；这里只做静态配置存在性检查。
     """
+    settings = read_settings(PROJECT_ROOT / ".env")
+    if any(settings.get(name, "").strip() for name in (
+            "EASEL_DIRECT_API_BASE_URL", "EASEL_DIRECT_API_MODEL", "EASEL_DIRECT_API_KEY")):
+        try:
+            api_config(settings)
+            return True
+        except DirectAPIError:
+            return False
     env_file = PROJECT_ROOT / ".env"
     if not env_file.is_file():
         return False
@@ -253,38 +262,43 @@ def _primary_model_routable() -> tuple[bool, str]:
 def cmd_doctor(_args) -> int:
     print("Easel — 环境检查\n")
     all_ok = True
+    settings = read_settings(PROJECT_ROOT / ".env")
+    direct = api_mode(settings)
+    print("  对话模式：" + ("API 直连（无需 OpenClaw）" if direct else "OpenClaw"))
 
     # 1. Runtime prerequisites
     all_ok &= _check("Python >= 3.10", _python_version_ok(),
                       "请安装 Python 3.10 或更高版本")
     all_ok &= _check("Python venv module", _venv_available(),
                       "Debian/Ubuntu 请安装 python3-venv")
-    # openclaw 版本决定 Node 引擎要求：2026.9.x 需要 Node 24.16+，2026.6.x 需要 22.19+（实测其
-    # engines，见 _node_version_ok 的说明）。未装 openclaw 时按 setup 的默认安装目标
-    # （openclaw@latest）从严要求 24.16+。
-    oc_ver = _openclaw_version()
-    node_strict = oc_ver is None or oc_ver >= (2026, 9, 0)
-    node_floor = "24.16" if node_strict else "22.19"
-    has_node = shutil.which("node") is not None
-    node_ok = _node_version_ok(node_strict)
-    node_detail = (f"请安装 Node.js >= {node_floor}: https://nodejs.org/" if not has_node
-                   else f"Node.js 版本不满足当前 OpenClaw 要求，请升级到 >= {node_floor}: https://nodejs.org/")
-    all_ok &= _check(f"Node.js >= {node_floor}", node_ok, node_detail)
+    if not direct:
+        # openclaw 版本决定 Node 引擎要求：2026.9.x 需要 Node 24.16+，2026.6.x 需要 22.19+（实测其
+        # engines，见 _node_version_ok 的说明）。未装 openclaw 时按 setup 的默认安装目标
+        # （openclaw@latest）从严要求 24.16+。
+        oc_ver = _openclaw_version()
+        node_strict = oc_ver is None or oc_ver >= (2026, 9, 0)
+        node_floor = "24.16" if node_strict else "22.19"
+        has_node = shutil.which("node") is not None
+        node_ok = _node_version_ok(node_strict)
+        node_detail = (f"请安装 Node.js >= {node_floor}: https://nodejs.org/" if not has_node
+                       else f"Node.js 版本不满足当前 OpenClaw 要求，请升级到 >= {node_floor}: https://nodejs.org/")
+        all_ok &= _check(f"Node.js >= {node_floor}", node_ok, node_detail)
     all_ok &= _check("FFmpeg", shutil.which("ffmpeg") is not None,
                       "媒体处理需要 FFmpeg；请安装后重试")
 
-    # 2. openclaw command + 版本
-    has_openclaw = shutil.which("openclaw") is not None
-    all_ok &= _check("openclaw command", has_openclaw,
-                      "请安装 openclaw: npm i -g openclaw")
-    if has_openclaw:
-        min_str = ".".join(map(str, MIN_OPENCLAW))
-        ver_str = ".".join(map(str, oc_ver)) if oc_ver else "未知"
-        oc_ver_ok = oc_ver is not None and oc_ver >= MIN_OPENCLAW
-        all_ok &= _check(
-            f"OpenClaw >= {min_str}", oc_ver_ok,
-            f"当前 {ver_str}，过旧会有 provider/schema 兼容问题；请升级：npm i -g openclaw@latest",
-        )
+    if not direct:
+        # 2. openclaw command + 版本
+        has_openclaw = shutil.which("openclaw") is not None
+        all_ok &= _check("openclaw command", has_openclaw,
+                          "请安装 openclaw: npm i -g openclaw")
+        if has_openclaw:
+            min_str = ".".join(map(str, MIN_OPENCLAW))
+            ver_str = ".".join(map(str, oc_ver)) if oc_ver else "未知"
+            oc_ver_ok = oc_ver is not None and oc_ver >= MIN_OPENCLAW
+            all_ok &= _check(
+                f"OpenClaw >= {min_str}", oc_ver_ok,
+                f"当前 {ver_str}，过旧会有 provider/schema 兼容问题；请升级：npm i -g openclaw@latest",
+            )
 
     for module in ("fastapi", "uvicorn", "sse_starlette", "multipart"):
         all_ok &= _check(f"Python package: {module}", _module_available(module),
@@ -296,10 +310,17 @@ def cmd_doctor(_args) -> int:
     all_ok &= _check("Playwright Chromium", _chromium_available(),
                       "运行 python3 -m playwright install chromium")
 
-    # 3. .env file with valid key
-    env_ok = _env_key_valid()
-    all_ok &= _check(".env (API Key)", env_ok,
-                      "填 ANTHROPIC_API_KEY，或 EASEL_LLM_API_KEY + EASEL_LLM_BASE_URL")
+    if direct:
+        try:
+            base, model, _key = api_config(settings)
+            all_ok &= _check(f"API 配置 ({model})", True)
+        except DirectAPIError as error:
+            all_ok &= _check("API 配置", False, str(error))
+    else:
+        # 3. .env file with valid key
+        env_ok = _env_key_valid()
+        all_ok &= _check(".env (API Key)", env_ok,
+                          "填 ANTHROPIC_API_KEY，或 EASEL_LLM_API_KEY + EASEL_LLM_BASE_URL")
 
     # 3.5 本机 agent CLI：有免 key 通道时提示用户（.env 没配也可能是绿灯路径）。
     # 不计入 all_ok —— 装不装 Claude Code 是用户的选择，不是环境故障。
@@ -315,19 +336,20 @@ def cmd_doctor(_args) -> int:
     except Exception:  # noqa: BLE001  探测失败不阻塞 doctor
         pass
 
-    # .env 填了 ≠ setup 真的把 provider 写进了 openclaw；不对账就会「doctor 全绿但对话报错」。
-    route_ok, route_detail = _primary_model_routable()
-    all_ok &= _check("OpenClaw model routing", route_ok, route_detail)
+    if not direct:
+        # .env 填了 ≠ setup 真的把 provider 写进了 openclaw；不对账就会「doctor 全绿但对话报错」。
+        route_ok, route_detail = _primary_model_routable()
+        all_ok &= _check("OpenClaw model routing", route_ok, route_detail)
 
-    # 4. OpenClaw gateway running
-    gw_ok = _gateway_healthy()
-    all_ok &= _check(f"OpenClaw gateway (localhost:{resolve_gateway_port()})", gw_ok,
-                      f"运行 python -m easel gateway start（端口来自 {port_source()}）")
+        # 4. OpenClaw gateway running
+        gw_ok = _gateway_healthy()
+        all_ok &= _check(f"OpenClaw gateway (localhost:{resolve_gateway_port()})", gw_ok,
+                          f"运行 python -m easel gateway start（端口来自 {port_source()}）")
 
-    # 5. Skills synced
-    synced, synced_detail = _skills_synced()
-    all_ok &= _check("Skills synced", synced,
-                      f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash openclaw/sync.sh（Linux/macOS）")
+        # 5. Skills synced
+        synced, synced_detail = _skills_synced()
+        all_ok &= _check("Skills synced", synced,
+                          f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash openclaw/sync.sh（Linux/macOS）")
 
     # 6. Key project files
     gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"

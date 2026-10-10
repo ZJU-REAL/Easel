@@ -45,6 +45,25 @@ Easel is an open-source content workspace for social media creators. It connects
 
 Think of Easel as a content partner that remembers your positioning, audience, voice, platform constraints, preferences, and past performance. It stays with you from trend discovery through publishing, then carries what it learns into the next creation cycle.
 
+### Local OpenAI-Compatible Gateways
+
+Configure an independent gateway in `.env`:
+
+```dotenv
+EASEL_DIRECT_API_BASE_URL=http://localhost:50288/v1
+EASEL_DIRECT_API_MODEL=your-model-id
+EASEL_DIRECT_API_KEY=your-real-gateway-key
+```
+
+Use a base URL including `/v1`, not the full `/chat/completions` URL. Leave the key empty for gateways without authentication.
+
+- `bash setup.sh` uses OpenClaw by default. A complete independent configuration creates the `local-api` provider with OpenClaw's tool runtime and permits requests to the configured private gateway. The model must support tool calling. Configure `.env` before installation; there is no terminal model-selection wizard.
+- `bash setup.sh --api` skips OpenClaw installation, skills synchronization, and Gateway startup. Alternatively, select **API direct** in the Web model settings, or set `EASEL_CHAT_TRANSPORT=api` manually.
+- Direct mode supports streaming chat, separate multi-turn history, profiles, text/image attachments, stop, and reconnection. It cannot execute local tools, skills, or publishing. Start a new conversation after changing modes.
+- Direct configuration only reads `EASEL_DIRECT_API_*`; it never falls back to `OPENAI_*`. CLI `chat`, `ping`, and `doctor` recognize direct mode. `ping` verifies actual connectivity; a configured badge alone does not.
+
+These installer options apply to Linux/macOS `setup.sh`. Windows users can configure direct mode in `.env` or Web settings.
+
 Easel promotional demo:
 
 https://github.com/user-attachments/assets/4dd060dc-53dd-4bb2-99a3-e65ab6f65166

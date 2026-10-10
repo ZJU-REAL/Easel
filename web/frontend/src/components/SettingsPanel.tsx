@@ -5,7 +5,7 @@ import EnvBoard from './EnvBoard';
 import type { JobView } from './EnvBoard';
 import {
   fetchEnvTools, startEnvInstall, fetchEnvJob,
-  fetchModelChannels, runChannelSelftest, saveModelConfig,
+  fetchModelChannels, runChannelSelftest, saveModelConfig, saveChatTransport,
   fetchLocalAgents, enableLocalAgent, fetchAvailableModels,
 } from '../lib/api';
 import type { EnvTool, ModelRow, SelftestResult, LocalAgentInfo } from '../lib/api';
@@ -150,6 +150,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
 
   // ── 模型配置（真值只读 + 真自测） ────────────────────────
   const [chatRows, setChatRows] = useState<ModelRow[]>([]);
+  const [transport, setTransport] = useState<'api' | 'openclaw'>('openclaw');
   const [transRows, setTransRows] = useState<ModelRow[]>([]);
   const [mediaRows, setMediaRows] = useState<Record<string, ModelRow[]>>({});
   const [modelLoading, setModelLoading] = useState(true);
@@ -228,6 +229,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
       .then((d) => {
         if (!alive) return;
         setChatRows(d.channels.chat.rows || []);
+        setTransport(d.transport || 'openclaw');
         setTransRows(d.channels.transcribe.rows || []);
         setMediaRows({
           image: d.channels.image?.rows || [],
@@ -262,6 +264,20 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   // ── 模型配置可编辑（v2）：保存到 .env / openclaw ──────────
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState('');
+
+  const changeTransport = async (value: 'api' | 'openclaw') => {
+    setSaving(true);
+    try {
+      const result = await saveChatTransport(value);
+      setTransport(result.transport || value);
+      setChatRows(result.channels.chat.rows || []);
+      setSavedNote('✓ 模式已切换，请新建对话；未保存的通道草稿已重新加载');
+    } catch (error) {
+      setSavedNote(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const saveCurrent = useCallback(async () => {
     const rows = chan === 'chat' ? chatRows : chan === 'transcribe' ? transRows : (mediaRows[chan] || []);
@@ -334,6 +350,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   };
 
   const SLOT_EDIT: Record<string, { model: boolean; base: boolean }> = {
+    'direct-api': { model: true, base: true },
     openai: { model: true, base: true },
     relay: { model: true, base: true },
     // anthropic 也要能改 Base URL：官方直连之外，中转站/自建网关/兼容代理都靠它
@@ -668,15 +685,20 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 {chan === 'chat' && (
                   <section className="st-panel active">
                     <div className="panel-top">
-                      <span className={`pill ${chatOk ? 'ok' : 'off'}`}><span className="dot" />{chatOk ? '主通道在线' : '未配置'}</span>
-                      <span className="desc">经本地网关路由（主备自动降级）</span>
+                      <span className={`pill ${chatOk ? 'ok' : 'off'}`}><span className="dot" />{chatOk ? (transport === 'api' ? 'API 已配置' : '主通道在线') : '未配置'}</span>
+                      <label className="desc">连接方式： <select value={transport} disabled={saving || modelLoading}
+                        onChange={(e) => void changeTransport(e.target.value as 'api' | 'openclaw')}>
+                        <option value="api">API 直连（无需 OpenClaw）</option>
+                        <option value="openclaw">OpenClaw Agent</option>
+                      </select></label>
                       {selftest && <span className="desc">上次自测 {hhmm(selftest.testedAt)}</span>}
                       <span className="spacer" />
                       <button className="btn btn-sm" onClick={() => void doSelftest('chat')} disabled={testing}>自测本通道</button>
                     </div>
                     {renderBoard(chatRows, { onRow: (i, p) => updateRow(setChatRows, i, p), onPrimary: setPrimaryRow, onRemove: removeRow })}
-                    <div className="add-row" onClick={addProvider}>＋ 添加供应商（填名称 / 模型 / Base URL / Key；点「设为主」切换生效通道）</div>
-                    {(() => {
+                    {transport === 'api' ? <div className="foot-note">此通道使用独立的 EASEL_DIRECT_API_* 配置，与原有 OpenAI 通道分开保存。支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
+                      : <div className="add-row" onClick={addProvider}>＋ 添加供应商（填名称 / 模型 / Base URL / Key；点「设为主」切换生效通道）</div>}
+                    {transport !== 'api' && (() => {
                       // 本机 agent 区块：装了 Claude Code / Gemini CLI 并登录过的用户不需要填 API Key。
                       // 只展示「已装」的行 —— 没装的用户看一眼全是灰的只会困惑。
                       const shown = localAgents.filter((a) => a.installed);
@@ -831,7 +853,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
         </div>
 
         <div className="settings-foot">
-          ⓘ 环境安装在后台执行，装完自动回写状态；模型配置保存写入 .env（对话经本地网关路由，主备自动降级）。
+          ⓘ 模型配置保存写入 .env；API 直连无需同步 OpenClaw，下一轮生效。切换连接方式后请新建对话。
         </div>
       </div>
     </div>
@@ -960,4 +982,3 @@ function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pulling, o
     document.body,
   );
 }
-

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import subprocess
 import sys
@@ -24,6 +25,9 @@ from easel.commands.skill import cmd_skill
 from easel.openclaw_cmd import openclaw_base_cmd
 from easel.persona import list_personas as _list_personas
 from easel.persona import persona_prefix
+from easel.persona import load_profile_text
+from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_mode, history_path,
+                              read_settings, stream_chat)
 from easel.timeouts import TIMEOUT_CHAT
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -122,6 +126,32 @@ def cmd_chat(_args) -> int:
         print(f"\n  {YELLOW}→{NC} 通用模式")
 
     session_key = f"easel-{time.strftime('%m%d-%H%M%S')}"
+
+    if api_mode(read_settings()):
+        print("  API 直连模式（文字问答；/exit 退出）\n")
+        system = SYSTEM_PROMPT
+        if selected_persona:
+            system += "\n\n当前画像：\n" + load_profile_text(selected_persona)
+        async def reply(message):
+            async for kind, text in stream_chat(
+                    read_settings(), message, system=system,
+                    history_file=history_path(PROJECT_ROOT / "outputs" / "_sessions", session_key),
+                    timeout=TIMEOUT_CHAT):
+                if kind == "token":
+                    print(text, end="", flush=True)
+        while True:
+            try:
+                message = input("你：").strip()
+                if message in ("/exit", "/quit"):
+                    return 0
+                if message:
+                    asyncio.run(asyncio.wait_for(reply(message), TIMEOUT_CHAT))
+                    print()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            except (DirectAPIError, asyncio.TimeoutError) as error:
+                print(f"\n❌ {error or 'API 请求超时'}")
 
     print(f"  {DIM}会话: {session_key}{NC}")
     print(f"  {DIM}切换历史会话: 对话中输入 /session{NC}")

@@ -26,6 +26,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export interface StatusResponse {
   gateway: boolean;
+  transport?: string;
   skills: SkillItem[];
   personas: PersonaItem[];
 }
@@ -800,6 +801,7 @@ export function saveModelConfig(channel: string, rows: ModelSaveRow[]): Promise<
 export interface ModelChannelRows { rows: ModelRow[] }
 
 export interface ModelChannelsResponse {
+  transport?: 'api' | 'openclaw';
   channels: {
     chat: ModelChannelRows;
     transcribe: ModelChannelRows;
@@ -813,6 +815,13 @@ export interface ModelChannelsResponse {
 
 export function fetchModelChannels(): Promise<ModelChannelsResponse> {
   return request('/api/settings/models');
+}
+
+export function saveChatTransport(transport: 'api' | 'openclaw'): Promise<ModelChannelsResponse> {
+  return request('/api/settings/chat/transport', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transport }),
+  });
 }
 
 // （保存接口见上方 saveModelConfig）

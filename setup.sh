@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Easel 一键安装
-# 用法: git clone <repo> && cd Easel && bash setup.sh
+# 用法: git clone <repo> && cd Easel && bash setup.sh [--api]
 #
 # 环境隔离：所有 OpenClaw 配置存在 ~/.openclaw-easel/
 # 不影响用户本机已有的 OpenClaw 配置
@@ -11,8 +11,17 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROFILE="easel"
+CHAT_MODE=http
 OPENCLAW_BIN="openclaw"
 oc() { "$OPENCLAW_BIN" --profile "$PROFILE" "$@"; }
+for argument in "$@"; do
+    case "$argument" in
+        --api) CHAT_MODE=api ;;
+        --check) export EASEL_SETUP_MODE=check ;;
+        --strict) export EASEL_SETUP_STRICT=1 ;;
+        *) echo "用法：bash setup.sh [--api] [--check] [--strict]" >&2; exit 1 ;;
+    esac
+done
 
 # macOS ships Bash 3.2; keep the installer portable to that baseline.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -305,9 +314,13 @@ print_summary() {
 clear 2>/dev/null || true
 echo -e "\n${CYAN}╭────────────────────────────────────────────────────╮${NC}"
 echo -e "${CYAN}│${NC}  ${MAGENTA}Easel${NC} · 社媒内容工作台安装向导                 ${CYAN}│${NC}"
-echo -e "${CYAN}│${NC}  ${DIM}OpenClaw-powered · Linux / macOS${NC}                 ${CYAN}│${NC}"
+echo -e "${CYAN}│${NC}  ${DIM}API / OpenClaw · Linux / macOS${NC}                  ${CYAN}│${NC}"
 echo -e "${CYAN}╰────────────────────────────────────────────────────╯${NC}"
-echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
+if [ "$CHAT_MODE" = "api" ]; then
+    echo -e "\n${DIM}  API 直连模式，不安装 OpenClaw，不启动 Gateway。${NC}\n"
+else
+    echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
+fi
 
 # ---- 1. Node.js >= 24.16 ----
 # 跟随 openclaw@latest 的引擎要求：当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0
@@ -490,11 +503,12 @@ if [ -z "$NPM_REGISTRY" ]; then
         warn "npmjs.org 连通性差，自动使用国内镜像 npmmirror.com（可用 EASEL_NPM_REGISTRY 覆盖）"
     fi
 else
-    ok "npm registry: $NPM_REGISTRY（EASEL_NPM_REGISTRY 指定）"
+    ok "npm registry: ${NPM_REGISTRY}（EASEL_NPM_REGISTRY 指定）"
 fi
 NPM_REGISTRY_ARGS=(--registry "$NPM_REGISTRY")
 
 # ---- 3. 检测/安装 OpenClaw（复用用户已有安装，不覆盖全局配置） ----
+if [ "$CHAT_MODE" != "api" ]; then
 step "3/8" "检测 OpenClaw" "已有安装将直接复用"
 info "检查 OpenClaw..."
 if command -v openclaw >/dev/null 2>&1; then
@@ -554,6 +568,10 @@ else
     ok "Profile 初始化完成 → ~/.openclaw-${PROFILE}/"
 fi
 
+else
+    ok "API 直连模式：跳过 OpenClaw 安装和 profile 初始化"
+fi
+
 # ---- 5. 安装 easel CLI ----
 step "5/8" "安装 Easel 运行依赖" "Web · 媒体 · 浏览器发布"
 info "[1/2] 安装 Python 依赖与 easel CLI..."
@@ -577,7 +595,7 @@ if [ -z "$PIP_INDEX" ]; then
     fi
 else
     PIP_INDEX_ARGS=(-i "$PIP_INDEX")
-    ok "PyPI: $PIP_INDEX（EASEL_PIP_INDEX 指定）"
+    ok "PyPI: ${PIP_INDEX}（EASEL_PIP_INDEX 指定）"
 fi
 # --prefer-binary: 新版 biliup 常先发 sdist 后补 wheel，源码构建要求最新 rustc；优先选有 wheel 的旧版本
 PIP_ARGS=(install -e "$PROJECT_ROOT" --prefer-binary --progress-bar on ${PIP_INDEX_ARGS[@]+"${PIP_INDEX_ARGS[@]}"})
@@ -624,6 +642,24 @@ else
     warn "  vim .env"
 fi
 
+# 安装模式由命令参数决定：默认 OpenClaw，只有 --api 选择直连。
+if [ "$SETUP_MODE" = check ]; then
+    emit_action env_set EASEL_CHAT_TRANSPORT "$CHAT_MODE"
+else
+python3 - "$PROJECT_ROOT/.env" "$CHAT_MODE" <<'PYENV'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+lines = [line for line in path.read_text().splitlines()
+         if line.strip().split("=", 1)[0] != "EASEL_CHAT_TRANSPORT"]
+path.write_text("\n".join(lines) + f"\nEASEL_CHAT_TRANSPORT={sys.argv[2]}\n")
+PYENV
+fi
+
+if [ "$CHAT_MODE" = "api" ]; then
+    MODEL_CONFIGURED=false
+    ok "已启用 API 直连；请在 .env 填 EASEL_DIRECT_API_BASE_URL、EASEL_DIRECT_API_MODEL 和网关所需的 EASEL_DIRECT_API_KEY"
+else
 # ---- 8. 同步 skills + workspace ----
 info "同步 Easel skills..."
 # 不要把 stderr 并进管道：sync.sh 解析不出 workspace 时那条警告只走 stderr，且不含 ✓/→，
@@ -642,6 +678,12 @@ fi
 # ---- 9. 认证信息写入 Easel 专属 OpenClaw config ----
 info "同步认证到 OpenClaw profile..."
 source "$PROJECT_ROOT/.env" 2>/dev/null || true
+
+# 独立网关配置优先于原有供应商；部分填写也进入此路径，后续明确校验而不静默回退。
+LOCAL_API_CONFIGURED=false
+if [ -n "${EASEL_DIRECT_API_BASE_URL:-}${EASEL_DIRECT_API_MODEL:-}${EASEL_DIRECT_API_KEY:-}" ]; then
+    LOCAL_API_CONFIGURED=true
+fi
 
 # 部分 OpenClaw 版本执行 config unset 后会把字段留成 null 而非真正删除该键，
 # 一旦落盘就再也无法通过 config set/doctor --fix 修复（每次校验都先失败）。
@@ -727,7 +769,9 @@ usable_key() {
 }
 
 MODEL_CONFIGURED=false
-if usable_key "${ANTHROPIC_API_KEY:-}"; then
+if [ "${LOCAL_API_CONFIGURED:-false}" = true ]; then
+    MODEL_CONFIGURED=true
+elif usable_key "${ANTHROPIC_API_KEY:-}"; then
     MODEL_CONFIGURED=true
 elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     MODEL_CONFIGURED=true
@@ -770,7 +814,45 @@ fi
 # 而非 -z，否则 .env.example 留下的占位符会一直把这支挡掉。
 # EASEL_LLM 要连 BASE_URL 一起判：只填了 key 没填 URL 时它哪条分支都用不上，
 # 不能让这种半拉配置把可用的 OPENAI 也一并挡死、最后落到「认证未配置」。
-if usable_key "${OPENAI_API_KEY:-}" && ! usable_key "${ANTHROPIC_API_KEY:-}" \
+if [ "${LOCAL_API_CONFIGURED:-false}" = true ]; then
+    # 整块替换，避免不完整 provider 与旧模型上的 codex runtime 覆盖。
+    LOCAL_API_PROVIDER_CONFIG=$(EASEL_DIRECT_API_BASE_URL="${EASEL_DIRECT_API_BASE_URL:-}" \
+        EASEL_DIRECT_API_MODEL="${EASEL_DIRECT_API_MODEL:-}" \
+        EASEL_DIRECT_API_KEY="${EASEL_DIRECT_API_KEY:-}" python3 - "$PROJECT_ROOT" <<'PYLOCAL'
+import json
+import os
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from easel.direct_api import DirectAPIError, api_config
+
+try:
+    base, model, key = api_config(os.environ)
+except DirectAPIError as error:
+    raise SystemExit(str(error)) from None
+
+print(json.dumps({
+    "baseUrl": base,
+    "api": "openai-completions",
+    "apiKey": key or "local-gateway",
+    "authHeader": bool(key),
+    "agentRuntime": {"id": "openclaw"},
+    "request": {"allowPrivateNetwork": True},
+    "models": [{"id": model, "name": model, "agentRuntime": {"id": "openclaw"}}],
+}))
+PYLOCAL
+)
+    if oc_supports 'config set' '--replace'; then
+        oc_set '独立网关 provider' models.providers.local-api "$LOCAL_API_PROVIDER_CONFIG" --json-replace '' high
+    else
+        oc_set '独立网关 provider' models.providers.local-api "$LOCAL_API_PROVIDER_CONFIG" --json '' high
+    fi
+    LOCAL_API_MODEL=$(printf '%s' "$LOCAL_API_PROVIDER_CONFIG" | python3 -c \
+        'import json, sys; print(json.load(sys.stdin)["models"][0]["id"])')
+    DEFAULT_PRIMARY_MODEL="local-api/$LOCAL_API_MODEL"
+    CLAUDE_MODEL="$DEFAULT_PRIMARY_MODEL"
+    ok "独立网关已同步为 local-api，使用 OpenClaw 工具运行时"
+elif usable_key "${OPENAI_API_KEY:-}" && ! usable_key "${ANTHROPIC_API_KEY:-}" \
    && ! { usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; }; then
     OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}"
     # 未声明 maxTokens 时 OpenClaw 会自行推导，部分 OpenAI 兼容网关据此拒绝请求
@@ -992,6 +1074,7 @@ info "启动 Easel gateway..."
 if ! run_step 'gateway start' bash "$PROJECT_ROOT/scripts/gateway.sh" start; then
     warn_collect 'Gateway' '启动失败' 'bash scripts/gateway.sh start（日志：/tmp/easel-gateway.log）' high
 fi
+fi
 
 # Playwright is a runtime dependency for browser login/publishing.
 if [ "$SETUP_MODE" = check ]; then
@@ -1040,6 +1123,8 @@ fi
 echo "    easel web                    # 启动 Web 工作台"
 echo "    easel chat                   # 终端对话"
 echo "    easel doctor                 # 检查环境"
-echo "    easel ping                   # Gateway 连通性"
-echo -e "\n  ${DIM}Easel profile：~/.openclaw-${PROFILE}/${NC}"
+echo "    easel ping                   # 当前模式连通性"
+if [ "$CHAT_MODE" != "api" ]; then
+    echo -e "\n  ${DIM}Easel profile：~/.openclaw-${PROFILE}/${NC}"
+fi
 echo -e "  ${DIM}项目目录：$PROJECT_ROOT${NC}\n"

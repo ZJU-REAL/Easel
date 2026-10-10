@@ -97,7 +97,8 @@ def _openai_models_written(tmp_path: Path, **env: str) -> str:
     """跑 setup.sh 的 OpenAI 分支，返回写进 models 的那条 JSON。"""
     lines = SETUP_SH.read_text(encoding="utf-8").splitlines()
     helper = _slice(lines, "usable_key() {", "}", keep_end=True)
-    body = _slice(lines, 'if usable_key "${OPENAI_API_KEY:-}"', "# ---- 10. OpenClaw agent 模型", keep_end=False)
+    body = _slice(lines, 'if [ "${LOCAL_API_CONFIGURED:-false}" = true ]; then',
+                  "# ---- 10. OpenClaw agent 模型", keep_end=False)
     calls = tmp_path / "oc.log"
     script = textwrap.dedent(f"""
         set -u

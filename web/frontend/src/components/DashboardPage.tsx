@@ -32,13 +32,14 @@ function growthInfo(n: number | null): { text: string; color: string } | null {
 interface DashboardProps {
   persona: string;
   gatewayStatus: string;
+  apiDirect: boolean;
   onNavigate: (page: Page) => void;
   onUseTopic: (title: string) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = { idea: '选题', draft: '草稿', scheduled: '待发', published: '已发' };
 
-export default function DashboardPage({ persona, gatewayStatus, onNavigate, onUseTopic }: DashboardProps) {
+export default function DashboardPage({ persona, gatewayStatus, apiDirect, onNavigate, onUseTopic }: DashboardProps) {
   const [trends, setTrends] = useState<TrendGroup[]>([]);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [outputs, setOutputs] = useState<OutputNode[]>([]);
@@ -121,7 +122,8 @@ export default function DashboardPage({ persona, gatewayStatus, onNavigate, onUs
       <div className="dash-hero">
         <h1 className="page-title" style={{ fontSize: 26 }}>{greet} 👋</h1>
         <p className="page-subtitle">
-          {gatewayStatus === 'connected' ? '一切就绪。' : '⚠ 网关未连接。'}
+          {apiDirect ? (gatewayStatus === 'connected' ? 'API 直连已配置，可开始对话。' : '请先配置 API 直连通道。')
+            : gatewayStatus === 'connected' ? '一切就绪。' : '⚠ 网关未连接。'}
           {persona ? ` 当前画像「${persona}」。` : ' 通用模式——指定画像效果更好。'}
           从热点到发布，一站式搞定今天的内容。
         </p>

@@ -27,6 +27,7 @@ interface SidebarProps {
   onSessionArchive: (id: string, archived: boolean) => void;
   onNewChat: () => void;
   gatewayStatus: string;
+  apiDirect: boolean;
   onOpenSettings: () => void;
 }
 
@@ -55,6 +56,7 @@ export default function Sidebar({
   onSessionArchive,
   onNewChat,
   gatewayStatus,
+  apiDirect,
   onOpenSettings,
 }: SidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -171,9 +173,9 @@ export default function Sidebar({
       <div className="sidebar-status">
         <span className={`status-dot ${gatewayStatus === 'connected' ? '' : 'offline'}`} />
         {gatewayStatus === 'connected'
-          ? '网关已连接'
+          ? (apiDirect ? 'API 直连已配置' : '网关已连接')
           : gatewayStatus === 'disconnected'
-            ? '网关离线'
+            ? (apiDirect ? 'API 配置不完整' : '网关离线')
             : '连接中…'}
         <button className="settings-gear" onClick={onOpenSettings} title="设置（模型 · 环境 · 更多）">
           <IconGear size={13} /> 设置
