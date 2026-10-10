@@ -81,7 +81,7 @@ def _run_helpers(tmp_path: Path, body: str, reject_key: str = "", strict: str = 
         "set -euo pipefail\n"
         # 容忍层只依赖这几个展示用变量
         "GREEN=''; RED=''; YELLOW=''; CYAN=''; DIM=''; NC=''\n"
-        "OC='openclaw --profile easel'\n"
+        'oc() { openclaw --profile easel "$@"; }\n'
         "PROJECT_ROOT='%s'\n" % tmp_path
         + f"EASEL_SETUP_STRICT='{strict}'\n"
         + "warn() { echo \"WARN: $*\"; }\n"
@@ -195,7 +195,7 @@ def test_no_naked_config_set_outside_chokepoint() -> None:
     """
     offenders = []
     for n, line in enumerate(SETUP_TEXT.splitlines(), 1):
-        if "$OC config set" not in line:
+        if "oc config set" not in line:
             continue
         # 唯一允许的位置：容忍层内部那一处真正的调用
         if "OC_LAST_OUT=" in line:

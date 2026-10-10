@@ -11,7 +11,8 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROFILE="easel"
-OC="openclaw --profile $PROFILE"
+OPENCLAW_BIN="openclaw"
+oc() { "$OPENCLAW_BIN" --profile "$PROFILE" "$@"; }
 
 # macOS ships Bash 3.2; keep the installer portable to that baseline.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -154,7 +155,7 @@ oc_supports() {   # $1 子命令（如 "config" / "config set"）  $2 要找的�
     eval "rc=\${$cache_var:-}"
     if [ -z "$rc" ]; then
         # shellcheck disable=SC2086  # $1 可能是 "config set" 两个词，需要分词
-        if $OC $1 --help 2>&1 | grep -q -- "$2"; then rc=yes; else rc=no; fi
+        if oc $1 --help 2>&1 | grep -q -- "$2"; then rc=yes; else rc=no; fi
         eval "$cache_var=\$rc"
     fi
     [ "$rc" = yes ]
@@ -180,7 +181,7 @@ _oc_run() {   # $1 key  $2 value  [$3 --json|--json-replace]
     fi
     set +e
     # shellcheck disable=SC2086  # json_flag 为空时不能留下空参数
-    OC_LAST_OUT="$($OC config set "$1" "$2" $json_flag 2>&1)"
+    OC_LAST_OUT="$(oc config set "$1" "$2" $json_flag 2>&1)"
     rc=$?
     set -e
     return $rc
@@ -498,7 +499,7 @@ step "3/8" "检测 OpenClaw" "已有安装将直接复用"
 info "检查 OpenClaw..."
 if command -v openclaw >/dev/null 2>&1; then
     OPENCLAW_BIN="$(command -v openclaw)"
-    OPENCLAW_VERSION_STR="$($OPENCLAW_BIN --version 2>&1 | head -1)"
+    OPENCLAW_VERSION_STR="$("$OPENCLAW_BIN" --version 2>&1 | head -1)"
     ok "检测到 OpenClaw：$OPENCLAW_VERSION_STR"
 else
     info "安装 OpenClaw..."
@@ -519,9 +520,8 @@ else
         echo "OpenClaw 安装后仍未在 PATH 中找到。请把 npm 全局 bin 目录（$(npm prefix -g 2>/dev/null)/bin）加入 PATH 后重新运行 setup.sh（幂等，会跳过已装部分）。" >&2
         exit 1
     fi
-    ok "OpenClaw 已安装：$($OPENCLAW_BIN --version 2>&1 | head -1)"
+    ok "OpenClaw 已安装：$("$OPENCLAW_BIN" --version 2>&1 | head -1)"
 fi
-OC="$OPENCLAW_BIN --profile $PROFILE"
 
 # ---- 4. 初始化 Easel 专属 OpenClaw profile ----
 step "4/8" "初始化 Easel profile" "独立配置、独立 workspace、独立 Gateway"
@@ -529,7 +529,7 @@ info "初始化 Easel profile (--profile $PROFILE)..."
 if [ -f "$HOME/.openclaw-${PROFILE}/openclaw.json" ]; then
     ok "Profile 已存在"
 else
-    ONBOARD_HELP="$($OPENCLAW_BIN onboard --help 2>/dev/null || true)"
+    ONBOARD_HELP="$("$OPENCLAW_BIN" onboard --help 2>/dev/null || true)"
     if [ -n "$ONBOARD_HELP" ]; then
         ONBOARD_ARGS=(onboard --non-interactive --mode local --accept-risk)
         for optional_arg in --skip-health --skip-channels --skip-skills \
@@ -544,9 +544,9 @@ else
             ONBOARD_ARGS+=(--no-install-daemon)
         fi
         run_step 'openclaw onboard' \
-            $OPENCLAW_BIN --profile "$PROFILE" "${ONBOARD_ARGS[@]}"
-    elif $OPENCLAW_BIN setup --help >/dev/null 2>&1; then
-        run_step 'openclaw setup' $OC setup --non-interactive --mode local --accept-risk
+            "$OPENCLAW_BIN" --profile "$PROFILE" "${ONBOARD_ARGS[@]}"
+    elif "$OPENCLAW_BIN" setup --help >/dev/null 2>&1; then
+        run_step 'openclaw setup' oc setup --non-interactive --mode local --accept-risk
     else
         echo "当前 OpenClaw 不支持可用的非交互初始化命令，请升级 OpenClaw 后重试。" >&2
         exit 1
@@ -972,17 +972,17 @@ oc_try gateway.http.endpoints.chatCompletions.enabled true --json || true
 # `config validate` 直到 2026.3 才有；2026.2.x 只有 get/set/unset，直接调会报
 # "too many arguments for 'config'" 并让安装在最后一步前功尽弃。老版本上跳过即可 ——
 # 上面每个 config set 都会各自校验，schema 问题照样会当场暴露。
-if $OC config --help 2>&1 | grep -qE '^\s+validate\b'; then
+if oc config --help 2>&1 | grep -qE '^\s+validate\b'; then
     # 降级而非中断：上面每个 config set 都已各自校验过，整体 validate 失败通常是更早
     # 版本留下的陈旧键，属于可修而非致命 —— 让 doctor 去指引，别把安装卡死在这。
-    if $OC config validate; then
+    if oc config validate; then
         ok "OpenClaw 配置校验通过"
     else
         warn_collect 'OpenClaw 配置校验' '整体校验未通过（多为旧版本遗留的配置键）' \
             "openclaw --profile $PROFILE doctor --fix" high
     fi
 else
-    warn "当前 OpenClaw（$($OPENCLAW_BIN --version 2>&1 | head -1)）不支持 config validate，跳过整体校验"
+    warn "当前 OpenClaw（$("$OPENCLAW_BIN" --version 2>&1 | head -1)）不支持 config validate，跳过整体校验"
 fi
 
 # ---- 11. 启动 gateway ----
