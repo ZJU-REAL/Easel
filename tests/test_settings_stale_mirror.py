@@ -158,7 +158,7 @@ def test_mirror_only_credentials_keep_their_url_on_model_only_save(sandbox, slot
 def test_full_panel_save_uses_complete_relay_pair_like_setup(sandbox, anthropic_key, reverse_rows):
     client, env_path, config_path = sandbox
     seed(env_path, config_path, "relay")
-    with env_path.open("a") as output:
+    with env_path.open("a", encoding="utf-8") as output:
         output.write(f"ANTHROPIC_API_KEY={anthropic_key}\n")
     rows = [
         {"slot": "anthropic", "model": "new-model", "key": ""},
@@ -172,14 +172,14 @@ def test_full_panel_save_uses_complete_relay_pair_like_setup(sandbox, anthropic_
     mirror = json.loads(config_path.read_text())["models"]["providers"]["anthropic"]
     assert mirror["baseUrl"] == "https://new-relay.example/v1"
     assert mirror["apiKey"] == "sk-new-relay-test"
-    assert "EASEL_LLM_BASE_URL=https://new-relay.example/v1" in env_path.read_text()
+    assert "EASEL_LLM_BASE_URL=https://new-relay.example/v1" in env_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("relay_key", ["", "sk-ant-REPLACE_ME", "sk-incomplete-relay-test"])
 def test_full_panel_save_does_not_prefer_incomplete_relay(sandbox, relay_key):
     client, env_path, config_path = sandbox
     seed(env_path, config_path, "anthropic", base="")
-    with env_path.open("a") as output:
+    with env_path.open("a", encoding="utf-8") as output:
         output.write(f"EASEL_LLM_API_KEY={relay_key}\n")
     response = client.post("/api/settings/models/save", json={"rows": [
         {"slot": "anthropic", "model": "new-model"},
@@ -195,7 +195,7 @@ def test_full_panel_without_authoritative_credentials_keeps_mirror_pair(sandbox)
     client, env_path, config_path = sandbox
     seed(env_path, config_path, "anthropic", env_key="sk-ant-REPLACE_ME",
          base="https://unused-official.example")
-    with env_path.open("a") as output:
+    with env_path.open("a", encoding="utf-8") as output:
         output.write("EASEL_LLM_API_KEY=sk-ant-REPLACE_ME\n"
                      "EASEL_LLM_BASE_URL=https://unused-relay.example/v1\n")
     response = client.post("/api/settings/models/save", json={"rows": [
