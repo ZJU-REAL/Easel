@@ -47,6 +47,34 @@ PLATFORMS: dict[str, dict] = {
     "zhihu": {"publisher": "skill-zhihu-publisher", "types": ["article", "answer"],
               "title": 100, "body": 0, "tags": 5, "aspect": "-",
               "note": "文章/回答；专业排版；话题标签"},
+    # ── 海外平台：统一走 Upload-Post API（纯 API，无浏览器/cookie）。title = 帖子文案/caption ──
+    "tiktok": {"publisher": "skill-upload-post-publisher", "types": ["video", "image"],
+               "title": 2200, "body": 0, "tags": 5, "aspect": "9:16",
+               "note": "文案≤2200 字符，话题#接文案后；竖版 9:16；AI 生成内容加 --ai-generated"},
+    "instagram": {"publisher": "skill-upload-post-publisher", "types": ["video", "image"],
+                  "title": 2200, "body": 0, "tags": 30, "aspect": "9:16/4:5",
+                  "note": "Reels 竖版 9:16，图文 4:5 或 1:1；文案≤2200 字符"},
+    "youtube": {"publisher": "skill-upload-post-publisher", "types": ["video"],
+                "title": 100, "body": 5000, "tags": 15, "aspect": "16:9/9:16",
+                "note": "标题≤100 字符，简介≤5000；竖版≤3 分钟即 Shorts；默认 private"},
+    "linkedin": {"publisher": "skill-upload-post-publisher", "types": ["video", "image", "text"],
+                 "title": 3000, "body": 0, "tags": 5, "aspect": "16:9/1:1",
+                 "note": "职场语气；正文≤3000 字符；横版或方形"},
+    "x": {"publisher": "skill-upload-post-publisher", "types": ["video", "image", "text"],
+          "title": 280, "body": 0, "tags": 3, "aspect": "16:9/9:16",
+          "note": "帖子≤280 字符（含话题）；话题 1-3 个"},
+    "facebook": {"publisher": "skill-upload-post-publisher", "types": ["video", "image", "text"],
+                 "title": 0, "body": 0, "tags": 5, "aspect": "9:16/16:9",
+                 "note": "主页帖子；竖版视频按 Reels 发布"},
+    "threads": {"publisher": "skill-upload-post-publisher", "types": ["video", "image", "text"],
+                "title": 500, "body": 0, "tags": 1, "aspect": "9:16/4:5",
+                "note": "帖子≤500 字符；仅 1 个话题标签"},
+    "pinterest": {"publisher": "skill-upload-post-publisher", "types": ["image", "video"],
+                  "title": 100, "body": 500, "tags": 0, "aspect": "2:3",
+                  "note": "需指定画板；竖版 2:3；标题≤100、描述≤500"},
+    "bluesky": {"publisher": "skill-upload-post-publisher", "types": ["video", "image", "text"],
+                "title": 300, "body": 0, "tags": 3, "aspect": "16:9/1:1",
+                "note": "帖子≤300 字符"},
 }
 
 
@@ -151,6 +179,10 @@ def cmd_selftest(_a) -> int:
         plan = [_check_platform(p, m["content"]) for p in m["platforms"]]
         assert len(plan) == 3 and all(x["ok"] for x in plan), "plan 生成异常"
         assert plan[0]["publisher"] == "skill-douyin-upload"
+    # 海外平台统一路由到 Upload-Post publisher
+    intl = _check_platform("tiktok", {"title": "hook #ai", "tags": ["ai"], "media_type": "video"})
+    assert intl["publisher"] == "skill-upload-post-publisher" and not intl["warnings"]
+    assert _check_platform("x", {"title": "x" * 300})["warnings"], "X 超 280 字符应告警"
     print("✅ selftest 通过（约束检查/告警/路由/plan）")
     return 0
 

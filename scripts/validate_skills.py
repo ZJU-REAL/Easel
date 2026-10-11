@@ -46,6 +46,9 @@ PUBLISH_SCRIPT_CONTRACTS = {
     "skills/shared/scripts/zhihu_answer.py": (
         "content_guard.guard_or_die", 'add_argument("--exec"',
     ),
+    "skills/openclaw/skill-upload-post-publisher/scripts/upload_post_publish.py": (
+        "content_guard.guard_or_die", 'add_argument("--exec"',
+    ),
 }
 OUTPUT_SCAN_SUFFIXES = {".md", ".py", ".sh"}
 GENERIC_OUTPUT_DIRS = {"xhs", "test", "tmp", "temp", "demo", "output", "outputs", "result", "results"}

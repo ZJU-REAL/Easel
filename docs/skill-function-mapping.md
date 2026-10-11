@@ -1,7 +1,7 @@
 # Easel Skill 能力地图
 
 > 本文档按 Easel 的内容工作流分层介绍当前技能库。每个条目对应 `skills/openclaw/` 中一个可用的 `SKILL.md`。
-> 当前共 **114 个 Skill**；这里只说明各 Skill 负责什么，具体输入、输出和执行流程请查看对应目录。
+> 当前共 **115 个 Skill**；这里只说明各 Skill 负责什么，具体输入、输出和执行流程请查看对应目录。
 
 ## 🗺️ 分层总览
 
@@ -146,6 +146,7 @@
 | `skill-risk-scanner` | 内容原创度与版权风险评估：分析文案是否存在洗稿/搬运嫌疑，评估素材版权风险， 检查引用规范。 |
 | `skill-seo-quality` | 平台原生搜索流量优化：把内容做成能被平台搜索到的样子。 校验并优化标题/正文关键词布局、话题标签搜索权重、封面/首帧文字关键词、 搜索流量 vs 推荐流量的取舍。覆盖小红书、抖音、知乎、公众号、B站、微博。 |
 | `skill-short-link` | 短链 + UTM 追踪：给内容/投放链接拼接 UTM 追踪参数（来源/媒介/活动）并缩短， 便于在小红书/抖音/公众号等追踪流量来源与活动效果。 |
+| `skill-upload-post-publisher` | 海外平台发布：通过 Upload-Post API 把视频 / 图文 / 纯文本一次发到 TikTok、Instagram、YouTube、LinkedIn、X、Facebook、Threads、Pinterest、Bluesky。 |
 | `skill-wechat-publisher` | 微信公众号文章自动创作与发布工具。给定参考文章、文字或文档，自动搜索整理全网相关信息、生成图文并茂的公众号文章，并发布到微信公众号草稿箱。特别强调反 AI 检测写作。 |
 | `skill-xhs-comment-reply` | 小红书评论互动运营：列出我的笔记、抓取某条笔记下的评论、按画像语气逐条回复、以及删除评论 （含自己发的回复）。 |
 | `skill-xhs-publisher` | 将图文/视频内容发布到小红书（XHS）。 |

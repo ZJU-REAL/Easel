@@ -90,6 +90,7 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'skill-trend-rider': '蹭热点方案',
   'skill-trending-topics': '热榜选题',
   'skill-ugc-discovery': '粉丝 UGC',
+  'skill-upload-post-publisher': '海外平台',
   'skill-voice-builder': '声音画像',
   'skill-wechat-publisher': '公众号',
   'skill-xhs-analyzer': '小红书分析',
