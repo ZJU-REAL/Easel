@@ -34,6 +34,7 @@ class RunRequest:
     timeout: int = 1800
     command: tuple[str, ...] = ()
     session_key: str = ""
+    codex_auto_approve: bool = False
 
 
 class Adapter(Protocol):

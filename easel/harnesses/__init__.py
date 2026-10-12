@@ -69,7 +69,8 @@ async def console_turn(prompt: str, root: Path, env: dict, native_id="", *,
         return answers
 
     request = RunRequest(prompt, root, {**env, "EASEL_AGENT_RUNTIME": runtime}, native_id,
-                         config["models"].get(runtime, ""), config["sandbox"], timeout)
+                         config["models"].get(runtime, ""), config["sandbox"], timeout,
+                         codex_auto_approve=config["codex_auto_approve"])
 
     def bind(value):
         identifiers[0] = value

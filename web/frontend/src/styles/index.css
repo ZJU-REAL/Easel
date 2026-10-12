@@ -496,7 +496,8 @@ textarea.field { resize: vertical; min-height: 90px; }
   background: var(--bg-elevated, #fff); border: 1px solid var(--border, rgba(0,0,0,.08));
   border-radius: var(--radius-lg, 14px); padding: 14px 16px;
   box-shadow: 0 3px 14px rgba(23,25,28,.06);
-  display: grid; gap: 10px; width: 100%;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; width: 100%;
+  min-width: 0; max-width: 100%; overflow-wrap: anywhere;
   animation: fadeIn 0.24s var(--ease);
 }
 .question-card__chip {
@@ -504,10 +505,11 @@ textarea.field { resize: vertical; min-height: 90px; }
   background: var(--accent-start, #4361ee); color: #fff;
   font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase;
 }
-.question-card__title { color: var(--text-strong, #20242c); font-size: 15px; font-weight: 650; line-height: 1.4; }
-.question-card__options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.question-card__title { color: var(--text-strong, #20242c); font-size: 15px; font-weight: 650; line-height: 1.4; white-space: pre-wrap; }
+.question-card__options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 8px; }
 .question-card__option {
-  display: grid; gap: 3px; text-align: left; padding: 11px 12px; cursor: pointer;
+  display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 3px;
+  text-align: left; white-space: normal; padding: 11px 12px; cursor: pointer;
   border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: var(--radius-lg, 12px);
   background: var(--bg, #fff); font: inherit; transition: border-color .16s var(--ease), box-shadow .16s var(--ease);
 }
@@ -523,7 +525,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .question-card__other:disabled { opacity: .55; cursor: default; }
 .question-card__custom { display: flex; gap: 8px; }
 .question-card__custom input {
-  flex: 1; padding: 9px 12px; border-radius: var(--radius, 10px);
+  flex: 1; min-width: 0; padding: 9px 12px; border-radius: var(--radius, 10px);
   border: 1px solid var(--border, rgba(0,0,0,.12)); font: inherit; font-size: 13px;
 }
 .question-card__custom input:focus { outline: 2px solid var(--accent-start, #4361ee); outline-offset: 1px; }
@@ -534,7 +536,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .question-card__custom button:disabled { opacity: .5; cursor: default; }
 .question-card__hint { color: var(--text-secondary, #666); font-size: 12px; }
 .question-card__error { color: #c0392b; }
-.question-card__item { display: grid; gap: 8px; }
+.question-card__item { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; }
 .question-card__divider { height: 1px; background: var(--border, rgba(0,0,0,.08)); margin: 10px 0; }
 .question-card__actions { display: flex; justify-content: flex-end; }
 .question-card__submit {
@@ -1328,6 +1330,19 @@ textarea.field { resize: vertical; min-height: 90px; }
 .settings-overlay input.mock:focus { outline: none; border-color: #9db3d8; box-shadow: 0 0 0 3px rgba(63, 86, 168, 0.10); }
 .settings-overlay input.mock[disabled] { background: var(--surface-2); color: var(--text-tertiary); }
 .settings-overlay .harness-settings { margin-bottom: 20px; }
+.settings-permission-switch {
+  display: inline-flex; align-items: center; width: 40px; height: 24px; padding: 3px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-hover);
+  cursor: pointer; transition: background var(--t-fast);
+}
+.settings-permission-switch[aria-checked="true"] { background: var(--accent-start); border-color: var(--accent-start); }
+.settings-permission-switch__thumb {
+  width: 16px; height: 16px; border-radius: 50%; background: var(--bg);
+  box-shadow: var(--shadow-sm); transition: transform var(--t-fast);
+}
+.settings-permission-switch[aria-checked="true"] .settings-permission-switch__thumb { transform: translateX(16px); }
+.settings-permission-switch:focus-visible { outline: 2px solid var(--accent-end); outline-offset: 3px; }
+.settings-permission-switch:disabled { opacity: .5; cursor: default; }
 .settings-overlay .harness-settings .panel-top { flex-wrap: wrap; }
 .settings-overlay .settings-native-models { display: flex; gap: 9px; align-items: center; margin-bottom: 9px; }
 .settings-overlay .settings-native-models .settings-select-wrap { flex: 1; min-width: 0; }

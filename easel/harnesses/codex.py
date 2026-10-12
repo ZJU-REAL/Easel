@@ -7,6 +7,7 @@ from easel import __version__
 
 from .base import Descriptor, HarnessError, RunRequest
 from .commands import base_command
+from .permissions import can_auto_approve
 from .rpc import connection
 from .workspace import harness_instructions
 
@@ -57,10 +58,14 @@ class CodexAdapter:
                     turn_id and params.get("turnId", turn_id) != turn_id):
                 raise HarnessError("不属于当前会话的请求")
             if method in ("item/commandExecution/requestApproval", "item/fileChange/requestApproval"):
+                if can_auto_approve(method, params, request):
+                    emit("activity", "Codex：已自动通过普通操作授权")
+                    return {"decision": "accept"}
                 detail = params.get("command") or params.get("reason") or params.get("itemId", "")
                 answers = await ask([{
                     "questionId": "permission", "header": "执行授权",
-                    "question": f"Codex 请求额外权限（仅本次）：{str(detail)[:3000]}",
+                    "question": f"Codex 请求额外权限（仅本次）：{str(detail)[:3000]}" + (
+                        "\n此操作不属于可自动批准的普通操作，请确认风险。" if request.codex_auto_approve else ""),
                     "options": [{"label": "允许本次"}, {"label": "拒绝"}],
                 }])
                 return {"decision": "accept" if answers.get("permission") == ["允许本次"] else "decline"}

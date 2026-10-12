@@ -14,6 +14,7 @@ import ipaddress
 import json
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -1713,6 +1714,7 @@ class HarnessSettingsRequest(BaseModel):
     runtime: str
     model: str = Field(default="", max_length=240)
     sandbox: str = "workspace-write"
+    codex_auto_approve: StrictBool | None = None
 
 
 @app.get("/api/settings/harness")
@@ -1744,6 +1746,8 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
         _write_env_direct({"EASEL_CHAT_TRANSPORT": "http"})
     config["runtime"] = req.runtime
     config["sandbox"] = req.sandbox
+    if req.runtime == "codex" and req.codex_auto_approve is not None:
+        config["codex_auto_approve"] = req.codex_auto_approve
     config["models"] = {**config["models"], req.runtime: req.model.strip()}
     harness_store.write_json(OUTPUTS_DIR / "_harness" / "config.json", config)
     from easel.harnesses.rpc import close_sessions
@@ -2976,7 +2980,7 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
                "EASEL_ROOT": str(PROJECT_ROOT)}
         request = RunRequest(message, PROJECT_ROOT, env, native_id,
                              config["models"].get(runtime, ""), config["sandbox"], timeout,
-                             session_key=sk)
+                             session_key=sk, codex_auto_approve=config.get("codex_auto_approve", False))
         await asyncio.wait_for(harnesses.adapter(runtime).run(
             request, receive, ask,
             lambda identifier: harness_store.bind(SESSIONS_DIR, sk, runtime, identifier)), timeout)
@@ -4658,6 +4662,36 @@ async def api_logout(platform: str):
 # 归因层：可抓创作数据的平台（多数走 Playwright 登录态；bilibili 用 biliup cookies 不起浏览器、
 # wechat-oa 走 mp 后台会话 Playwright 拦截数据 XHR）
 ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa"}
+_analytics_inflight: dict[str, asyncio.Task] = {}
+
+
+def _run_analytics_command(cmd: list[str], env: dict[str, str], timeout: int):
+    process = subprocess.Popen(
+        cmd, cwd=str(PROJECT_ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", start_new_session=os.name != "nt")
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            try:
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.kill()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.stdout.close()
+            process.stderr.close()
+            process.wait(timeout=5)
+        raise
 
 
 @app.get("/api/analytics/platforms")
@@ -4672,9 +4706,25 @@ async def api_analytics_platforms():
 
 @app.get("/api/analytics/{platform}")
 async def api_analytics(platform: str):
-    """抓取某平台已登录账号的创作数据（粉丝/获赞/作品 + 与上次快照的增长）。起 headless 浏览器，数秒。"""
+    """抓取某平台已登录账号的创作数据，同平台并发刷新共享一次有时限的任务。"""
     if platform not in ANALYTICS_PLATFORMS:
         raise HTTPException(404, "该平台暂不支持数据抓取")
+    task = _analytics_inflight.get(platform)
+    if task is None or task.done():
+        task = asyncio.create_task(_fetch_analytics(platform))
+        _analytics_inflight[platform] = task
+        task.add_done_callback(lambda finished: _finish_analytics(platform, finished))
+    return await asyncio.shield(task)
+
+
+def _finish_analytics(platform: str, task: asyncio.Task) -> None:
+    if _analytics_inflight.get(platform) is task:
+        _analytics_inflight.pop(platform, None)
+    if not task.cancelled():
+        task.exception()
+
+
+async def _fetch_analytics(platform: str):
     # B站用 cookie 调 API（无浏览器 profile）、公众号走 mp 后台会话（Playwright 拦截数据 XHR，见下），单独分支；其余走 account_stats（Playwright）
     if platform == "bilibili":
         cmd = [sys.executable, str(SHARED_SCRIPTS / "bili_login.py"), "stats",
@@ -4690,18 +4740,28 @@ async def api_analytics(platform: str):
         # 代理策略由 account_stats.py 按平台自定（xhs 直连、其它走 env），后端照常传 _proxy_env
         cmd = [sys.executable, str(SHARED_SCRIPTS / "account_stats.py"), "fetch", "--platform", platform]
     ana_env = _proxy_env()
+    ana_env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     try:
-        proc = await asyncio.to_thread(subprocess.run, cmd, cwd=str(PROJECT_ROOT), env=ana_env,
-                                       capture_output=True, text=True, timeout=180)
+        proc = await asyncio.to_thread(
+            _run_analytics_command, cmd, ana_env, 180 if platform == "wechat-oa" else 90)
     except subprocess.TimeoutExpired:
-        raise HTTPException(504, "抓取超时（浏览器起不来或网络慢）")
+        raise HTTPException(504, "抓取超时，已停止浏览器；请检查网络，关闭正在进行的登录或校验后重试")
     for line in reversed((proc.stdout or "").strip().splitlines()):
         line = line.strip()
         if line.startswith("{"):
             try:
-                return json.loads(line)
+                result = json.loads(line)
             except Exception:
                 continue
+            if not isinstance(result, dict):
+                continue
+            if proc.returncode or result.get("error"):
+                raise HTTPException(502, str(result.get("error") or "平台数据抓取失败")[:240])
+            if (result.get("loggedIn") is True
+                    and all(result.get(key) is None for key in ("followers", "likes", "following", "posts"))
+                    and not result.get("metrics") and not result.get("notes")):
+                raise HTTPException(502, "账号已登录，但平台未返回可用数据；请检查网络或平台维护状态后重试")
+            return result
     detail = (proc.stderr or "").strip().splitlines()[-1:] or ["未取到数据"]
     raise HTTPException(502, f"未取到数据（可能未登录或平台改版）：{detail[0][:120]}")
 

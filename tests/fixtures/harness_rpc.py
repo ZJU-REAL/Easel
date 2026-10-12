@@ -37,7 +37,7 @@ def permission():
     if runtime == "codex":
         send({"id": "permission-request", "method": "item/commandExecution/requestApproval",
               "params": {"threadId": thread_id, "turnId": turn_id, "itemId": "tool",
-                         "command": "read public file"}})
+                         "command": os.environ.get("FAKE_HARNESS_COMMAND", "read public file")}})
     else:
         send({"id": "permission-request", "method": "session/request_permission",
               "params": {"sessionId": session_id, "toolCall": {"title": "read public file"},

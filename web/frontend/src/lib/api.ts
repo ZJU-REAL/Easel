@@ -36,6 +36,7 @@ export interface HarnessSettingsResponse {
   runtime: string;
   models: Record<string, string>;
   sandbox: string;
+  codex_auto_approve: boolean;
   locked: boolean;
   agents: { id: string; label: string; protocol: string; installed: boolean; install_hint: string }[];
 }
@@ -54,11 +55,11 @@ export function fetchHarnessModels(runtime: string): Promise<{ runtime: string; 
   return request(`/api/settings/harness/models/${encodeURIComponent(runtime)}`, { method: 'POST' });
 }
 
-export function saveHarnessSettings(runtime: string, model: string, sandbox: string): Promise<HarnessSettingsResponse> {
+export function saveHarnessSettings(runtime: string, model: string, sandbox: string, codexAutoApprove?: boolean): Promise<HarnessSettingsResponse> {
   return request('/api/settings/harness', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runtime, model, sandbox }),
+    body: JSON.stringify({ runtime, model, sandbox, codex_auto_approve: codexAutoApprove }),
   });
 }
 
@@ -548,11 +549,12 @@ export interface AccountAnalytics {
   likes: number | null;
   following: number | null;
   posts: number | null;
-  metrics: { label: string; value: string; vs: string }[];
+  metrics: { label: string; value: string | number; vs: string }[];
   notes: { title: string; url: string; cover?: string; stat?: string }[];
   growth: Record<'last' | 'day' | 'week' | 'month' | 'year',
     { followers: number | null; likes: number | null; posts: number | null; since_days: number | null } | null>;
   fetched_at: number;
+  warning?: string;
 }
 
 /** 支持抓数据的平台 + 各自登录态。 */
@@ -560,9 +562,10 @@ export function fetchAnalyticsPlatforms(): Promise<AnalyticsPlatform[]> {
   return request<AnalyticsPlatform[]>('/api/analytics/platforms');
 }
 
-/** 抓某平台已登录账号的创作数据（后端起 headless 浏览器，数秒）。 */
+/** 抓某平台已登录账号的创作数据，客户端等待时限略长于后端。 */
 export function fetchAccountAnalytics(platform: string): Promise<AccountAnalytics> {
-  return request<AccountAnalytics>(`/api/analytics/${encodeURIComponent(platform)}`);
+  return request<AccountAnalytics>(`/api/analytics/${encodeURIComponent(platform)}`,
+    { signal: AbortSignal.timeout(platform === 'wechat-oa' ? 195000 : 105000) });
 }
 
 /** 回填短信验证码（登录风控短信墙）：提交后 runner 读走填码继续登录。 */

@@ -997,7 +997,7 @@ def _fill_and_submit(page, title, content, tags):
 # --------------------------------------------------------------------------- #
 # 命令
 # --------------------------------------------------------------------------- #
-def _launch(p, headed: bool, base: str | None, proxy: str | None):
+def _launch(p, headed: bool, base: str | None, proxy: str | None, *, login_assets: bool = True):
     profile = _profile_dir(base)
     profile.mkdir(parents=True, exist_ok=True)
     args = list(LAUNCH_ARGS)
@@ -1020,7 +1020,8 @@ def _launch(p, headed: bool, base: str | None, proxy: str | None):
     for attempt in range(2):
         try:
             context = p.chromium.launch_persistent_context(str(profile), **kwargs)
-            login_transport.install(context, "xiaohongshu")
+            if login_assets:
+                login_transport.install(context, "xiaohongshu")
             return context
         except Exception as e:
             last = e

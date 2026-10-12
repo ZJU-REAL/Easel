@@ -352,6 +352,28 @@ def test_permissions_are_explicit_and_once_only(tmp_path, runtime, adapter, allo
         assert response["result"]["outcome"]["optionId"] == ("once" if allow else "deny")
 
 
+@pytest.mark.parametrize(("command", "expected"), [("ls -la", "accept"), ("sudo reboot", "decline")])
+def test_codex_auto_approval_still_asks_for_high_risk_commands(tmp_path, command, expected):
+    from dataclasses import replace
+
+    request = request_for(tmp_path, "codex", "permission")
+    request = replace(request, codex_auto_approve=True,
+                      env={**request.env, "FAKE_HARNESS_COMMAND": command})
+    asked = []
+
+    async def reject(questions):
+        asked.append(questions)
+        return {"permission": ["拒绝"]}
+
+    asyncio.run(CodexAdapter().run(request, lambda *args: None, reject, lambda identifier: None))
+    response = next(message for message in audit(tmp_path) if message.get("id") == "permission-request")
+    assert response["result"]["decision"] == expected
+    assert bool(asked) == (expected == "decline")
+    for message in audit(tmp_path):
+        if message.get("method") in ("thread/start", "turn/start"):
+            assert message["params"]["approvalPolicy"] == "on-request"
+
+
 @pytest.mark.parametrize("runtime,adapter", [("codex", CodexAdapter), ("acp", ACPAdapter)])
 def test_noninteractive_permission_is_error_not_success(tmp_path, runtime, adapter):
     async def reject(questions):
@@ -596,6 +618,22 @@ def sandbox(tmp_path, monkeypatch):
     local = "http://127.0.0.1:7860"
     with TestClient(web.app, base_url=local, headers={"Origin": local}) as client:
         yield client
+
+
+def test_codex_auto_approval_setting_is_persisted_and_isolated(sandbox):
+    assert sandbox.get("/api/settings/harness").json()["codex_auto_approve"] is False
+    for enabled in (True, False, True):
+        response = sandbox.post("/api/settings/harness", json={
+            "runtime": "codex", "codex_auto_approve": enabled})
+        assert response.status_code == 200
+        assert response.json()["codex_auto_approve"] is enabled
+        assert sandbox.get("/api/settings/harness").json()["codex_auto_approve"] is enabled
+    response = sandbox.post("/api/settings/harness", json={
+        "runtime": "opencode", "codex_auto_approve": False})
+    assert response.status_code == 200
+    assert response.json()["codex_auto_approve"] is True
+    assert sandbox.post("/api/settings/harness", json={
+        "runtime": "codex", "codex_auto_approve": "true"}).status_code == 422
 
 
 def test_web_config_guards_and_no_credential_mutation(sandbox, monkeypatch):

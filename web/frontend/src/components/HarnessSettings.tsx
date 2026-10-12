@@ -11,6 +11,7 @@ export default function HarnessSettings({ onChange, onSelect }: {
   const [runtime, setRuntime] = useState('api');
   const [model, setModel] = useState('');
   const [sandbox, setSandbox] = useState('workspace-write');
+  const [autoApprove, setAutoApprove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const [catalogs, setCatalogs] = useState<Record<string, HarnessModel[]>>({});
@@ -30,6 +31,7 @@ export default function HarnessSettings({ onChange, onSelect }: {
       setRuntime(value.runtime);
       setModel(value.models[value.runtime] || '');
       setSandbox(value.sandbox);
+      setAutoApprove(value.codex_auto_approve ?? false);
       onChange(value.runtime);
       onSelect(value.runtime);
     }).catch((error) => {
@@ -64,7 +66,7 @@ export default function HarnessSettings({ onChange, onSelect }: {
     setBusy(true);
     setNote('');
     try {
-      const value = await saveHarnessSettings(runtime, model, sandbox);
+      const value = await saveHarnessSettings(runtime, model, sandbox, runtime === 'codex' ? autoApprove : undefined);
       setSettings(value);
       onChange(value.runtime);
       setNote('已保存，请新建对话；旧对话仍保留在原底座，不迁移历史。');
@@ -154,6 +156,7 @@ export default function HarnessSettings({ onChange, onSelect }: {
             </div>
           </div>
           {runtime === 'codex' && (
+            <>
             <div className="settings-field">
               <span className="settings-field-label">Codex 沙箱</span>
               <div className="settings-field-body">
@@ -163,11 +166,27 @@ export default function HarnessSettings({ onChange, onSelect }: {
                     { value: 'read-only', label: '只读' },
                   ]}
                   onChange={setSandbox} />
-                <p className="desc">额外权限逐次确认，不自动授予完全访问权限。</p>
+                <p className="desc">保留所选沙箱边界，不授予系统完全访问权限。</p>
               </div>
             </div>
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="codex-auto-approve">永久通过授权</label>
+              <div className="settings-field-body">
+                <button id="codex-auto-approve" type="button" role="switch"
+                  aria-checked={autoApprove} aria-label="永久通过授权"
+                  aria-describedby="codex-auto-approve-help" className="settings-permission-switch"
+                  disabled={busy || settingsLoading || !settings || settings.locked}
+                  onClick={() => setAutoApprove((previous) => !previous)}>
+                  <span className="settings-permission-switch__thumb" />
+                </button>
+                <p id="codex-auto-approve-help" className="desc">保存后持续生效，仅影响 Easel 的 Codex：
+                  自动批准普通文件读取、搜索、Git 查看/拉取，以及项目工作区内的文件修改授权。
+                  sudo、删除、系统修改、执行脚本及无法判断安全性的操作仍需确认；不是无限权限，可随时关闭。</p>
+              </div>
+            </div>
+            </>
           )}
-          <p className="desc">认证由原生 CLI 管理，Easel 不迁移密钥。工具请求额外权限时需在对话中确认；
+          <p className="desc">认证由原生 CLI 管理，Easel 不迁移密钥。未自动批准的额外权限需在对话中确认；
             OpenCode / 通用 ACP 使用其原生权限策略，不是 Codex 沙箱。</p>
           <p className="desc"><code>{selected?.install_hint}</code></p>
           <p className="desc">“已安装”仅表示找到 CLI，不代表模型已登录；保存后请发送消息验证。</p>
