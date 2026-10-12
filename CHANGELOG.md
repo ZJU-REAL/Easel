@@ -2,6 +2,17 @@
 
 All notable changes to Easel are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed Zhihu column articles rendering raw Markdown (`###`, `**bold**`) as literal text. Zhihu's body editor is Draft.js, which ignores Markdown on `text/plain` paste; the publisher now converts Markdown to rich HTML and pastes it as `text/html` (new `paste_md` action in `web_publisher.py`), so headings, bold, lists and blockquotes render correctly.
+- Fixed the Zhihu login check returning false negatives after the 2026 header redesign (`.AppHeader-profile` / `.AppHeader-userInfo` no longer render); login state is now detected via `.AppHeader .Avatar`, and the account name falls back to the same-origin `api/v4/me` endpoint when the header does not render a nickname.
+
+### Documentation
+
+- Added `docs/publishing-field-notes.md`: field notes from real publishing runs — per-platform originality-mark support, the Zhihu rich-text paste requirement, the Xiaohongshu originality declaration flow, and the per-platform cover signature rule.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added
