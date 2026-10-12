@@ -86,16 +86,22 @@ def _fake_bin(tmp_path: Path) -> Path:
     return bin_dir
 
 
-def _run_check(tmp_path: Path, env_lines: str) -> tuple[subprocess.CompletedProcess, list[dict]]:
+def _run_check(tmp_path: Path, env_lines: str, arguments=(), *, forbid_openclaw=False) -> tuple[subprocess.CompletedProcess, list[dict]]:
     """在沙箱里跑一遍 check 模式，返回 (进程结果, 解析出的动作流)。"""
     bin_dir = _fake_bin(tmp_path)
+    if forbid_openclaw:
+        (bin_dir / "openclaw").write_text(
+            f'#!/bin/bash\ntouch "{tmp_path / "openclaw-called"}"\nexit 91\n', encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / ".env")  # 仅为显式说明：下面用的是沙箱里的 .env 副本
 
     work = tmp_path / "repo"
-    shutil.copytree(PROJECT_ROOT, work, symlinks=True, ignore=shutil.ignore_patterns(
-        ".git", ".venv", "node_modules", "outputs", "dist", "__pycache__", "assets"))
+    work.mkdir()
+    shutil.copy(SETUP_SH, work / "setup.sh")
+    shutil.copy(PROJECT_ROOT / ".env.example", work / ".env.example")
+    (work / "web" / "frontend").mkdir(parents=True)
+    (work / "easel").symlink_to(PROJECT_ROOT / "easel", target_is_directory=True)
     (work / ".env").write_text(env_lines, encoding="utf-8")
 
     env = {
@@ -104,7 +110,7 @@ def _run_check(tmp_path: Path, env_lines: str) -> tuple[subprocess.CompletedProc
         "EASEL_SETUP_MODE": "check",
         "TERM": "dumb",
     }
-    proc = subprocess.run(["bash", str(work / "setup.sh")], capture_output=True, text=True,
+    proc = subprocess.run(["bash", str(work / "setup.sh"), *arguments], capture_output=True, text=True,
                           timeout=300, errors="replace", env=env, cwd=str(work))
     actions = []
     for line in proc.stdout.splitlines():
@@ -205,3 +211,20 @@ def test_check_mode_without_key_warns_and_still_exits_zero(tmp_path: Path) -> No
     keys = [a["key"] for a in actions if a["action"].startswith("config_set")]
     assert "agents.defaults.model.primary" not in keys, \
         "没有可用认证时不该写 primary（指向无认证的 provider 比不写更难查）"
+
+
+@needs_bash
+def test_skip_installer_checks_web_without_touching_openclaw_or_credentials(tmp_path):
+    env_lines = "EASEL_CHAT_TRANSPORT=http\nANTHROPIC_API_KEY=sk-ant-REPLACE_ME\n"
+    proc, actions = _run_check(tmp_path, env_lines, ["--skip-openclaw"], forbid_openclaw=True)
+    assert proc.returncode == 0, proc.stderr[-1000:]
+    assert not (tmp_path / "openclaw-called").exists()
+    assert not any(action["action"].startswith("config_") for action in actions)
+    assert not any(action["action"] == "env_set" for action in actions)
+    steps = {action["key"] for action in actions if action["action"] == "run_step"}
+    assert {"pip install", "前端依赖与构建", "playwright chromium", "执行引擎初始设置"} <= steps
+    assert not any("gateway" in step or "openclaw" in step or "sync.sh" in step for step in steps)
+    assert (tmp_path / "repo" / ".env").read_text() == env_lines
+    assert not (tmp_path / "repo" / "outputs" / "_harness" / "config.json").exists()
+    assert "Codex / OpenCode" in proc.stdout
+    assert "下一步：在浏览器里配置模型" not in proc.stdout

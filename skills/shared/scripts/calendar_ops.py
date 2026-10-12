@@ -117,9 +117,9 @@ def _parse_date(s: str):
 # --------------------------------------------------------------------------- #
 def _forward_publish_log(platform: str, title: str, url: str, ptype: str,
                          tags: str, source: str) -> None:
-    # 兼容两种布局：项目根 skills/openclaw/... 与 OpenClaw workspace 拍平后的 skills/...
+    # 兼容两种布局：项目根 skills/builtin/... 与 OpenClaw workspace 拍平后的 skills/...
     candidates = [
-        PROJECT_ROOT / "skills" / "openclaw" / "skill-publish-log" / "scripts" / "log.py",
+        PROJECT_ROOT / "skills" / "builtin" / "skill-publish-log" / "scripts" / "log.py",
         PROJECT_ROOT / "skills" / "skill-publish-log" / "scripts" / "log.py",
     ]
     log_py = next((c for c in candidates if c.is_file()), None)
@@ -305,7 +305,7 @@ def _nth_weekday(year: int, month: int, weekday: int, nth: int):
 
 
 def _locate_lunar():
-    for c in (PROJECT_ROOT / "skills" / "openclaw" / "skill-event-calendar" / "scripts" / "lunar.py",
+    for c in (PROJECT_ROOT / "skills" / "builtin" / "skill-event-calendar" / "scripts" / "lunar.py",
               PROJECT_ROOT / "skills" / "skill-event-calendar" / "scripts" / "lunar.py"):
         if c.is_file():
             return c

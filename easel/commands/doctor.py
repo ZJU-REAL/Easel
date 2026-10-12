@@ -13,7 +13,7 @@ from pathlib import Path
 
 from easel.gateway_endpoint import healthz_url, port_source, resolve_gateway_port
 from easel.openclaw_cmd import openclaw_base_cmd
-from easel.direct_api import DirectAPIError, api_config, api_mode, read_settings
+from easel.direct_api import DirectAPIError, api_config, read_settings
 
 # 项目根目录（Easel/）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -263,8 +263,17 @@ def cmd_doctor(_args) -> int:
     print("Easel — 环境检查\n")
     all_ok = True
     settings = read_settings(PROJECT_ROOT / ".env")
-    direct = api_mode(settings)
-    print("  对话模式：" + ("API 直连（无需 OpenClaw）" if direct else "OpenClaw"))
+    from easel import harnesses
+    runtime = harnesses.settings(PROJECT_ROOT / "outputs", settings)["runtime"]
+    alternate = runtime not in ("api", "openclaw")
+    direct = runtime == "api"
+    print("  对话模式：" + (runtime if alternate else (
+        "API 直连（无需 OpenClaw）" if direct else "OpenClaw")))
+    if alternate:
+        descriptor = harnesses.describe(runtime)
+        all_ok &= _check(f"{runtime} CLI", descriptor["installed"], descriptor["install_hint"])
+        print("  原生认证和模型可用性请运行 easel ping 验证；不读取或迁移凭证")
+        direct = True
 
     # 1. Runtime prerequisites
     all_ok &= _check("Python >= 3.10", _python_version_ok(),
@@ -310,13 +319,13 @@ def cmd_doctor(_args) -> int:
     all_ok &= _check("Playwright Chromium", _chromium_available(),
                       "运行 python3 -m playwright install chromium")
 
-    if direct:
+    if direct and not alternate:
         try:
             base, model, _key = api_config(settings)
             all_ok &= _check(f"API 配置 ({model})", True)
         except DirectAPIError as error:
             all_ok &= _check("API 配置", False, str(error))
-    else:
+    elif not alternate:
         # 3. .env file with valid key
         env_ok = _env_key_valid()
         all_ok &= _check(".env (API Key)", env_ok,
@@ -349,14 +358,14 @@ def cmd_doctor(_args) -> int:
         # 5. Skills synced
         synced, synced_detail = _skills_synced()
         all_ok &= _check("Skills synced", synced,
-                          f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash openclaw/sync.sh（Linux/macOS）")
+                          f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash agents/sync.sh（Linux/macOS）")
 
     # 6. Key project files
     gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"
     gateway_path = PROJECT_ROOT / "scripts" / ("gateway.ps1" if os.name == "nt" else "gateway.sh")
     key_files = [
-        ("openclaw/openclaw.json5", PROJECT_ROOT / "openclaw" / "openclaw.json5"),
-        ("skills/openclaw/", PROJECT_ROOT / "skills" / "openclaw"),
+        ("agents/openclaw.json5", PROJECT_ROOT / "agents" / "openclaw.json5"),
+        ("skills/builtin/", PROJECT_ROOT / "skills" / "builtin"),
         (gateway_label, gateway_path),
     ]
     for label, path in key_files:

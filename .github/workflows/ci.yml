@@ -26,6 +26,8 @@ jobs:
         run: python scripts/validate_skills.py
       - name: Check documented commands against real argparse schemas
         run: python scripts/validate_skill_commands.py
+      - name: Validate documentation and Agent prompt paths
+        run: python scripts/validate_document_paths.py
 
   test:
     name: pytest (${{ matrix.os }})
@@ -48,6 +50,24 @@ jobs:
       - name: Run unit tests
         run: python -m pytest -v
 
+  harness-portability:
+    name: Agent settings (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install settings test dependencies
+        run: python -m pip install pytest fastapi httpx uvicorn sse-starlette python-multipart requests websocket-client cryptography
+      - name: Verify user installations and settings
+        run: python -m pytest -q tests/test_runtime_env.py tests/test_openclaw_cmd_resolution.py tests/test_openclaw_cmd_shim.py tests/test_agent_harnesses.py tests/test_pr1.py tests/test_installation.py tests/test_setup_optional_harness.py
+
   # 两个安装脚本此前在 CI 里零覆盖 —— setup.ps1 把 setup.sh 的版本假设 bug 原样复刻了一
   # 遍却没人发现，根因就在这里。这个 job 全程在 ubuntu 上跑（shellcheck 与 PSScriptAnalyzer
   # 都是跨平台的），~90s，不下载任何东西，适合挂在每个 PR 上。
@@ -59,7 +79,7 @@ jobs:
 
       - name: Bash syntax
         run: |
-          for f in setup.sh scripts/gateway.sh openclaw/sync.sh; do
+          for f in setup.sh scripts/gateway.sh agents/sync.sh; do
             echo "== bash -n $f"
             bash -n "$f"
           done
@@ -70,7 +90,7 @@ jobs:
           scandir: '.'
           severity: warning
           # 技能自带的 vendor 脚本不在本仓库维护范围内
-          ignore_paths: skills/openclaw/video-production/vendor
+          ignore_paths: skills/builtin/video-production/vendor
 
       # PowerShell 侧：解析 + 静态分析。作者的开发机是 Linux，改 setup.ps1 没法本地验证，
       # 这里是唯一的把关点，所以 Error 级别直接判失败。
@@ -184,23 +204,23 @@ jobs:
 
       - name: Install (Linux/macOS)
         if: runner.os != 'Windows'
-        run: bash setup.sh
+        run: bash setup.sh --openclaw
 
       - name: Install (Windows)
         if: runner.os == 'Windows'
         shell: powershell       # 5.1：Windows 自带版本，必须按它验证
-        run: ./setup.ps1
+        run: ./setup.ps1 -OpenClaw -NonInteractive
 
       # 这一条是重点：setup 必须可重入。2026.9.x 拒绝「会删掉已存在子键的整块写入」，
       # 于是首次安装能过、第二次重跑必失败 —— 两边都真实发生过，只有跑第二遍才看得见。
       - name: Install again (idempotency)
         if: runner.os != 'Windows'
-        run: bash setup.sh
+        run: bash setup.sh --openclaw
 
       - name: Install again (idempotency, Windows)
         if: runner.os == 'Windows'
         shell: powershell
-        run: ./setup.ps1
+        run: ./setup.ps1 -OpenClaw -NonInteractive
 
       - name: doctor
         shell: bash

@@ -28,6 +28,7 @@ interface SidebarProps {
   onNewChat: () => void;
   gatewayStatus: string;
   apiDirect: boolean;
+  agentRuntime: string;
   onOpenSettings: () => void;
 }
 
@@ -57,6 +58,7 @@ export default function Sidebar({
   onNewChat,
   gatewayStatus,
   apiDirect,
+  agentRuntime,
   onOpenSettings,
 }: SidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -172,15 +174,14 @@ export default function Sidebar({
 
       <div className="sidebar-status">
         <span className={`status-dot ${gatewayStatus === 'connected' ? '' : 'offline'}`} />
-        {gatewayStatus === 'connected'
-          ? (apiDirect ? 'API 直连已配置' : '网关已连接')
+        <span className="sidebar-status-text">{gatewayStatus === 'connected'
+          ? (apiDirect ? '仅聊天模式已配置' : agentRuntime !== 'openclaw' ? `${agentRuntime} CLI 已安装` : '网关已连接')
           : gatewayStatus === 'disconnected'
-            ? (apiDirect ? 'API 配置不完整' : '网关离线')
-            : '连接中…'}
+            ? (apiDirect ? 'API 配置不完整' : agentRuntime !== 'openclaw' ? `${agentRuntime} CLI 未配置` : '网关离线')
+            : '连接中…'}</span>
         <button className="settings-gear" onClick={onOpenSettings} title="设置（模型 · 环境 · 更多）">
           <IconGear size={13} /> 设置
         </button>
-        <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tertiary)' }}>subnav-1</span>
       </div>
     </div>
   );

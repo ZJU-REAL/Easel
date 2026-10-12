@@ -26,6 +26,19 @@ def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8-sig")
 
 
+def test_windows_optional_openclaw_is_an_explicit_install_choice() -> None:
+    text = _read(SETUP_PS1)
+    before = text[:text.index("$ErrorActionPreference")]
+    assert "[switch]$SkipOpenClaw" in before
+    assert "[switch]$OpenClaw" in before
+    assert "[switch]$NonInteractive" in before
+    assert "if (-not $SkipOpenClaw) {\nStep '2/8'" in text
+    assert "if ($SkipOpenClaw) {\n    Step '6/8'" in text
+    assert "& $Python -m easel.installation $Root api" in text
+    assert "[Console]::IsInputRedirected" in text
+    assert text.index("Step '5/8'") < text.index("$envPath = Join-Path $Root '.env'")
+
+
 def test_dependency_install_preserves_process_path() -> None:
     text = _read(SETUP_PS1)
     start = text.index("function Install-RequiredCommand")

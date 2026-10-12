@@ -2,10 +2,11 @@
 // 避免对同一平台在 TTL 内重复起 headless 浏览器。缓存落 localStorage，条目带 ts。
 import { accountWhoami, type AccountWhoami } from './api';
 
-const KEY = 'easel_whoami';
+const KEY = 'easel_whoami_v4';
 export const WHOAMI_TTL_MS = 600_000; // 10 分钟，与后端 WHOAMI_TTL 对齐
 
 export type WhoamiEntry = AccountWhoami & { ts: number };
+const versions: Record<string, number> = {};
 
 export function getWhoamiCache(): Record<string, WhoamiEntry> {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
@@ -13,6 +14,7 @@ export function getWhoamiCache(): Record<string, WhoamiEntry> {
 
 /** 写缓存；r 为 null 则删除该平台条目。附带 ts 供 TTL 判定（旧格式无 ts→视为过期）。 */
 export function setWhoamiCache(platform: string, r: AccountWhoami | null): void {
+  versions[platform] = (versions[platform] || 0) + 1;
   try {
     const c = getWhoamiCache();
     if (r) c[platform] = { ...r, ts: Date.now() };
@@ -22,7 +24,8 @@ export function setWhoamiCache(platform: string, r: AccountWhoami | null): void 
 }
 
 function isFresh(e: WhoamiEntry | undefined, ttlMs: number): boolean {
-  return !!e && typeof e.ts === 'number' && (Date.now() - e.ts) < ttlMs;
+  const lifetime = e?.loggedIn && (!e.name || !e.avatar) ? Math.min(ttlMs, 60_000) : ttlMs;
+  return !!e && typeof e.ts === 'number' && (Date.now() - e.ts) < lifetime;
 }
 
 interface VerifyOpts {
@@ -50,8 +53,10 @@ export function verifyStale(platforms: string[], opts: VerifyOpts = {}): void {
     while (next < todo.length) {
       if (opts.alive && !opts.alive()) return;
       const p = todo[next++];
+      const version = versions[p] || 0;
       try {
         const r = await accountWhoami(p);
+        if ((versions[p] || 0) !== version) continue;
         setWhoamiCache(p, r);
         if (!opts.alive || opts.alive()) opts.onUpdate?.(p, r);
       } catch {

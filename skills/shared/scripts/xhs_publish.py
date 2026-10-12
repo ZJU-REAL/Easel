@@ -39,6 +39,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import login_state  # noqa: E402
 import login_qr
+import login_transport
 import content_guard  # noqa: E402  出站内容安全闸门
 
 # --------------------------------------------------------------------------- #
@@ -47,6 +48,8 @@ import content_guard  # noqa: E402  出站内容安全闸门
 PUBLISH_URL = "https://creator.xiaohongshu.com/publish/publish?source=official"
 EXPLORE_URL = "https://www.xiaohongshu.com/explore"
 CREATOR_LOGIN_URL = "https://creator.xiaohongshu.com/login"
+CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
+CREATOR_ACCOUNT_URL = "https://creator.xiaohongshu.com/api/galaxy/user/info"
 TITLE_MAX = 20  # 小红书标题上限（全角计法，见 calc_title_length）
 
 SELECTORS = {
@@ -247,15 +250,19 @@ def _login_error(page) -> str:
     try:
         url = page.url or ""
         title = page.title() or ""
+        try:
+            text = page.inner_text("body", timeout=2000)[:3000]
+        except Exception:
+            text = ""
+        if any(message in title + text for message in (
+                "工程师正在", "工程师在紧急", "系统维护中", "系统正在维护", "页面维护中")):
+            return ("小红书当前入口显示维护页面，暂时无法完成登录校验。"
+                    "这不是二维码过期或账号退出，请稍后重试。")
         codes = parse_qs(urlparse(url).query).get("error_code", [])
         code = codes[0] if codes and codes[0].isdigit() and len(codes[0]) <= 32 else ""
         error_page = "website-login/error" in url or "安全限制" in title or bool(code)
         if not error_page:
             return ""
-        try:
-            text = page.inner_text("body", timeout=2000)[:3000]
-        except Exception:
-            text = ""
         if code == "300012" or "IP存在风险" in re.sub(r"\s+", "", text).upper():
             detail = f"（错误码 {code}）" if code else ""
             return (f"小红书返回 IP 风险限制{detail}，二维码无法获取。"
@@ -339,7 +346,7 @@ def _capture_login_qr(page, qr_out: Path, *, creator_only: bool = False) -> bool
                     failures.append(f"{entry}：{reason}")
                     continue
                 login_qr.prepare_qr(page, qr_out, SELECTORS["qrcode"],
-                                    SELECTORS["qr_switch"])
+                                    SELECTORS["qr_switch"], minimum_size=96)
                 return True
             except Exception as error:
                 if _is_logged_in(page):
@@ -351,6 +358,8 @@ def _capture_login_qr(page, qr_out: Path, *, creator_only: bool = False) -> bool
 
 
 def _is_logged_in(page) -> bool:
+    if _login_error(page):
+        return False
     try:
         for element in page.query_selector_all(SELECTORS["logged_out"]):
             if element.is_visible():
@@ -368,10 +377,334 @@ def _is_logged_in(page) -> bool:
         if (url.hostname == "creator.xiaohongshu.com"
                 and not parse_qs(url.query).get("error_code")
                 and (url.path.startswith(("/publish/", "/new/", "/home/")) or url.path == "/home")):
-            return True
+            for account in page.query_selector_all(".user-info"):
+                if not account.is_visible():
+                    continue
+                avatar = account.query_selector("img.user_avatar")
+                name = account.query_selector("span")
+                if (avatar and avatar.is_visible() and avatar.get_attribute("src")
+                        and name and name.is_visible() and name.inner_text().strip()):
+                    return True
     except Exception:
         pass
     return False
+
+
+def _qr_state(page) -> str:
+    try:
+        text = page.inner_text(
+            ".sso-login-wrapper, .login-container, .login-modal, .login-box",
+            timeout=1000)
+    except Exception:
+        return ""
+    compact = re.sub(r"\s+", "", text)
+    if any(message in compact for message in (
+            "扫码成功", "扫描成功", "已扫码", "请在手机上确认", "请在APP上确认")):
+        return "scanned"
+    if any(message in compact for message in (
+            "二维码已失效", "二维码失效", "二维码已过期", "二维码过期", "二维码无效")):
+        return "expired"
+    return ""
+
+
+def _refresh_expired_qr(page, qr_out: Path) -> bool:
+    if _qr_state(page) != "expired":
+        return False
+    selectors = (
+        ".sso-login-wrapper button:has-text('刷新'), "
+        ".sso-login-wrapper [role='button']:has-text('刷新'), "
+        ".sso-login-wrapper a:text-is('点击刷新'), "
+        ".sso-login-wrapper span:text-is('点击刷新'), "
+        ".sso-login-wrapper div:text-is('点击刷新'), "
+        ".login-container button:has-text('刷新'), "
+        ".login-container span:text-is('刷新二维码'), "
+        ".login-container div:text-is('刷新二维码'), "
+        ".login-container a:text-is('点击刷新'), "
+        ".login-container span:text-is('点击刷新'), "
+        ".login-container div:text-is('点击刷新')"
+    )
+    button = _visible_login_element(page, selectors)
+    if button is None:
+        return False
+    button.click(timeout=3000)
+    page.wait_for_timeout(800)
+    if _qr_state(page) == "scanned":
+        return False
+    login_qr.capture_qr(page, qr_out, SELECTORS["qrcode"], minimum_size=96)
+    return True
+
+
+def _verify_login(page, timeout_s: float = 6) -> bool:
+    deadline = time.monotonic() + timeout_s
+    confirmed = 0
+    while time.monotonic() < deadline:
+        if _is_logged_in(page):
+            confirmed += 1
+            if confirmed >= 2:
+                return True
+        else:
+            confirmed = 0
+        if _login_error(page) or _visible_login_element(page, SELECTORS["logged_out"]):
+            return False
+        page.wait_for_timeout(500)
+    return False
+
+
+def _check_account_login(page) -> bool:
+    outcomes = []
+    deadline = time.monotonic() + 14
+    for destination in (CREATOR_HOME_URL, EXPLORE_URL):
+        try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                outcomes.append("unknown")
+                break
+            page.goto(destination, wait_until="commit", timeout=min(4000, remaining * 1000))
+            remaining = deadline - time.monotonic()
+            if remaining > 0 and _verify_login(page, timeout_s=min(4, remaining)):
+                return True
+            outcomes.append("unknown" if _login_error(page) or not _visible_login_element(
+                page, SELECTORS["logged_out"]) else "logged_out")
+        except Exception:
+            outcomes.append("unknown")
+    if any(outcome != "logged_out" for outcome in outcomes):
+        raise RuntimeError("小红书登录校验暂未完成：网络超时、维护/风控页面或账号界面未就绪；保留上次登录状态")
+    return False
+
+
+def _creator_account(context) -> dict | None:
+    try:
+        response = context.request.get(
+            CREATOR_ACCOUNT_URL, headers={"Referer": CREATOR_HOME_URL}, timeout=5000)
+        if response.status != 200:
+            return None
+        payload = response.json()
+        account = payload.get("data")
+        if (payload.get("success") is True and isinstance(account, dict)
+                and isinstance(account.get("userId"), str) and account["userId"].strip()):
+            return account
+    except Exception:
+        pass
+    return None
+
+
+def _web_account(context) -> dict | None:
+    try:
+        response = context.request.get(EXPLORE_URL, timeout=4000)
+        if response.status != 200:
+            return None
+        return _web_account_html(response.text())
+    except Exception:
+        return None
+
+
+def _initial_state(html: str) -> dict:
+    if len(html) > 2_000_000:
+        return {}
+    match = re.search(
+        r"<script\b[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)</script>",
+        html, re.IGNORECASE)
+    if not match:
+        return {}
+    serialized = re.sub(
+        r'"(?:\\.|[^"\\])*"|\bundefined\b',
+        lambda token: "null" if token.group() == "undefined" else token.group(),
+        match.group(1).strip().rstrip(";"))
+    try:
+        state = json.loads(serialized)
+        return state if isinstance(state, dict) else {}
+    except ValueError:
+        return {}
+
+
+def _unwrap_state(value):
+    if isinstance(value, dict) and "userId" not in value and "basicInfo" not in value:
+        if "value" in value:
+            return value["value"]
+        if "_value" in value:
+            return value["_value"]
+    return value
+
+
+def _state_account(state: dict) -> dict | None:
+    user = state.get("user")
+    account = _unwrap_state(user.get("userInfo")) if isinstance(user, dict) else None
+    if (not isinstance(account, dict) or _unwrap_state(user.get("loggedIn")) is not True
+            or not isinstance(account.get("userId"), str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", account["userId"])):
+        return None
+    identity = _account_identity(account)
+    return {**account, "userName": identity["name"], "userAvatar": identity["avatar"]}
+
+
+def _web_account_html(html: str) -> dict | None:
+    return _state_account(_initial_state(html))
+
+
+def _self_profile_identity(state: dict, user_id: str) -> dict:
+    identity = {"name": "", "avatar": ""}
+    account = _state_account(state)
+    if account is None or account["userId"] != user_id:
+        return identity
+    profile = _unwrap_state(state["user"].get("userPageData"))
+    if not isinstance(profile, dict) or profile.get("userId", user_id) != user_id:
+        return identity
+    basic = profile.get("basicInfo")
+    return _account_identity(basic) if isinstance(basic, dict) else identity
+
+
+def _self_profile_account(context, account: dict) -> dict:
+    user_id = account.get("userId")
+    if not isinstance(user_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", user_id):
+        return account
+    destination = f"https://www.xiaohongshu.com/user/profile/{user_id}"
+    try:
+        response = context.request.get(
+            destination, headers={"Referer": EXPLORE_URL}, timeout=4000)
+        current_url = urlparse(response.url)
+        if (response.status != 200 or current_url.hostname != "www.xiaohongshu.com"
+                or current_url.path.rstrip("/") != urlparse(destination).path):
+            return account
+        fallback = _self_profile_identity(_initial_state(response.text()), user_id)
+        identity = _account_identity(account)
+        return {**account, "userName": fallback["name"] or identity["name"],
+                "userAvatar": fallback["avatar"] or identity["avatar"]}
+    except Exception:
+        return account
+
+
+def _authenticated_account(context) -> dict | None:
+    account = _web_account(context)
+    if account is not None and all(_account_identity(account).values()):
+        return account
+    creator = _creator_account(context)
+    if account is None:
+        return creator
+    if creator is None or creator.get("userId") != account.get("userId"):
+        return account
+    identity = _account_identity(account)
+    fallback = _account_identity(creator)
+    return {
+        **account,
+        "userName": identity["name"] or fallback["name"],
+        "userAvatar": identity["avatar"] or fallback["avatar"],
+    }
+
+
+def _account_identity(account: dict) -> dict:
+    name = next((account[key].strip()[:40] for key in ("userName", "nickname", "user_name", "name")
+                 if isinstance(account.get(key), str) and account[key].strip()), "")
+    avatar = ""
+    for key in ("userAvatar", "imageb", "images", "avatar", "user_avatar"):
+        candidate = account.get(key)
+        if not isinstance(candidate, str):
+            continue
+        candidate = candidate.strip()
+        if candidate.startswith("//"):
+            candidate = "https:" + candidate
+        try:
+            parsed = urlparse(candidate)
+            if (parsed.scheme in ("https", "http") and parsed.hostname
+                    and not parsed.username and not parsed.password
+                    and not any(ord(character) < 32 for character in candidate)):
+                avatar = candidate
+                break
+        except ValueError:
+            continue
+    return {"name": name, "avatar": avatar}
+
+
+def _page_account_identity(page, user_id: str | None = None) -> dict:
+    identity = {"name": "", "avatar": ""}
+    if urlparse(page.url or "").hostname == "creator.xiaohongshu.com":
+        for account in page.query_selector_all(".user-info"):
+            if not account.is_visible():
+                continue
+            avatar = account.query_selector("img.user_avatar")
+            name = account.query_selector("span")
+            if avatar and avatar.is_visible() and name and name.is_visible():
+                return _account_identity({
+                    "userName": name.inner_text(),
+                    "userAvatar": avatar.get_attribute("src"),
+                })
+        return identity
+    profile_url = (f"https://www.xiaohongshu.com/user/profile/{user_id}"
+                   if isinstance(user_id, str) and re.fullmatch(r"[A-Za-z0-9_-]+", user_id) else "")
+    for channel in ([] if profile_url else page.query_selector_all(SELECTORS["login_ok"])):
+        if not channel.is_visible():
+            continue
+        account = channel.evaluate("""element => {
+            const anchor = element.closest('a[href]') || element.querySelector('a[href]')
+                || element.closest('.user')?.querySelector('a[href*="/user/profile/"]');
+            return {
+                href: anchor?.getAttribute('href') || '',
+                avatar: anchor?.querySelector('img')?.getAttribute('src') || ''
+            };
+        }""")
+        if not isinstance(account, dict):
+            continue
+        href = account.get("href")
+        if not isinstance(href, str):
+            continue
+        candidate = urlparse(href)
+        if (candidate.scheme or candidate.netloc
+                or not re.fullmatch(r"/user/profile/[A-Za-z0-9_-]+/?", candidate.path)):
+            continue
+        profile_url = "https://www.xiaohongshu.com" + candidate.path
+        identity["avatar"] = _account_identity({"userAvatar": account.get("avatar")})["avatar"]
+        break
+    if not profile_url:
+        return identity
+    try:
+        page.goto(profile_url, wait_until="commit", timeout=4000)
+        current_url = urlparse(page.url or "")
+        if (current_url.hostname != "www.xiaohongshu.com"
+                or current_url.path.rstrip("/") != urlparse(profile_url).path.rstrip("/")):
+            return identity
+        try:
+            page.wait_for_function(
+                """() => {
+                    const profile = window.__INITIAL_STATE__?.user?.userPageData;
+                    return !!(profile?.basicInfo || profile?.value?.basicInfo || profile?._value?.basicInfo);
+                }""",
+                timeout=1500)
+        except Exception:
+            pass
+        try:
+            state = page.evaluate("""() => {
+                const user = window.__INITIAL_STATE__?.user;
+                return user ? JSON.parse(JSON.stringify({user: {
+                    loggedIn: user.loggedIn, userInfo: user.userInfo, userPageData: user.userPageData
+                }})) : {};
+            }""")
+            if isinstance(state, dict):
+                own_account = _state_account(state)
+                if own_account is not None and own_account["userId"] != urlparse(profile_url).path.rstrip("/").split("/")[-1]:
+                    return {"name": "", "avatar": ""}
+                extracted = _self_profile_identity(state, urlparse(profile_url).path.rstrip("/").split("/")[-1])
+                if all(extracted.values()):
+                    return extracted
+                identity.update({key: value for key, value in extracted.items() if value})
+        except Exception:
+            pass
+        selectors = ".user-profile .user-info, .user-page .user-info, .user .user-info, .user-profile .info-part"
+        page.wait_for_selector(selectors, state="visible", timeout=3000)
+        for account in page.query_selector_all(selectors):
+            if not account.is_visible():
+                continue
+            name = account.query_selector(".user-name, .username, .name")
+            avatar = account.query_selector("img.avatar, img.user-avatar, img.avatar-item, .avatar img")
+            if name and name.is_visible():
+                text = name.inner_text().strip()
+                if text:
+                    identity["name"] = text.splitlines()[0][:40]
+            if avatar and avatar.is_visible():
+                identity["avatar"] = _account_identity({"userAvatar": avatar.get_attribute("src")})["avatar"]
+            if identity["name"]:
+                break
+    except Exception:
+        pass
+    return identity
 
 
 def _proxy(explicit: str | None, disable: bool) -> str | None:
@@ -686,7 +1019,9 @@ def _launch(p, headed: bool, base: str | None, proxy: str | None):
     last: Exception | None = None
     for attempt in range(2):
         try:
-            return p.chromium.launch_persistent_context(str(profile), **kwargs)
+            context = p.chromium.launch_persistent_context(str(profile), **kwargs)
+            login_transport.install(context, "xiaohongshu")
+            return context
         except Exception as e:
             last = e
             if attempt == 0 and "TargetClosed" in type(e).__name__:
@@ -778,6 +1113,10 @@ def cmd_login(a) -> int:
                 _die(f"启动浏览器失败：{e}", 1)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
+                if _creator_account(ctx) is not None:
+                    login_state.write_status(sf, "success", "已登录")
+                    print("✅ 已登录（创作平台账号接口已确认），无需扫码")
+                    return 0
                 if a.headed:
                     login_state.write_status(
                         sf, "window_login",
@@ -836,6 +1175,9 @@ def cmd_login(a) -> int:
                 # 轮询登录成功（扫码成功瞬间页面会跳转，查询崩了是正常的，重试继续等）
                 deadline = time.time() + timeout_s
                 next_refresh = time.monotonic() + 5
+                next_account_check = next_refresh
+                scanned = False
+                refreshes = 0
                 while time.time() < deadline:
                     try:
                         logged_in = _is_logged_in(page)
@@ -845,6 +1187,15 @@ def cmd_login(a) -> int:
                             login_state.write_status(sf, "error", "登录窗口被关闭，请关闭弹窗后重试")
                             _die(f"登录窗口已关闭：{e}", 1)
                         logged_in = False
+                    reason = _login_error(page) if not logged_in else ""
+                    state = _qr_state(page) if not logged_in else ""
+                    if state == "scanned" and not scanned:
+                        scanned = True
+                        login_state.write_status(sf, "scanned", "扫码成功，请在小红书 App 中确认；正在等待登录完成")
+                    if not logged_in and (reason or (
+                            scanned and time.monotonic() >= next_account_check)):
+                        logged_in = _creator_account(ctx) is not None
+                        next_account_check = time.monotonic() + 5
                     if logged_in:
                         login_state.write_status(sf, "success", "登录成功")
                         print("✅ 登录成功，cookie 已持久化，下次免登")
@@ -853,16 +1204,30 @@ def cmd_login(a) -> int:
                         except OSError:
                             pass
                         return 0
-                    reason = _login_error(page)
                     if reason and not a.headed:
                         raise RuntimeError(reason)
+                    if qr and not scanned and state == "expired":
+                        if refreshes >= 3 or not _refresh_expired_qr(page, qr_out):
+                            login_state.write_status(sf, "expired", "小红书二维码已失效，请关闭后重新获取二维码")
+                            return 1
+                        refreshes += 1
+                        login_state.write_status(sf, "qr_ready", "二维码已刷新，请重新扫码", qr=str(qr_out))
                     if qr and time.monotonic() >= next_refresh:
-                        try:
-                            login_qr.capture_qr(page, qr_out, SELECTORS["qrcode"], attempts=1)
-                        except RuntimeError:
-                            pass
+                        if not scanned:
+                            try:
+                                login_qr.capture_qr(page, qr_out, SELECTORS["qrcode"], attempts=1,
+                                                    minimum_size=96)
+                            except RuntimeError:
+                                pass
                         next_refresh = time.monotonic() + 5
                     page.wait_for_timeout(2000)
+                if scanned:
+                    login_state.write_status(
+                        sf, "error",
+                        "已扫码，但未能确认账号登录成功。请确认已在 App 中同意登录；平台维护或网络异常也可能导致校验超时。")
+                    print("已扫码，但账号登录校验超时；请检查 App 确认状态、平台提示和服务器网络。",
+                          file=sys.stderr)
+                    return 1
                 login_state.write_status(sf, "expired", "二维码超时未扫")
                 print(f"⏱️ {timeout_s}s 内未检测到登录成功（二维码可能已过期）。请重跑 login 再扫。",
                       file=sys.stderr)
@@ -1019,41 +1384,25 @@ def cmd_whoami(a) -> int:
             ctx = _launch(p, headed=False, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                page.goto(EXPLORE_URL, wait_until="domcontentloaded")
-                try:  # 等登录态元素出现（已登录会很快命中；未登录则短等后判定）
-                    page.wait_for_selector(SELECTORS["login_ok"], timeout=4000)
-                except Exception:
-                    pass
-                logged = _is_logged_in(page)
-                if not logged:
-                    page.goto(CREATOR_LOGIN_URL, wait_until="domcontentloaded")
-                    page.wait_for_timeout(1500)
-                    logged = _is_logged_in(page)
-                result["loggedIn"] = logged
-                if logged:
-                    img = page.query_selector('.main-container .user img.reds-img')
-                    if img:
-                        result["avatar"] = img.get_attribute("src") or ""
-                    a_el = page.query_selector('.main-container .user a[href^="/user/profile/"]')
-                    href = a_el.get_attribute("href") if a_el else None
-                    if href:  # 昵称在个人主页，explore 页只有头像
+                account = _authenticated_account(ctx)
+                if account is not None:
+                    result["loggedIn"] = True
+                    if not all(_account_identity(account).values()):
+                        account = _self_profile_account(ctx, account)
+                    result.update(_account_identity(account))
+                    if not all((result["name"], result["avatar"])):
                         try:
-                            page.goto("https://www.xiaohongshu.com" + href,
-                                      wait_until="domcontentloaded")
-                            try:
-                                page.wait_for_selector(".user-name", timeout=4000)
-                            except Exception:
-                                pass
-                            for sel in (".user-name", ".user-nickname",
-                                        'div[class*="nickname"]', ".info .name"):
-                                el = page.query_selector(sel)
-                                if el:
-                                    t = (el.inner_text() or "").strip()
-                                    if t:
-                                        result["name"] = t.splitlines()[0][:40]
-                                        break
+                            fallback = _page_account_identity(page, account.get("userId"))
+                            for field in ("name", "avatar"):
+                                if not result[field]:
+                                    result[field] = fallback[field]
                         except Exception:
                             pass
+                else:
+                    logged = _check_account_login(page)
+                    result["loggedIn"] = logged
+                    if logged:
+                        result.update(_page_account_identity(page))
             finally:
                 ctx.close()
     except Exception as e:  # noqa: BLE001 — whoami 永远输出 JSON，异常视作未登录

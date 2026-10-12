@@ -3,7 +3,7 @@
 覆盖：
   ① setup.sh step 2 的 npm registry 设置失败时，安装必须继续并给出 warn；
   ② OpenAI 兼容分支写出的 models[] 必须带 contextWindow / maxTokens（可被 .env 覆盖）；
-  ③ openclaw/sync.sh 同步 bootstrap 文件时，目标若是硬链接必须替换成 nlink=1。
+  ③ agents/sync.sh 同步 bootstrap 文件时，目标若是硬链接必须替换成 nlink=1。
 
 ①③ 用真脚本 / 真文件系统跑，②按内容锚点切出 setup.sh 的真实片段在沙箱里跑。
 """
@@ -20,7 +20,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SETUP_SH = PROJECT_ROOT / "setup.sh"
-SYNC_SH = PROJECT_ROOT / "openclaw" / "sync.sh"
+SYNC_SH = PROJECT_ROOT / "agents" / "sync.sh"
 
 sys.path.insert(0, str(PROJECT_ROOT))
 

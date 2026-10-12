@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "skills/openclaw/skill-data-tracker/scripts/track.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "skills/builtin/skill-data-tracker/scripts/track.py"
 
 
 def load_module():

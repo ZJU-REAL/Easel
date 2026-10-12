@@ -109,7 +109,7 @@ bash scripts/gateway.sh restart
 - 会话为**管理员级**，会过期；文章只发**草稿箱**，不自动群发（群发需在 mp 后台确认）。
 - 数据抓取依赖后台页面 XHR 结构，mp 后台改版时可能需要跟进调整选择器/接口。
 - 官方 API 回退需在公众平台配置 `app_id`/`app_secret`，并把出口 IP 加进「IP 白名单」（错误码 40164）。
-- 用户凭证文件 `skills/openclaw/skill-wechat-publisher/wechat-publisher.yaml` 已在 `.gitignore`，
+- 用户凭证文件 `skills/builtin/skill-wechat-publisher/wechat-publisher.yaml` 已在 `.gitignore`，
   仓库只提供 `wechat-publisher.yaml.example` 模板。
 
 ---
@@ -117,8 +117,8 @@ bash scripts/gateway.sh restart
 ## 8. 关键文件清单
 
 - `skills/shared/scripts/weixin_mp_stats.py` —— 会话引擎（login/whoami/stats/publish）
-- `skills/openclaw/skill-wechat-publisher/scripts/publish.py` —— 发布器（默认会话，`--official-api` 回退）
-- `skills/openclaw/skill-wechat-publisher/SKILL.md` —— skill 说明
+- `skills/builtin/skill-wechat-publisher/scripts/publish.py` —— 发布器（默认会话，`--official-api` 回退）
+- `skills/builtin/skill-wechat-publisher/SKILL.md` —— skill 说明
 - `web/app.py` —— 后端端点（mp-login / publish / analytics / logout / credentials）
 - `web/frontend/src/components/{AccountsPage,ProfilePage,PublishPage,DashboardPage}.tsx`、`lib/api.ts`
 - `scripts/wechat-egress.sh` —— 固定出口代理（仅官方 API + IP 白名单场景需要）

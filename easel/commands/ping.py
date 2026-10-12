@@ -10,7 +10,7 @@ import urllib.request
 
 from easel.gateway_endpoint import healthz_url, port_source, resolve_gateway_port
 from easel.openclaw_cmd import openclaw_base_cmd
-from easel.direct_api import DirectAPIError, api_mode, read_settings, stream_chat
+from easel.direct_api import DirectAPIError, read_settings, stream_chat
 
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
@@ -53,7 +53,22 @@ def _step(label: str, cmd: list[str], timeout: int = 30,
 def cmd_ping(_args) -> int:
     print("[easel] 连通性测试\n")
     settings = read_settings()
-    if api_mode(settings):
+    from pathlib import Path
+    from easel import harnesses
+    from easel.harnesses.base import HarnessError
+    root = Path(__file__).resolve().parents[2]
+    runtime = harnesses.settings(root / "outputs", settings)["runtime"]
+    if runtime not in ("api", "openclaw"):
+        try:
+            asyncio.run(asyncio.wait_for(
+                harnesses.console_turn("请只回复 PONG，不执行任何工具", root, settings,
+                                       timeout=60, interactive=False), 60))
+            print(f"\n{runtime} 连通性测试通过")
+            return 0
+        except (HarnessError, asyncio.TimeoutError) as error:
+            print(f"\n{runtime} 连通性失败：{error or '请求超时'}")
+            return 1
+    if runtime == "api":
         async def probe():
             async for kind, text in stream_chat(settings, "请只回复 PONG", timeout=30):
                 if kind == "token":

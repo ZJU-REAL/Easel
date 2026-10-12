@@ -16,10 +16,11 @@ import argparse
 import json
 import os
 import re
+import signal
 import sys
 import time
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 if os.name == "nt":
     import msvcrt
@@ -177,15 +178,45 @@ def _now():
 
 
 def _extract_token(url):
+    parsed = urlparse(url or "")
+    if parsed.scheme != "https" or parsed.hostname != "mp.weixin.qq.com":
+        return ""
     m = TOKEN_RE.search(url or "")
     return m.group(1) if m else ""
 
 
-def _capture_qr(page, qr_out):
+def _account_identity(page):
+    identity = {"name": "", "avatar": ""}
+    for container in page.query_selector_all(".weui-desktop-account"):
+        if not container.is_visible():
+            continue
+        name = container.query_selector(".weui-desktop-account__nickname, .account_nickname")
+        avatar = container.query_selector(".weui-desktop-account__thumb img, img.weui-desktop-account__thumb, "
+                                          ".weui-desktop-account__avatar img")
+        if name and name.is_visible():
+            text = (name.inner_text() or "").strip()
+            if text:
+                identity["name"] = text.splitlines()[0][:40]
+        if avatar and avatar.is_visible():
+            source = avatar.get_attribute("src") or ""
+            if source.startswith("//"):
+                source = "https:" + source
+            try:
+                parsed = urlparse(source)
+                if parsed.scheme in ("https", "http") and parsed.hostname and not parsed.username and not parsed.password:
+                    identity["avatar"] = source
+            except ValueError:
+                pass
+        if identity["name"] or identity["avatar"]:
+            break
+    return identity
+
+
+def _capture_qr(page, qr_out, attempts=25, fallback=True):
     """等二维码 img 真正渲染(complete && naturalWidth>0)后再截图。"""
     Path(qr_out).parent.mkdir(parents=True, exist_ok=True)
     sel = "img[src*='qrcode'], img.login__type__container__scan__qrcode, .login__type__container__scan img"
-    for _ in range(25):  # 最多等 ~25s
+    for _ in range(attempts):
         try:
             el = page.query_selector(sel)
             if el:
@@ -201,6 +232,8 @@ def _capture_qr(page, qr_out):
         except Exception:
             pass
         page.wait_for_timeout(1000)
+    if not fallback:
+        return False
     # 兜底：整页截（仍可能白，但至少给个东西）
     try:
         page.screenshot(path=str(qr_out), timeout=15000)
@@ -210,7 +243,13 @@ def _capture_qr(page, qr_out):
 
 
 def cmd_login(a):
+    previous_handler = signal.getsignal(signal.SIGTERM)
+
+    def stop_login(signum, frame):
+        raise SystemExit(0)
+
     try:
+        signal.signal(signal.SIGTERM, stop_login)
         return _run_login(a)
     except Exception as exc:
         # 异常类型对用户可见；不把可能包含会话令牌的浏览器异常全文写进状态。
@@ -218,6 +257,8 @@ def cmd_login(a):
                                  f"公众号登录失败（{type(exc).__name__}），请检查浏览器、网络及会话占用")
         print(f"login failed: {type(exc).__name__}", file=sys.stderr, flush=True)
         return 1
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
 
 
 def _run_login(a):
@@ -233,6 +274,8 @@ def _run_login(a):
             page.wait_for_timeout(1500)
             # 已登录（持久化会话仍有效）→ 直接成功
             if _extract_token(page.url):
+                ctx.close()
+                ctx = None
                 login_state.write_status(status, "success", "已登录（复用会话）")
                 print("already logged in, token acquired")
                 return 0
@@ -246,9 +289,12 @@ def _run_login(a):
             else:
                 login_state.write_status(status, "qr_ready", "请用公众号管理员微信扫码", qr=str(qr_out))
             deadline = time.time() + a.timeout
+            next_capture = time.monotonic() + 5
             while time.time() < deadline:
-                page.wait_for_timeout(2000)
-                if _extract_token(page.url):
+                page.wait_for_timeout(1000)
+                if any(_extract_token(candidate.url) for candidate in ctx.pages):
+                    ctx.close()
+                    ctx = None
                     login_state.write_status(status, "success", "登录成功")
                     # 不打印 token 值：它是 mp 后台会话令牌，stdout 会落进
                     # outputs/_login/wechat-oa-mp.log，避免敏感值明文落盘。
@@ -256,14 +302,16 @@ def _run_login(a):
                     return 0
                 # 二维码可能刷新，定期重截
                 try:
-                    if not _extract_token(page.url):
-                        _capture_qr(page, qr_out)
+                    if time.monotonic() >= next_capture and not _extract_token(page.url):
+                        _capture_qr(page, qr_out, attempts=1, fallback=False)
+                        next_capture = time.monotonic() + 5
                 except Exception:
                     pass
             login_state.write_status(status, "expired", "二维码超时未扫")
             _die("login timeout", 1)
         finally:
-            ctx.close()
+            if ctx is not None:
+                ctx.close()
 
 
 def _fetch_json(page, url):
@@ -744,9 +792,20 @@ def cmd_whoami(a):
             ctx = _launch(p, a.headed, a.profile_base, _proxy(a.proxy, a.no_proxy))
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                page.goto(MP_HOME, wait_until="commit", timeout=60000)
-                page.wait_for_timeout(1200)
+                page.goto(MP_HOME, wait_until="commit", timeout=10000)
+                deadline = time.monotonic() + 12
+                while time.monotonic() < deadline:
+                    if _extract_token(page.url):
+                        out.update(loggedIn=True, **_account_identity(page))
+                        if out["name"] and out["avatar"]:
+                            break
+                    elif page.query_selector("img.login__type__container__scan__qrcode, img[src*='qrcode']"):
+                        break
+                    page.wait_for_timeout(500)
                 out["loggedIn"] = bool(_extract_token(page.url))
+                if not out["loggedIn"] and not page.query_selector(
+                        "img.login__type__container__scan__qrcode, img[src*='qrcode']"):
+                    out["error"] = "公众号账号页面尚未就绪，请稍后重试"
             finally:
                 ctx.close()
     except Exception as e:

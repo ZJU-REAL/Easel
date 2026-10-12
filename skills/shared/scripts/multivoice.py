@@ -13,7 +13,7 @@
 创意（谁说什么、什么情绪）由上层 LLM 产出到 lines.json；音色映射在 cast.json。
 本脚本只做确定性编排：逐行合成 + 情绪→韵律 + ffmpeg 拼接 + SRT 时序。**路径无关**：
 输入/输出都用显式文件路径，不绑定任何目录约定（短剧的 --series/--episode 便利层见
-skills/openclaw/short-drama/scripts/dubbing.py，它委派本引擎）。
+skills/builtin/short-drama/scripts/dubbing.py，它委派本引擎）。
 
 子命令：
     cast init   --cast FILE            生成 cast.json 模板（含旁白）

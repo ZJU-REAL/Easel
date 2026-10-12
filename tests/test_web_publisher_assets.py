@@ -3,6 +3,7 @@ import ast
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -17,6 +18,9 @@ class Context:
     def route(self, pattern, handler):
         self.routes.append((pattern, handler))
 
+    def on(self, event, handler):
+        pass
+
 
 @pytest.mark.parametrize("resource_type", ["media", "font"])
 @pytest.mark.parametrize("url", ["https://static.example/asset", "https://static.example/a.WOFF2?v=1"])
@@ -25,9 +29,9 @@ def test_channels_blocks_heavy_resource_types(resource_type, url):
     web_publisher._block_heavy(context, "weixin-channels")
     actions = []
     route = SimpleNamespace(abort=lambda: actions.append("abort"),
-                            continue_=lambda: actions.append("continue"))
-    context.routes[0][1](route, SimpleNamespace(resource_type=resource_type, url=url))
-    assert context.routes[0][0] == "**/*"
+                            fallback=lambda: actions.append("continue"))
+    context.routes[-1][1](route, SimpleNamespace(resource_type=resource_type, url=url))
+    assert context.routes[-1][0] == "**/*"
     assert actions == ["abort"]
 
 
@@ -42,8 +46,8 @@ def test_channels_preserves_qr_api_and_page_resources(resource_type, url):
     web_publisher._block_heavy(context, "weixin-channels")
     actions = []
     route = SimpleNamespace(abort=lambda: actions.append("abort"),
-                            continue_=lambda: actions.append("continue"))
-    context.routes[0][1](route, SimpleNamespace(resource_type=resource_type, url=url))
+                            fallback=lambda: actions.append("continue"))
+    context.routes[-1][1](route, SimpleNamespace(resource_type=resource_type, url=url))
     assert actions == ["continue"]
 
 
@@ -53,6 +57,15 @@ def test_other_platforms_are_not_filtered(platform):
     context = Context()
     web_publisher._block_heavy(context, platform)
     assert not context.routes
+
+
+def test_channels_account_check_does_not_synchronously_fetch_login_assets(monkeypatch):
+    context = Context()
+    install = Mock()
+    monkeypatch.setattr(web_publisher.login_transport, "install", install)
+    web_publisher._block_heavy(context, "weixin-channels", login_assets=False)
+    install.assert_not_called()
+    assert context.routes
 
 
 def test_route_installation_failure_is_not_silently_ignored():
@@ -71,8 +84,8 @@ def test_login_commands_install_context_route_before_navigation(command):
     calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
     block = next(node for node in calls if isinstance(node.func, ast.Name)
                  and node.func.id == "_block_heavy")
-    navigation = next(node for node in calls if isinstance(node.func, ast.Attribute)
-                      and node.func.attr == "goto")
+    navigation = next(node for node in calls if isinstance(node.func, ast.Name)
+                      and node.func.id == "_navigate_login")
     assert block.lineno < navigation.lineno
     assert ast.unparse(block.args[0]) == "browser"
     assert ast.unparse(block.args[1]) == "a.platform"

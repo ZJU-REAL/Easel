@@ -31,7 +31,7 @@ function Invoke-NativeCapturePS([string]$Exe, [string[]]$Arguments) {
 # --force 就把默认 profile 的健康进程干掉了）。单一真相源在 Python 那边，这里只负责问。
 function Get-EaselPython {
     # 优先用项目内 venv：gateway.ps1 可能被 easel CLI 以外的方式调起，此时 PATH 上
-    # 未必有正确的 python。回退链与 openclaw/sync.sh 一致。
+    # 未必有正确的 python。回退链与 agents/sync.sh 一致。
     $venv = Join-Path $Root '.venv\Scripts\python.exe'
     if (Test-Path $venv) { return @($venv, @()) }
     $py = (Get-Command python -ErrorAction SilentlyContinue).Source

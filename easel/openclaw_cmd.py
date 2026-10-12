@@ -48,10 +48,14 @@ def openclaw_base_cmd() -> list[str]:
 
     # 1) PATH `openclaw` that resolves to the .mjs (Unix symlink, or a direct
     #    .mjs on PATH): run it through node explicitly.
-    if oc and node:
+    if oc:
         resolved = Path(oc).resolve()
         if resolved.suffix == ".mjs" and resolved.is_file():
-            return [node, str(resolved)]
+            adjacent_node = Path(oc).parent / ("node.exe" if os.name == "nt" else "node")
+            if adjacent_node.is_file() and os.access(adjacent_node, os.X_OK):
+                return [str(adjacent_node), str(resolved)]
+            if node:
+                return [node, str(resolved)]
 
     # 1.5) PATH `openclaw` is a Windows npm .cmd shim: the shim sits next to
     #      node.exe + node_modules/openclaw/openclaw.mjs (standard npm global

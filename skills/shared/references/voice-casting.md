@@ -159,13 +159,13 @@ GEMINI_API_KEY=<你的免费key>     #   --voice-id Kore（30 音色）
 
 **通用入口**（任意工作流，显式路径）：
 ```bash
-python skills/shared/scripts/multivoice.py cast init  --cast cast.json
-python .../multivoice.py cast add   --cast cast.json --name 林策 --engine clone --provider openai-compatible --voice-id FunAudioLLM/CosyVoice2-0.5B:benjamin --note "冷峻男主"
-python .../multivoice.py cast check --cast cast.json    # 通过后会 💡 建议把仍用 edge 的说话角色升级闭源
-python .../multivoice.py dub --cast cast.json --lines lines.json -o voice.mp3   # → voice.mp3 + voice.srt
+python skills/shared/scripts/multivoice.py cast init --cast outputs/配音/cast.json
+python skills/shared/scripts/multivoice.py cast add --cast outputs/配音/cast.json --name 林策 --engine clone --provider openai-compatible --voice-id FunAudioLLM/CosyVoice2-0.5B:benjamin --note "冷峻男主"
+python skills/shared/scripts/multivoice.py cast check --cast outputs/配音/cast.json
+python skills/shared/scripts/multivoice.py dub --cast outputs/配音/cast.json --lines outputs/配音/lines.json -o outputs/配音/voice.mp3
 ```
 **短剧入口**（--series/--episode 便利层，路径自动推导）：
 ```bash
-python skills/openclaw/short-drama/scripts/dubbing.py cast init --series "<剧名>"
-python .../dubbing.py align --series "<剧名>" --episode 1   # 逐镜对齐（lines 每行需标 shot），推荐
+python skills/builtin/short-drama/scripts/dubbing.py cast init --series "<剧名>"
+python skills/builtin/short-drama/scripts/dubbing.py align --series "<剧名>" --episode 1
 ```

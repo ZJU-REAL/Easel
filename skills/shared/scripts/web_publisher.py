@@ -29,13 +29,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import signal
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import login_state  # noqa: E402
 import login_qr
+import login_transport
 import content_guard  # noqa: E402  出站内容安全闸门
 import platform_readback  # noqa: E402  发布读回对账（快手已接入，注册表见 _READBACK_VERIFIERS）
 import human_pace  # noqa: E402  人类节奏（提交前双停顿；EASEL_PACE_SKIP=1 跳过）
@@ -200,14 +204,18 @@ PLATFORMS: dict[str, dict] = {
         # 登录判定靠 URL：未登录一律重定向到 channels.weixin.qq.com/login.html（含 login 标记 → _is_logged_in 判未登录）；
         # login_check 为已登录主页的正向兜底（真机 2026-08 校准：登录后主页才有 finder-nickname/唯一ID/桌面导航）
         "login_check": ".finder-nickname, .finder-uniq-id, .finder-ui-desktop-menu",
+        "login_strict": True,
         # ⚠️ 二维码在跨域 iframe 内（open.weixin.qq.com 的微信标准扫码组件 connect/qrconnect），
         # 主页面 query_selector 根本找不到——必须截 <iframe> 元素本体（真机 2026-08 验证：得 208×208 清晰码；
         # iframe 内 img.js_qrcode_img 的 src 是相对 URL /connect/qrcode/<ticket>，非 base64，故打分裁剪那套不适用）
         "login_qr_iframe": "iframe[src*='open.weixin.qq.com/connect/qrconnect']",
+        "login_navigation_timeout_ms": 30000,
+        "login_qr_iframe_timeout_ms": 30000,
         # 登录页出现该扫码 iframe = 未登录的可靠信号
         "logged_out_selector": "iframe[src*='open.weixin.qq.com/connect/qrconnect'], .login-mask",
-        "me_name_selector": ".finder-nickname, .name",
-        "me_avatar_selector": "img.avatar[src], .finder-info img[src]",
+        "whoami_url": "https://channels.weixin.qq.com",
+        "me_name_selector": ".finder-info .finder-nickname",
+        "me_avatar_selector": ".finder-info img.avatar[src]",
         "steps": [
             {"action": "goto", "value": "https://channels.weixin.qq.com/platform/post/create"},
             {"action": "upload", "selector": "input[type=file]", "value": "{media}"},
@@ -229,6 +237,7 @@ PLATFORMS: dict[str, dict] = {
     "zhihu": {
         "name": "知乎",
         "login_url": "https://www.zhihu.com/signin",
+        "login_probe_url": "https://www.zhihu.com/",
         "publish_url": "https://zhuanlan.zhihu.com/write",
         "profile": "ZhihuProfile",
         "login_check": ".AppHeader-profile, .AppHeader-userInfo",
@@ -240,8 +249,8 @@ PLATFORMS: dict[str, dict] = {
                              "[class*='qrcode' i], img[src*='qr' i], canvas",
         "qr_loaded": ".Qrcode-img, [class*='qrcode' i] img, [class*='qrcode' i] canvas, canvas",
         "strict_login_qr": True,
-        "me_name_selector": ".AppHeader-profile .name, .ProfileHeader-name, .AppHeader-userInfo .name",
-        "me_avatar_selector": ".AppHeader-profile img[src], .Avatar[src]",
+        "me_name_selector": ".AppHeader-profile .name, .AppHeader-userInfo .name",
+        "me_avatar_selector": ".AppHeader-profile img[src], .AppHeader-userInfo img[src]",
         "steps": [
             {"action": "goto", "value": "https://zhuanlan.zhihu.com/write"},
             {"action": "waitfor", "selector": "textarea,.WriteIndex-titleInput,input", "value": "30000"},
@@ -271,7 +280,7 @@ LAUNCH_ARGS = [
 ]
 
 
-def _block_heavy(context, platform: str) -> None:
+def _block_heavy(context, platform: str, login_assets: bool = True) -> None:
     if platform != "weixin-channels":
         return
 
@@ -279,8 +288,10 @@ def _block_heavy(context, platform: str) -> None:
         if request.resource_type in {"media", "font"}:
             route.abort()
         else:
-            route.continue_()
+            route.fallback()
 
+    if login_assets:
+        login_transport.install(context, platform)
     context.route("**/*", handle_route)
 
 
@@ -867,6 +878,133 @@ _LOGIN_POLL_MS = 1000
 _LOGIN_PROBE_EVERY = 3
 
 
+def _navigate_login(page, destination: str, timeout_ms: int = 10000) -> None:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    try:
+        page.goto(destination, wait_until="commit", timeout=timeout_ms)
+    except PlaywrightTimeout:
+        current = (page.url or "").lower()
+        if (not current.startswith(("https://", "http://"))
+                or urlparse(current).hostname != urlparse(destination).hostname):
+            raise RuntimeError("登录页面连接超时，请检查服务器能否访问平台及扫码服务") from None
+
+
+def _account_identity(account: dict, base_url: str = "") -> dict:
+    name = account.get("name")
+    avatar = account.get("avatar_url")
+    name = name.strip().splitlines()[0][:40] if isinstance(name, str) and name.strip() else ""
+    avatar = avatar.strip() if isinstance(avatar, str) else ""
+    try:
+        if urlparse(avatar).scheme and not avatar.startswith(("https://", "http://")):
+            avatar = ""
+        avatar = urljoin(base_url, avatar) if avatar else ""
+        parsed = urlparse(avatar)
+        if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password:
+            avatar = ""
+    except ValueError:
+        avatar = ""
+    return {"name": name, "avatar": avatar}
+
+
+def _channels_account(payload) -> dict | None:
+    if not isinstance(payload, dict) or type(payload.get("errCode")) is not int or payload["errCode"] != 0:
+        return None
+    data = payload.get("data")
+    account = data.get("finderUser") if isinstance(data, dict) else None
+    if not isinstance(account, dict):
+        return None
+    identifier = account.get("finderUsername")
+    name = account.get("nickname")
+    if not isinstance(identifier, str) or not identifier.strip() or not isinstance(name, str) or not name.strip():
+        return None
+    return {"id": identifier, "name": name, "avatar_url": account.get("headImgUrl", "")}
+
+
+def _observe_channels_account(browser, cfg: dict) -> None:
+    if cfg.get("profile") != "ChannelsProfile":
+        return
+    browser._easel_channel_account = None
+
+    def observe(response):
+        parsed = urlparse(response.url)
+        if (parsed.scheme != "https" or parsed.hostname != "channels.weixin.qq.com"
+                or parsed.path != "/cgi-bin/mmfinderassistant-bin/auth/auth_data"):
+            return
+        try:
+            if 200 <= response.status < 300:
+                browser._easel_channel_account = _channels_account(response.json())
+        except Exception:
+            pass
+
+    browser.on("response", observe)
+
+
+def _authenticated_account(browser, cfg: dict) -> dict | None:
+    if cfg.get("profile") == "ChannelsProfile":
+        return getattr(browser, "_easel_channel_account", None)
+    if cfg.get("profile") != "ZhihuProfile":
+        return None
+    try:
+        response = browser.request.get("https://www.zhihu.com/api/v4/me", timeout=3000)
+        if response.status != 200:
+            return None
+        account = response.json()
+        if (isinstance(account, dict) and not account.get("error")
+                and isinstance(account.get("id"), str) and account["id"].strip()
+                and isinstance(account.get("name"), str) and account["name"].strip()):
+            return account
+    except Exception:
+        pass
+    return None
+
+
+def _login_qr_state(page, cfg: dict) -> str:
+    profile = cfg.get("profile")
+    if profile not in ("ZhihuProfile", "ChannelsProfile"):
+        return ""
+    try:
+        if profile == "ChannelsProfile":
+            frame = next((frame for frame in page.frames
+                          if urlparse(frame.url).hostname == "open.weixin.qq.com"
+                          and urlparse(frame.url).path == "/connect/qrconnect"), None)
+            if frame is None:
+                return ""
+            text = frame.inner_text("body", timeout=500)
+        else:
+            text = page.inner_text(".SignContainer, .SignFlow, .Login-content", timeout=500)
+    except Exception:
+        return ""
+    compact = re.sub(r"\s+", "", text)
+    if any(message in compact for message in (
+            "扫码成功", "扫描成功", "已扫码", "请在手机上确认", "请在知乎APP中确认",
+            "请在微信中确认", "请在手机微信上确认", "扫描成功请")):
+        return "scanned"
+    if any(message in compact for message in (
+            "二维码已失效", "二维码失效", "二维码已过期", "二维码过期", "二维码无效",
+            "请刷新二维码", "二维码已超时")):
+        return "expired"
+    return ""
+
+
+def _refresh_login_qr(page, qr_out: Path, cfg: dict) -> bool:
+    if _login_qr_state(page, cfg) != "expired":
+        return False
+    selectors = (".SignContainer button:has-text('刷新'), "
+                 ".SignContainer [role='button']:has-text('刷新'), "
+                 ".SignContainer span:has-text('刷新'), "
+                 ".SignFlow button:has-text('重新'), .SignFlow .Qrcode-mask")
+    for element in page.query_selector_all(selectors):
+        if element.is_visible():
+            element.click(timeout=2000)
+            page.wait_for_timeout(500)
+            if _login_qr_state(page, cfg) == "scanned":
+                return False
+            login_qr.capture_qr(page, qr_out, cfg["login_qr_selector"], attempts=1)
+            return True
+    return False
+
+
 def _is_logged_in(page, cfg: dict) -> bool:
     """判断是否已登录，可靠性顺序：URL 落在登录页 → 登出浮层可见 → 强选择器命中 → URL 启发式兜底。
     强选择器优先于 URL 启发式（快手实测：未登录会重定向到同域落地页，URL≠首页但其实未登录，
@@ -906,7 +1044,7 @@ def _is_logged_in(page, cfg: dict) -> bool:
             return False
     # 4. URL 启发式兜底（非严格平台）：已离开登录入口页且无登录标记 → 已登录
     login_url = cfg["login_url"].lower().rstrip("/")
-    if url and url != login_url:
+    if url.startswith(("https://", "http://")) and url != login_url:
         return True
     return False
 
@@ -931,10 +1069,14 @@ def _probe_publish_auth(page, cfg: dict) -> str:
         r = page.evaluate(
             """async ({u,m}) => {
                 try {
-                  const resp = await fetch(u, {method:m||'GET', credentials:'include',
+                  const controller = new AbortController();
+                  const timer = setTimeout(() => controller.abort(), 3000);
+                  try {
+                  const resp = await fetch(u, {method:m||'GET', credentials:'include', signal:controller.signal,
                                                headers:{'accept':'application/json'}});
                   const t = await resp.text();
                   return {status: resp.status, redirected: resp.redirected, finalUrl: resp.url, body: (t||'').slice(0,600)};
+                  } finally { clearTimeout(timer); }
                 } catch(e) { return {error: String(e)}; }
             }""",
             {"u": probe["url"], "m": probe.get("method", "GET")},
@@ -1073,12 +1215,12 @@ def _crop_qr(page, qr_out, cfg) -> None:
 def _capture_qr(page, qr_out, cfg) -> None:
     """截登录二维码到 qr_out，按平台形态分两条路：
     - 码在跨域 iframe（视频号：open.weixin.qq.com 的微信标准扫码组件）→ 主页面 query_selector 找不到，
-      直接截 <iframe> 元素本体（真机验证得清晰码；iframe 内 img 是相对 URL 非 base64，打分裁剪那套不适用）。
+      截 iframe 元素并检测、裁剪真实二维码，不能用空白组件冒充二维码。
     - 码在主页面 → 先等它渲染（qr_loaded），再用 _crop_qr 按打分裁剪最像二维码的元素。"""
     ifr = cfg.get("login_qr_iframe")
     if ifr:
         try:
-            page.wait_for_selector(ifr, timeout=15000, state="visible")
+            page.wait_for_selector(ifr, timeout=cfg.get("login_qr_iframe_timeout_ms", 15000), state="visible")
             # 等 iframe 内二维码 img attach（跨域 frame 里 img 的 visible 判定不稳，用 attached 兜底）
             for fr in page.frames:
                 if fr != page.main_frame and "qrconnect" in (fr.url or ""):
@@ -1086,16 +1228,24 @@ def _capture_qr(page, qr_out, cfg) -> None:
                         fr.wait_for_selector(
                             "img.js_qrcode_img, img.web_qrcode_img, img[src*='/connect/qrcode/']",
                             timeout=10000, state="attached")
+                        fr.wait_for_function("""() => {
+                            const image = document.querySelector(
+                                "img.js_qrcode_img, img.web_qrcode_img, img[src*='/connect/qrcode/']");
+                            return image && image.complete && image.naturalWidth >= 96;
+                        }""", timeout=15000)
                     except Exception:
                         pass
                     break
-            page.wait_for_timeout(800)  # 让二维码画完再截
-            el = page.query_selector(ifr)
-            if el:
-                el.screenshot(path=str(qr_out))
-                return
-        except Exception:
-            pass  # iframe 路径任何异常都退回主页面裁剪
+            for attempt in range(3):
+                page.wait_for_timeout(800)
+                element = page.query_selector(ifr)
+                if (element and element.is_visible()
+                        and login_qr.save_qr(element.screenshot(timeout=3000, animations="disabled"),
+                                             Path(qr_out), minimum_size=96)):
+                    return
+        except Exception as error:
+            raise RuntimeError("微信扫码组件未加载，请检查服务器到 channels.weixin.qq.com、res.wx.qq.com 和 open.weixin.qq.com 的连接后重试") from error
+        raise RuntimeError("微信扫码组件中未找到可识别的二维码，请稍后重新登录")
     # 主页面二维码：先等渲染（异步 base64/canvas，固定 wait 不够会截到空框），再打分裁剪
     try:
         page.wait_for_selector(cfg.get("qr_loaded") or _QR_LOADED_DEFAULT,
@@ -1113,9 +1263,9 @@ def _probe_logged_in(browser, cfg: dict) -> bool:
     probe = None
     try:
         probe = browser.new_page()
-        probe.goto(cfg.get("publish_url") or cfg["login_url"],
-                   wait_until="domcontentloaded", timeout=20000)
-        _settle_login(probe, cfg)  # 等客户端跳转落定（视频号死会话 3-4s 才跳回 login.html）
+        _navigate_login(probe, cfg.get("login_probe_url") or cfg.get("publish_url") or cfg["login_url"],
+                        timeout_ms=5000)
+        _settle_login(probe, cfg, max_ms=4000)
         return _is_logged_in(probe, cfg)
     except Exception:
         return False
@@ -1125,6 +1275,47 @@ def _probe_logged_in(browser, cfg: dict) -> bool:
                 probe.close()
             except Exception:
                 pass
+
+
+def _visible_account_identity(page, cfg: dict) -> dict:
+    account = {"name": "", "avatar_url": ""}
+    for field, selectors in (("name", cfg.get("me_name_selector")),
+                             ("avatar_url", cfg.get("me_avatar_selector"))):
+        for selector in (selectors or "").split(","):
+            if not selector.strip():
+                continue
+            for element in page.query_selector_all(selector.strip()):
+                if not element.is_visible():
+                    continue
+                value = element.inner_text() if field == "name" else element.get_attribute("src")
+                candidate = _account_identity({field: value}, page.url)
+                if candidate["name" if field == "name" else "avatar"]:
+                    account[field] = value
+                    break
+            if account[field]:
+                break
+    return _account_identity(account, page.url)
+
+
+def _settle_channels_account(page, browser, max_ms: int = 45000) -> bool:
+    deadline = time.monotonic() + max_ms / 1000
+    while time.monotonic() < deadline:
+        if _authenticated_account(browser, PLATFORMS["weixin-channels"]) is not None:
+            return True
+        for frame in page.frames:
+            parsed = urlparse(frame.url)
+            if parsed.hostname == "open.weixin.qq.com" and parsed.path == "/connect/qrconnect":
+                try:
+                    if frame.evaluate("""() => {
+                        const image = document.querySelector(
+                            "img.js_qrcode_img, img.web_qrcode_img, img[src*='/connect/qrcode/']");
+                        return !!(image && image.complete && image.naturalWidth >= 96);
+                    }"""):
+                        return False
+                except Exception:
+                    pass
+        page.wait_for_timeout(250)
+    raise RuntimeError("视频号账号页面或身份接口尚未就绪，请稍后重试校验")
 
 
 def cmd_login_qr(a) -> int:
@@ -1147,20 +1338,31 @@ def cmd_login_qr(a) -> int:
     login_state.write_status(sf, "starting")
     with sync_playwright() as p:
         browser = None
+        previous_handler = signal.getsignal(signal.SIGTERM)
+        def stop_login(signum, frame):
+            raise SystemExit(0)
+
         try:
+            signal.signal(signal.SIGTERM, stop_login)
             browser = p.chromium.launch_persistent_context(
                 str(profile), headless=True, locale="zh-CN",
                 args=LAUNCH_ARGS + ["--no-proxy-server"])
             page = browser.pages[0] if browser.pages else browser.new_page()
             _block_heavy(browser, a.platform)
-            page.goto(cfg["login_url"], wait_until="domcontentloaded")
+            _observe_channels_account(browser, cfg)
+            _navigate_login(page, cfg["login_url"],
+                            timeout_ms=cfg.get("login_navigation_timeout_ms", 10000))
             # 给客户端 redirect + 登录态渲染时间：已登录常从入口页跳到 /profile 等，
             # 固定 1.2s 经常不够（快手实测 → 误判未登录去截整页）。等 login_check 出现最多 6s。
             try:
-                page.wait_for_selector(cfg["login_check"], timeout=6000)
+                page.wait_for_selector(
+                    ", ".join(filter(None, (cfg["login_check"], cfg.get("logged_out_selector")))),
+                    timeout=6000, state="visible")
             except Exception:
                 page.wait_for_timeout(1200)
-            if _is_logged_in(page, cfg):
+            if _is_logged_in(page, cfg) or _authenticated_account(browser, cfg) is not None:
+                browser.close()
+                browser = None
                 login_state.write_status(sf, "success", "已登录")
                 print(f"✅ {cfg['name']} 已登录（登录态在持久化目录）")
                 return 0
@@ -1187,8 +1389,10 @@ def cmd_login_qr(a) -> int:
                 else:
                     _capture_qr(page, qr_out, cfg)
             except Exception:
-                if not _is_logged_in(page, cfg):
+                if not _is_logged_in(page, cfg) and _authenticated_account(browser, cfg) is None:
                     raise
+                browser.close()
+                browser = None
                 login_state.write_status(sf, "success", "已登录")
                 print(f"✅ {cfg['name']} 已登录（登录态在持久化目录）")
                 return 0
@@ -1197,32 +1401,72 @@ def cmd_login_qr(a) -> int:
             print(f"⏳ 等待扫码（最长 {timeout_s}s）...", file=sys.stderr)
 
             confirmed = False
+            scanned = False
+            refresh_count = 0
             tick = 0
             deadline = time.time() + timeout_s
             next_refresh = time.monotonic() + 5
+            channels_probe = None
+            next_probe = time.monotonic() + 15
             while time.time() < deadline:
                 tick += 1
-                if _is_logged_in(page, cfg):
+                if (any(_is_logged_in(candidate, cfg) for candidate in browser.pages)
+                        or cfg.get("profile") == "ChannelsProfile"
+                        and _authenticated_account(browser, cfg) is not None):
                     confirmed = True
                     break
+                qr_state = _login_qr_state(page, cfg)
+                if qr_state == "scanned":
+                    scanned = True
+                    login_state.write_status(sf, "scanned", "扫码成功，请在手机上确认登录")
+                elif qr_state == "expired":
+                    scanned = False
+                    if cfg.get("profile") == "ChannelsProfile":
+                        login_state.write_status(sf, "expired", "微信二维码已过期，请关闭后重新登录")
+                        return 1
                 # 扫码页仍停在 passport/login 域时深探：用辅助页 goto 发布页判登录态
                 # （快手扫码成功不自跳创作者中心，主扫码页 URL 恒含 passport）
                 try:
                     cur = (page.url or "").lower()
                 except Exception:
                     cur = ""
-                if tick % _LOGIN_PROBE_EVERY == 0 and any(m in cur for m in _LOGIN_MARKERS):
-                    if _probe_logged_in(browser, cfg):
+                if tick % _LOGIN_PROBE_EVERY == 0:
+                    if _authenticated_account(browser, cfg) is not None:
                         confirmed = True
                         break
-                if cfg.get("strict_login_qr") and time.monotonic() >= next_refresh:
+                    if cfg.get("profile") == "ChannelsProfile":
+                        if time.monotonic() >= next_probe or scanned and channels_probe is None:
+                            if channels_probe is None:
+                                channels_probe = browser.new_page()
+                            next_probe = time.monotonic() + 30
+                            try:
+                                _navigate_login(channels_probe, cfg["login_url"], timeout_ms=5000)
+                            except Exception:
+                                channels_probe.close()
+                                channels_probe = None
+                    elif any(m in cur for m in _LOGIN_MARKERS) or cfg.get("login_probe_url"):
+                        if _probe_logged_in(browser, cfg):
+                            confirmed = True
+                            break
+                if cfg.get("strict_login_qr") and not scanned and time.monotonic() >= next_refresh:
                     try:
-                        login_qr.capture_qr(page, qr_out, cfg["login_qr_selector"], attempts=1)
+                        if qr_state == "expired":
+                            if refresh_count >= 3 or not _refresh_login_qr(page, qr_out, cfg):
+                                login_state.write_status(sf, "expired", "二维码已过期，请关闭后重新登录")
+                                return 1
+                            refresh_count += 1
+                            login_state.write_status(sf, "qr_ready", "二维码已刷新，请重新扫码", qr=str(qr_out))
+                        else:
+                            login_qr.capture_qr(page, qr_out, cfg["login_qr_selector"], attempts=1)
                     except RuntimeError:
-                        pass
+                        if qr_state == "expired":
+                            login_state.write_status(sf, "expired", "二维码刷新失败，请关闭后重新登录")
+                            return 1
                     next_refresh = time.monotonic() + 5
                 page.wait_for_timeout(_LOGIN_POLL_MS)
             if confirmed:
+                browser.close()
+                browser = None
                 login_state.write_status(sf, "success", "登录成功")
                 print(f"✅ {cfg['name']} 登录成功，登录态已持久化")
                 try:
@@ -1230,7 +1474,7 @@ def cmd_login_qr(a) -> int:
                 except OSError:
                     pass
                 return 0
-            login_state.write_status(sf, "expired", "二维码超时未扫")
+            login_state.write_status(sf, "expired", "已扫码但未完成登录确认，请在手机确认后重试" if scanned else "二维码超时未扫")
             print(f"⏱️ {timeout_s}s 内未检测到登录成功（二维码可能过期）", file=sys.stderr)
             return 1
         except Exception as e:  # noqa: BLE001 — 任何异常都写 error 终态，否则前端轮询会卡在 starting/qr_ready
@@ -1238,8 +1482,11 @@ def cmd_login_qr(a) -> int:
             print(f"❌ {cfg['name']} 登录异常：{e}", file=sys.stderr)
             return 1
         finally:
-            if browser is not None:
-                browser.close()
+            try:
+                if browser is not None:
+                    browser.close()
+            finally:
+                signal.signal(signal.SIGTERM, previous_handler)
 
 
 def cmd_publish(a) -> int:
@@ -1304,10 +1551,20 @@ def cmd_whoami(a) -> int:
                 args=LAUNCH_ARGS + ["--no-proxy-server"])
             page = browser.pages[0] if browser.pages else browser.new_page()
             try:
-                _block_heavy(browser, a.platform)
-                page.goto(cfg["publish_url"], wait_until="domcontentloaded", timeout=30000)
-                _settle_login(page, cfg)  # 等客户端跳转落定，避免 SPA 未跳转期误判已登录
-                logged = _is_logged_in(page, cfg)
+                _block_heavy(browser, a.platform, login_assets=False)
+                _observe_channels_account(browser, cfg)
+                account = _authenticated_account(browser, cfg)
+                if account is not None:
+                    result.update(loggedIn=True, **_account_identity(account))
+                    print(json.dumps(result, ensure_ascii=False))
+                    return 0
+                _navigate_login(page, cfg.get("whoami_url") or cfg.get("login_probe_url") or cfg["publish_url"])
+                if cfg.get("profile") == "ChannelsProfile":
+                    _settle_channels_account(page, browser)
+                else:
+                    _settle_login(page, cfg, max_ms=7000)
+                account = _authenticated_account(browser, cfg) if cfg.get("profile") == "ChannelsProfile" else None
+                logged = account is not None or _is_logged_in(page, cfg)
                 # 外壳判已登录后，再探发布子系统鉴权：外壳 token 活着但发布 token 已死时翻成未登录
                 if logged and cfg.get("login_probe"):
                     pa = _probe_publish_auth(page, cfg)
@@ -1317,26 +1574,13 @@ def cmd_whoami(a) -> int:
                         result["reason"] = "publish_auth_expired"
                 result["loggedIn"] = logged
                 if logged:
-                    for s in (cfg.get("me_name_selector") or "").split(","):
-                        s = s.strip()
-                        if not s:
-                            continue
-                        el = page.query_selector(s)
-                        if el:
-                            t = (el.inner_text() or "").strip()
-                            if t:
-                                result["name"] = t.splitlines()[0][:40]
-                                break
-                    for s in (cfg.get("me_avatar_selector") or "").split(","):
-                        s = s.strip()
-                        if not s:
-                            continue
-                        el = page.query_selector(s)
-                        if el:
-                            src = el.get_attribute("src")
-                            if src:
-                                result["avatar"] = src
-                                break
+                    result.update(_account_identity(account) if account else _visible_account_identity(page, cfg))
+                elif cfg.get("profile") == "ChannelsProfile":
+                    login_url = any(marker in (page.url or "").lower() for marker in _LOGIN_MARKERS)
+                    login_visible = any(element.is_visible() for selector in cfg["logged_out_selector"].split(",")
+                                        for element in page.query_selector_all(selector.strip()))
+                    if not login_url and not login_visible:
+                        result["error"] = "视频号账号页面或身份接口尚未就绪，请稍后重试校验"
             finally:
                 browser.close()
     except Exception as e:  # noqa: BLE001 — whoami 永远输出 JSON

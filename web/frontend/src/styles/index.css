@@ -200,6 +200,9 @@ body {
   font-size: 12px; color: var(--text-secondary);
   display: flex; align-items: center; gap: 8px;
 }
+.sidebar-status-text {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--green); flex-shrink: 0;
@@ -810,6 +813,34 @@ textarea.field { resize: vertical; min-height: 90px; }
 .msg-col.user { max-width: min(640px, 86%); align-items: flex-end; }
 .msg-col.assistant { max-width: 100%; width: 100%; }
 .msg-col .message-bubble { max-width: 100%; }
+.msg-col.assistant { min-width: 0; }
+.message-bubble.assistant img { max-width: 100%; height: auto; }
+.artifact-gallery { width: 100%; min-width: 0; margin-top: 16px; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-sm); }
+.artifact-header, .artifact-footer { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 12px; color: var(--text-secondary); }
+.artifact-header { border-bottom: 1px solid var(--border); font-weight: 600; }
+.artifact-count { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
+.artifact-stage { position: relative; display: flex; justify-content: center; align-items: center; min-height: 160px; padding: 16px; background: var(--bg-subtle, var(--surface-2)); }
+.artifact-stage > img, .artifact-stage > video { display: block; max-width: 100%; max-height: min(56vh, 520px); width: auto; height: auto; object-fit: contain; border-radius: 8px; }
+.artifact-stage > audio { width: 100%; }
+.artifact-stage > iframe { width: 100%; height: min(56vh, 520px); border: 0; background: white; }
+.artifact-html-stage { width: 100%; height: min(56vh, 520px); min-height: 240px; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+.artifact-html-fit { position: relative; flex-shrink: 0; }
+.artifact-html-fit iframe { display: block; border: 0; background: white; transform-origin: top left; position: absolute; top: 0; left: 0; }
+.artifact-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--text); box-shadow: var(--shadow-md); cursor: pointer; }
+.artifact-arrow:hover { background: var(--surface-hover); border-color: var(--accent-start); }
+.artifact-arrow.previous { left: 10px; }
+.artifact-arrow.previous svg { transform: rotate(180deg); }
+.artifact-arrow.next { right: 10px; }
+.artifact-gallery:focus-visible, .artifact-arrow:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
+.artifact-footer { border-top: 1px solid var(--border); }
+.artifact-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-footer a { flex-shrink: 0; }
+.artifact-hint { padding: 24px; color: var(--text-tertiary); font-size: 13px; }
+@media (max-width: 600px) {
+  .artifact-header, .artifact-footer { padding: 10px 12px; gap: 8px; }
+  .artifact-stage { padding: 10px; }
+  .artifact-arrow { width: 32px; height: 32px; }
+}
 .msg-actions {
   display: flex; gap: 2px; padding: 1px 2px;
   opacity: 0; transition: opacity 0.14s var(--ease);
@@ -1166,6 +1197,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 
 /* ═══ 设置面板（悬浮统一入口） ═══ */
 .settings-gear {
+  flex-shrink: 0; white-space: nowrap;
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: 8px; border: 1px solid var(--border-strong);
   background: var(--bg-elev); font-size: 12px; font-weight: 600; color: var(--accent-end);
@@ -1295,6 +1327,42 @@ textarea.field { resize: vertical; min-height: 90px; }
 .settings-overlay input.mock { border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; font: inherit; font-size: 12.5px; background: var(--bg); color: var(--text); width: 100%; min-width: 0; }
 .settings-overlay input.mock:focus { outline: none; border-color: #9db3d8; box-shadow: 0 0 0 3px rgba(63, 86, 168, 0.10); }
 .settings-overlay input.mock[disabled] { background: var(--surface-2); color: var(--text-tertiary); }
+.settings-overlay .harness-settings { margin-bottom: 20px; }
+.settings-overlay .harness-settings .panel-top { flex-wrap: wrap; }
+.settings-overlay .settings-native-models { display: flex; gap: 9px; align-items: center; margin-bottom: 9px; }
+.settings-overlay .settings-native-models .settings-select-wrap { flex: 1; min-width: 0; }
+.settings-overlay .settings-native-models > .btn { flex-shrink: 0; }
+.settings-overlay .settings-field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.settings-overlay .settings-field:last-of-type { border-bottom: none; }
+.settings-overlay .settings-field-label { padding-top: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+.settings-overlay .settings-field-body { min-width: 0; max-width: 480px; }
+.settings-overlay .settings-field-body .desc { margin: 7px 0 0; line-height: 1.6; }
+.settings-overlay .settings-field-body input.mock { min-height: 34px; }
+.settings-overlay .settings-select-wrap { display: block; width: 100%; }
+.settings-overlay .settings-select { min-height: 34px; font: inherit; font-size: 12.5px; text-align: left; }
+.settings-overlay .settings-select svg { flex-shrink: 0; color: var(--text-tertiary); }
+.settings-overlay .settings-select:focus-visible { outline: none; border-color: #9db3d8; box-shadow: 0 0 0 3px rgba(63, 86, 168, 0.10); }
+.settings-overlay .settings-select:disabled { background: var(--surface-2); color: var(--text-tertiary); cursor: not-allowed; }
+.settings-overlay .settings-engine-control { display: flex; align-items: center; gap: 8px; }
+.settings-overlay .settings-engine-control .settings-select-wrap { flex: 1; min-width: 0; }
+.settings-overlay .settings-help { position: relative; flex: none; display: inline-flex; }
+.settings-overlay .settings-help-trigger { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; border-radius: 50%; background: transparent; color: var(--text-tertiary); font: inherit; font-size: 16px; cursor: help; }
+.settings-overlay .settings-help-trigger:hover, .settings-overlay .settings-help-trigger:focus-visible { background: var(--surface-hover); color: var(--accent-end); }
+.settings-overlay .settings-help-trigger:focus-visible { outline: 2px solid var(--accent-end); outline-offset: 2px; }
+.settings-overlay .settings-help-tooltip { position: absolute; z-index: 110; top: calc(100% + 8px); right: 0; width: min(320px, calc(100vw - 48px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text-secondary); font-size: 12px; line-height: 1.7; box-shadow: var(--shadow-md); visibility: hidden; opacity: 0; pointer-events: none; }
+.settings-overlay .settings-help:hover .settings-help-tooltip, .settings-overlay .settings-help:focus-within .settings-help-tooltip { visibility: visible; opacity: 1; pointer-events: auto; }
+@media (max-width: 640px) {
+  .settings-overlay .settings-head { flex-wrap: wrap; gap: 10px; padding: 14px 16px; }
+  .settings-overlay .settings-body { flex-direction: column; }
+  .settings-overlay .settings-nav { width: auto; flex-direction: row; overflow-x: auto; padding: 8px; border-right: none; border-bottom: 1px solid var(--border); }
+  .settings-overlay .settings-nav .snav { flex: none; }
+  .settings-overlay .settings-nav .snav small { display: none; }
+  .settings-overlay .settings-main { min-height: 0; overflow-x: hidden; padding: 12px 16px; }
+  .settings-overlay .tabbar { overflow-x: auto; }
+  .settings-overlay .settings-field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .settings-overlay .settings-field-label { padding-top: 0; }
+  .settings-overlay .settings-field-body { max-width: none; }
+}
 .settings-overlay .save-note { margin: 0 0 10px; padding: 7px 11px; border-radius: 8px; font-size: 12.5px; background: var(--green-soft); color: #15803d; }
 .settings-overlay .save-note.err { background: var(--red-soft); color: #b91c1c; }
 .settings-overlay button.tag { border: 0; cursor: pointer; font: inherit; font-size: 11px; font-weight: 650; }

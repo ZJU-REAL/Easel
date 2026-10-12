@@ -6,12 +6,12 @@ import { test } from 'node:test';
 
 const require = createRequire(new URL('../../web/frontend/package.json', import.meta.url));
 const ts = require('typescript');
-const source = readFileSync(new URL('../../web/frontend/src/components/SettingsPanel.tsx', import.meta.url), 'utf8');
-const parsed = ts.createSourceFile('SettingsPanel.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const source = readFileSync(new URL('../../web/frontend/src/components/SettingsSelect.tsx', import.meta.url), 'utf8');
+const parsed = ts.createSourceFile('SettingsSelect.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declaration = parsed.statements.find(node =>
   ts.isFunctionDeclaration(node) && node.name?.text === 'OptionsDropdown');
 assert.ok(declaration);
-const { outputText } = ts.transpileModule(declaration.getText(parsed) + '\nOptionsDropdown;', {
+const { outputText } = ts.transpileModule(declaration.getText(parsed).replace('export ', '') + '\nOptionsDropdown;', {
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
 });
 

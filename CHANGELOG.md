@@ -2,6 +2,37 @@
 
 All notable changes to Easel are documented in this file.
 
+## [0.3.0] - 2026-10-12
+
+### Added
+
+- Added selectable execution engines in Web settings: OpenClaw, Codex, OpenCode, a locally configured ACP agent, and chat-only mode. Engine selection is independent of model providers; Codex and OpenCode expose native model catalogs without copying their credentials.
+- Added optional OpenClaw installation: interactive setup defaults to OpenClaw but allows skipping it; use `bash setup.sh --skip-openclaw` or `.\setup.ps1 -SkipOpenClaw` to install the Web workspace first and select an already installed harness later.
+- Added a responsive creative-artifact gallery with previous/next controls, keyboard navigation, and support for multiple outputs.
+- Added documentation and Agent-prompt path validation, plus harness-settings regression coverage across Linux, macOS, Windows, and Python 3.10/3.12.
+
+### Improved
+
+- Moved shared Agent prompts and workspace resources to `agents/`, and built-in skills to `skills/builtin/`, replacing the OpenClaw-specific directory names. Updated documentation, prompt paths, installer references, and skill synchronization accordingly.
+- Improved harness CLI discovery across user-specific npm, Node, and native installations, including Windows launchers and incomplete environments.
+- Preserved conversation ownership, native-session continuation, and existing browser history when switching personas or execution engines.
+- Improved settings loading, unified input and dropdown styling, retained configuration panels for unavailable harnesses, and prevented the sidebar Settings button from wrapping.
+- Added custom-model reasoning capability configuration and improved provider credential synchronization.
+
+### Fixed
+
+- Improved QR capture, retry freshness, navigation-timeout handling, and terminal login-state polling for Xiaohongshu, Zhihu, and WeChat Channels.
+- Improved account verification and nickname/avatar extraction; stale verification responses no longer overwrite newly logged-in accounts.
+- Fixed UTF-8 handling and Windows installation PATH preservation, and improved installer idempotency and configuration validation.
+- Fixed runtime version drift: package metadata and harness protocol handshakes now report the same Easel version.
+- Fixed Python 3.10 compatibility when stopping Agent execution, including repeated-stop protection during process cleanup.
+
+### Upgrade Notes
+
+- Update to this version and rerun the appropriate setup script. For an existing OpenClaw workspace, `bash agents/sync.sh --docs-only` refreshes prompts without replacing private memory or user-provided skills.
+- Codex and OpenCode must be installed and authenticated separately before selection. Chat-only mode does not run tools or skills; generic ACP requires a local command configuration.
+- Platform maintenance, network restrictions, and anti-abuse checks can still prevent QR login; this release improves detection and error reporting rather than bypassing those restrictions.
+
 ## [0.2.1] - 2026-09-24
 
 ### Added

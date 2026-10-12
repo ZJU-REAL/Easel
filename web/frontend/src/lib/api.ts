@@ -27,8 +27,39 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export interface StatusResponse {
   gateway: boolean;
   transport?: string;
+  runtime?: string;
   skills: SkillItem[];
   personas: PersonaItem[];
+}
+
+export interface HarnessSettingsResponse {
+  runtime: string;
+  models: Record<string, string>;
+  sandbox: string;
+  locked: boolean;
+  agents: { id: string; label: string; protocol: string; installed: boolean; install_hint: string }[];
+}
+
+export function fetchHarnessSettings(): Promise<HarnessSettingsResponse> {
+  return request('/api/settings/harness');
+}
+
+export interface HarnessModel {
+  id: string;
+  label: string;
+  default: boolean;
+}
+
+export function fetchHarnessModels(runtime: string): Promise<{ runtime: string; models: HarnessModel[] }> {
+  return request(`/api/settings/harness/models/${encodeURIComponent(runtime)}`, { method: 'POST' });
+}
+
+export function saveHarnessSettings(runtime: string, model: string, sandbox: string): Promise<HarnessSettingsResponse> {
+  return request('/api/settings/harness', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runtime, model, sandbox }),
+  });
 }
 
 export interface PersonaItem {
@@ -282,6 +313,10 @@ export function fetchOutputs(): Promise<OutputNode[]> {
   return request<OutputNode[]>('/api/outputs');
 }
 
+export function fetchArtifactArchive(path: string, signal?: AbortSignal): Promise<{ paths: string[] }> {
+  return request<{ paths: string[] }>(`/api/artifacts/archive?path=${encodeURIComponent(path)}`, { signal });
+}
+
 export function fetchOutputContent(path: string): Promise<OutputContent> {
   return request<OutputContent>(`/api/output/${path.split('/').map(encodeURIComponent).join('/')}`);
 }
@@ -379,6 +414,7 @@ export interface LoginStart {
   state?: string;       // starting | qr_ready | success | expired | error | unknown
   message?: string;
   qr?: string;          // outputs 下相对路径，用 mediaUrl() 取图
+  qrTs?: number;
   configured?: boolean; // 凭证式：是否已配置
 }
 
@@ -414,7 +450,8 @@ export function startMpLogin(platform: string): Promise<LoginStatus> {
 
 /** 轮询公众号后台扫码登录状态。 */
 export function mpLoginStatus(platform: string): Promise<LoginStatus> {
-  return request<LoginStatus>(`/api/accounts/${encodeURIComponent(platform)}/mp-login/status`);
+  return request<LoginStatus>(`/api/accounts/${encodeURIComponent(platform)}/mp-login/status`,
+    { signal: AbortSignal.timeout(8000) });
 }
 
 export interface LoginStatus {
@@ -436,8 +473,8 @@ export interface AccountWhoami {
 }
 
 /** 真校验某平台登录态 + 拉昵称/头像（后端起 headless 浏览器，数秒）。 */
-export function accountWhoami(platform: string): Promise<AccountWhoami> {
-  return request<AccountWhoami>(`/api/accounts/${encodeURIComponent(platform)}/whoami`);
+export function accountWhoami(platform: string, force = false): Promise<AccountWhoami> {
+  return request<AccountWhoami>(`/api/accounts/${encodeURIComponent(platform)}/whoami${force ? '?force=true' : ''}`);
 }
 
 /** 退出登录：删该平台持久化登录态。 */
@@ -487,11 +524,12 @@ export function submitPublishSms(platform: string, code: string): Promise<{ ok: 
 }
 
 export function startLogin(platform: string): Promise<LoginStart> {
-  return request<LoginStart>(`/api/login/${encodeURIComponent(platform)}`, { method: 'POST' });
+  return request<LoginStart>(`/api/login/${encodeURIComponent(platform)}?restart=true`, { method: 'POST' });
 }
 
 export function loginStatus(platform: string): Promise<LoginStatus> {
-  return request<LoginStatus>(`/api/login/${encodeURIComponent(platform)}/status`);
+  return request<LoginStatus>(`/api/login/${encodeURIComponent(platform)}/status`,
+    { signal: AbortSignal.timeout(8000) });
 }
 
 // ---- 归因层：账号创作数据 ----
@@ -817,8 +855,8 @@ export interface ModelChannelsResponse {
   primary: string;
 }
 
-export function fetchModelChannels(): Promise<ModelChannelsResponse> {
-  return request('/api/settings/models');
+export function fetchModelChannels(runtime?: string): Promise<ModelChannelsResponse> {
+  return request(`/api/settings/models${runtime ? `?runtime=${encodeURIComponent(runtime)}` : ''}`);
 }
 
 export function saveChatTransport(transport: 'api' | 'openclaw'): Promise<ModelChannelsResponse> {

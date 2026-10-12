@@ -12,14 +12,26 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROFILE="easel"
 CHAT_MODE=http
+SKIP_OPENCLAW=false
+INSTALL_CHOICE=false
 OPENCLAW_BIN="openclaw"
 oc() { "$OPENCLAW_BIN" --profile "$PROFILE" "$@"; }
 for argument in "$@"; do
     case "$argument" in
-        --api) CHAT_MODE=api ;;
+        --api|--skip-openclaw|--openclaw)
+            if [ "$INSTALL_CHOICE" = true ]; then
+                echo "执行引擎安装选项不能重复或同时指定。" >&2
+                exit 1
+            fi
+            INSTALL_CHOICE=true
+            case "$argument" in
+                --api) CHAT_MODE=api ;;
+                --skip-openclaw) CHAT_MODE=api; SKIP_OPENCLAW=true ;;
+            esac
+            ;;
         --check) export EASEL_SETUP_MODE=check ;;
         --strict) export EASEL_SETUP_STRICT=1 ;;
-        *) echo "用法：bash setup.sh [--api] [--check] [--strict]" >&2; exit 1 ;;
+        *) echo "用法：bash setup.sh [--openclaw | --skip-openclaw | --api] [--check] [--strict]" >&2; exit 1 ;;
     esac
 done
 
@@ -314,9 +326,19 @@ print_summary() {
 clear 2>/dev/null || true
 echo -e "\n${CYAN}╭────────────────────────────────────────────────────╮${NC}"
 echo -e "${CYAN}│${NC}  ${MAGENTA}Easel${NC} · 社媒内容工作台安装向导                 ${CYAN}│${NC}"
-echo -e "${CYAN}│${NC}  ${DIM}API / OpenClaw · Linux / macOS${NC}                  ${CYAN}│${NC}"
+echo -e "${CYAN}│${NC}  ${DIM}多 Agent 执行引擎 · Linux / macOS${NC}               ${CYAN}│${NC}"
 echo -e "${CYAN}╰────────────────────────────────────────────────────╯${NC}"
-if [ "$CHAT_MODE" = "api" ]; then
+if [ "$INSTALL_CHOICE" = false ] && [ "$SETUP_MODE" != check ] && [ -t 0 ]; then
+    info "默认安装或复用 OpenClaw；也可以跳过，进入 Web 后选择已安装的 Codex / OpenCode。"
+    INSTALL_ANSWER="$(ask '是否安装或复用 OpenClaw？[Y/n]')"
+    case "$INSTALL_ANSWER" in
+        n|N|no|NO|0) CHAT_MODE=api; SKIP_OPENCLAW=true ;;
+    esac
+fi
+if [ "$SKIP_OPENCLAW" = true ]; then
+    echo -e "\n${DIM}  只安装 Easel 与 Web 依赖，不安装、配置或启动 OpenClaw。${NC}"
+    echo -e "${DIM}  已保存的底座不变；新用户进入 Web 后选择已有 Agent，或配置仅聊天模式。${NC}\n"
+elif [ "$CHAT_MODE" = "api" ]; then
     echo -e "\n${DIM}  API 直连模式，不安装 OpenClaw，不启动 Gateway。${NC}\n"
 else
     echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
@@ -331,6 +353,12 @@ NODE_MIRROR_DEFAULT="https://mirrors.aliyun.com/nodejs-release"
 step "1/8" "检查系统环境" "Python · Node.js · Git · FFmpeg"
 info "检查 Node.js..."
 node_version_ok() {  # $1=major $2=minor
+    if [ "$CHAT_MODE" = api ]; then
+        { [ "$1" -eq 20 ] && [ "$2" -ge 19 ]; } \
+            || { [ "$1" -eq 22 ] && [ "$2" -ge 12 ]; } \
+            || [ "$1" -ge 23 ]
+        return
+    fi
     { [ "$1" -eq 24 ] && [ "$2" -ge 16 ]; } \
         || { [ "$1" -eq 26 ] && [ "$2" -ge 1 ]; } \
         || [ "$1" -ge 27 ]
@@ -349,7 +377,7 @@ if $NODE_OK; then
     ok "Node.js $NODE_VER"
 else
     if [ -n "${NODE_VER:-}" ]; then
-        info "Node.js $NODE_VER 过旧（openclaw@latest 需要 24.16+），安装 Node.js 24..."
+        info "Node.js $NODE_VER 不满足当前安装依赖，安装 Node.js 24..."
     else
         info "安装 Node.js 24..."
     fi
@@ -569,7 +597,7 @@ else
 fi
 
 else
-    ok "API 直连模式：跳过 OpenClaw 安装和 profile 初始化"
+    ok "跳过 OpenClaw 安装和 profile 初始化；Web 工作台照常安装"
 fi
 
 # ---- 5. 安装 easel CLI ----
@@ -632,17 +660,20 @@ else
 fi
 
 # ---- 7. 认证配置 ----
-step "7/8" "同步模型配置" "把 .env 里的认证写进 OpenClaw profile"
-info "配置认证..."
+if [ "$SKIP_OPENCLAW" = true ]; then
+    step "7/8" "准备执行引擎设置" "进入 Web 后选择已安装的 Agent；不迁移原生凭证"
+else
+    step "7/8" "同步模型配置" "准备模型配置"
+fi
 if [ -f "$PROJECT_ROOT/.env" ]; then
     ok ".env 已存在"
 else
     cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
-    warn "已创建 .env，请编辑并填入 API key："
-    warn "  vim .env"
+    ok "已创建 .env；模型与执行引擎可以稍后在 Web 设置"
 fi
 
 # 安装模式由命令参数决定：默认 OpenClaw，只有 --api 选择直连。
+if [ "$SKIP_OPENCLAW" != true ]; then
 if [ "$SETUP_MODE" = check ]; then
     emit_action env_set EASEL_CHAT_TRANSPORT "$CHAT_MODE"
 else
@@ -655,10 +686,17 @@ lines = [line for line in path.read_text().splitlines()
 path.write_text("\n".join(lines) + f"\nEASEL_CHAT_TRANSPORT={sys.argv[2]}\n")
 PYENV
 fi
+else
+    run_step '执行引擎初始设置' python3 -m easel.installation "$PROJECT_ROOT" api
+fi
 
 if [ "$CHAT_MODE" = "api" ]; then
     MODEL_CONFIGURED=false
-    ok "已启用 API 直连；请在 .env 填 EASEL_DIRECT_API_BASE_URL、EASEL_DIRECT_API_MODEL 和网关所需的 EASEL_DIRECT_API_KEY"
+    if [ "$SKIP_OPENCLAW" = true ]; then
+        ok "执行引擎可稍后配置；已有的 Codex / OpenCode 由 Web 自动检测，不要求额外填写 OpenClaw API Key"
+    else
+        ok "已启用仅聊天模式；请在 Web 设置填写模型 API 配置"
+    fi
 else
 # ---- 8. 同步 skills + workspace ----
 info "同步 Easel skills..."
@@ -668,11 +706,11 @@ info "同步 Easel skills..."
 # 注意两点：stderr 不能并进管道（见上），且 grep 无匹配时退出 1 —— 在 pipefail 下
 # 那会把一次成功的同步变成「安装中断」。先捕获 stdout，再分别判同步本身的成败。
 SYNC_RC=0
-SYNC_OUT="$(run_step 'openclaw/sync.sh' bash "$PROJECT_ROOT/openclaw/sync.sh")" || SYNC_RC=$?
+SYNC_OUT="$(run_step 'agents/sync.sh' bash "$PROJECT_ROOT/agents/sync.sh")" || SYNC_RC=$?
 printf '%s\n' "$SYNC_OUT" | grep -E '✓|→' || true
 if [ "$SYNC_RC" -ne 0 ]; then
-    warn_collect '技能同步' "openclaw/sync.sh 退出码 $SYNC_RC；技能可能没进 agent 实际读取的 workspace" \
-        'bash openclaw/sync.sh' high
+    warn_collect '技能同步' "agents/sync.sh 退出码 $SYNC_RC；技能可能没进 agent 实际读取的 workspace" \
+        'bash agents/sync.sh' high
 fi
 
 # ---- 9. 认证信息写入 Easel 专属 OpenClaw config ----
@@ -1102,7 +1140,12 @@ fi
 
 write_install_report
 print_summary
-if [ "${MODEL_CONFIGURED:-false}" = false ]; then
+if [ "$SKIP_OPENCLAW" = true ]; then
+    echo -e "\n  ${CYAN}下一步：easel web → 设置 → Agent 底座 → 执行引擎${NC}"
+    echo -e "  ${DIM}选择检测到的 Codex / OpenCode 并保存，再新建对话；原生认证由对应 CLI 管理。${NC}"
+    echo -e "  ${DIM}新安装默认仅聊天模式，配置模型 API 后可聊天；不会自动执行文件或浏览器工具。${NC}"
+    echo -e "  ${DIM}以后需要 OpenClaw，可运行 bash setup.sh --openclaw，再在 Web 设置切换。${NC}"
+elif [ "${MODEL_CONFIGURED:-false}" = false ]; then
     echo ""
     echo -e "  ${YELLOW}下一步：在浏览器里配置模型${NC}"
     if [ -x "$PROJECT_ROOT/.venv/bin/easel" ]; then
@@ -1112,7 +1155,9 @@ if [ "${MODEL_CONFIGURED:-false}" = false ]; then
     fi
     echo -e "    2. 打开 ${CYAN}http://localhost:7860${NC}"
     echo -e "    3. 左下角${CYAN}设置${NC} → ${CYAN}模型配置${NC} → 填 API Key → 保存"
-    echo -e "  ${DIM}保存后 Easel 会自动写好 openclaw 配置并重启网关，不用再跑 setup.sh。${NC}"
+    if [ "$CHAT_MODE" != api ]; then
+        echo -e "  ${DIM}保存后 Easel 会自动写好 OpenClaw 配置并重启网关，不用再跑 setup.sh。${NC}"
+    fi
     echo -e "  ${DIM}也可以直接编辑 .env 填 key，然后运行 easel doctor 复检。${NC}"
 fi
 echo -e "\n  ${CYAN}开始使用：${NC}"
@@ -1128,3 +1173,6 @@ if [ "$CHAT_MODE" != "api" ]; then
     echo -e "\n  ${DIM}Easel profile：~/.openclaw-${PROFILE}/${NC}"
 fi
 echo -e "  ${DIM}项目目录：$PROJECT_ROOT${NC}\n"
+if [ "$CHAT_MODE" != "api" ]; then
+    echo -e "  ${DIM}默认执行引擎：OpenClaw；Web 设置可切换到已安装的 Codex、OpenCode 或其它 ACP 引擎。${NC}"
+fi

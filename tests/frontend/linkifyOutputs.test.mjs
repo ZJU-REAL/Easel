@@ -52,3 +52,11 @@ test('Windows paths and encoded file names resolve without corrupting their dest
   assert.equal(linkifyOutputs('[报告](outputs/demo/a%20b.md)'), '[报告](#/outputs/demo/a%20b.md)');
   assert.equal(linkifyOutputs('[目录](outputs/demo/)'), '[目录](#/outputs/demo)');
 });
+
+test('multiple previewable Markdown output links resolve as media for gallery detection', () => {
+  const input = '[卡片](outputs/cards/one.png) [网页](outputs/cards/two.html) [视频](outputs/cards/three.mp4)';
+  assert.equal(linkifyOutputs(input),
+    '[卡片](/api/media/cards/one.png) [网页](/api/media/cards/two.html) [视频](/api/media/cards/three.mp4)');
+  assert.equal(linkifyOutputs('[PDF](</data/project/Easel/outputs/a b/card.pdf>)'),
+    '[PDF](/api/media/a%20b/card.pdf)');
+});

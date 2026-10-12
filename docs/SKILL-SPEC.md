@@ -6,7 +6,7 @@
 
 ```
 skills/
-├── openclaw/              五层 SKILL（发现/策划/制作/发布/归因），由 OpenClaw 直接执行
+├── builtin/               五层内置 SKILL（发现/策划/制作/发布/归因），供各 Agent 底座执行
 └── shared/                跨 SKILL 共享工具（脚本、配置、依赖）
 ```
 
@@ -98,7 +98,9 @@ easel skill check-compliance -i "内容" -p 画像名
 
 ## SKILL 同步
 
-`openclaw/sync.sh` 把 `skills/openclaw/` 与 `skills/shared/` 同步到 `~/.openclaw/workspace-easel/`。
+`agents/workspace/` 是各执行引擎共用的工作区说明。OpenClaw 用 `agents/sync.sh`
+把工作区说明、`skills/builtin/` 与 `skills/shared/` 同步到其实际运行的隔离工作区；
+原生 stdio 引擎按现有协议注入同一份说明，直接读取项目技能目录，不使用脚本副本。
 
 ## Profile 注入
 

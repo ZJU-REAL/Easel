@@ -25,7 +25,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from easel import openclaw_workspace as ws  # noqa: E402
 from easel.commands import doctor  # noqa: E402
 
-SYNC_SH = PROJECT_ROOT / "openclaw" / "sync.sh"
+SYNC_SH = PROJECT_ROOT / "agents" / "sync.sh"
 SETUP_PS1 = PROJECT_ROOT / "setup.ps1"
 DOCTOR_PY = PROJECT_ROOT / "easel" / "commands" / "doctor.py"
 
@@ -152,7 +152,7 @@ def test_doctor_uses_resolver(isolated, monkeypatch):
 
 
 SETUP_SH = PROJECT_ROOT / "setup.sh"
-VIDEO_PIPELINE = PROJECT_ROOT / "skills" / "openclaw" / "video-production" / "scripts" / "video_pipeline.py"
+VIDEO_PIPELINE = PROJECT_ROOT / "skills" / "builtin" / "video-production" / "scripts" / "video_pipeline.py"
 
 
 def test_setup_ps1_does_not_redirect_stderr_of_resolver():
@@ -183,11 +183,11 @@ def test_setup_sh_does_not_swallow_sync_warnings():
     """sync.sh 解析不出 workspace 的警告只走 stderr 且不含 ✓/→。把 stderr 并进管道再 grep
     就会整条吃掉 —— 装完一声不吭，技能却同步到 agent 不读的目录（issue #19 重建版）。"""
     for line in SETUP_SH.read_text(encoding="utf-8").splitlines():
-        if "openclaw/sync.sh" in line and not line.lstrip().startswith("#"):
+        if "agents/sync.sh" in line and not line.lstrip().startswith("#"):
             assert "2>&1" not in line, f"sync.sh 的 stderr 被并进管道后 grep 掉了：{line.strip()}"
             break
     else:
-        pytest.fail("setup.sh 里找不到调用 openclaw/sync.sh 的那行")
+        pytest.fail("setup.sh 里找不到调用 agents/sync.sh 的那行")
 
 
 def test_sync_sh_takes_last_line_only():
@@ -208,9 +208,25 @@ def test_video_pipeline_resolves_workspace(monkeypatch, tmp_path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setattr(ws, "_ask_openclaw", lambda: tmp_path / "runtime-ws")
+    monkeypatch.delenv("EASEL_AGENT_RUNTIME", raising=False)
     monkeypatch.setenv("EASEL_OPENCLAW_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.delenv("EASEL_OPENCLAW_WORKSPACE", raising=False)
     assert mod._workspace_root() == tmp_path / "runtime-ws"
+
+
+@pytest.mark.parametrize("runtime", ["codex", "opencode", "acp"])
+def test_video_pipeline_native_runtime_uses_easel_root(monkeypatch, tmp_path, runtime):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_vp_native_under_test", VIDEO_PIPELINE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    (tmp_path / "easel").mkdir()
+    (tmp_path / "skills" / "builtin").mkdir(parents=True)
+    monkeypatch.setenv("EASEL_AGENT_RUNTIME", runtime)
+    monkeypatch.setenv("EASEL_ROOT", str(tmp_path))
+    monkeypatch.setenv("EASEL_OPENCLAW_WORKSPACE", str(tmp_path / "wrong-workspace"))
+    assert module._workspace_root() == tmp_path
 
 
 @pytest.mark.parametrize("path", [SYNC_SH, SETUP_PS1, DOCTOR_PY])

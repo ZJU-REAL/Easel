@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { Dispatch, SetStateAction } from 'react';
 import EnvBoard from './EnvBoard';
+import HarnessSettings from './HarnessSettings';
+import { OptionsDropdown } from './SettingsSelect';
 import type { JobView } from './EnvBoard';
 import {
   fetchEnvTools, startEnvInstall, fetchEnvJob,
-  fetchModelChannels, runChannelSelftest, saveModelConfig, saveChatTransport,
+  fetchModelChannels, runChannelSelftest, saveModelConfig,
   fetchLocalAgents, enableLocalAgent, fetchAvailableModels,
 } from '../lib/api';
 import type { EnvTool, ModelRow, SelftestResult, LocalAgentInfo } from '../lib/api';
@@ -61,6 +62,8 @@ const hhmm = (ts: number) => {
 export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const [sec, setSec] = useState<Sec>('model');
   const [chan, setChan] = useState<Chan>('chat');
+  const [harness, setHarness] = useState('');
+  const [selectedHarness, setSelectedHarness] = useState('');
 
   // ── 环境安装（引擎真实数据） ──────────────────────────────
   const [tools, setTools] = useState<EnvTool[]>([]);
@@ -84,7 +87,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     }
   }, []);
 
-  useEffect(() => { void refreshEnv(); }, [refreshEnv]);
+  useEffect(() => {
+    if (sec === 'env') void refreshEnv();
+  }, [sec, refreshEnv]);
 
   const batchMode = useRef(false);
 
@@ -150,7 +155,6 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
 
   // ── 模型配置（真值只读 + 真自测） ────────────────────────
   const [chatRows, setChatRows] = useState<ModelRow[]>([]);
-  const [transport, setTransport] = useState<'api' | 'openclaw'>('openclaw');
   const [transRows, setTransRows] = useState<ModelRow[]>([]);
   const [mediaRows, setMediaRows] = useState<Record<string, ModelRow[]>>({});
   const [modelLoading, setModelLoading] = useState(true);
@@ -183,12 +187,13 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const modelCellRefs = useRef<Record<number, HTMLSpanElement | null>>({});
 
   useEffect(() => {
+    if (harness !== 'openclaw') return;
     let alive = true;
     fetchWithRetry(() => fetchLocalAgents(), 3, 10000)
       .then((d) => { if (alive) setLocalAgents(d.agents || []); })
       .catch((e) => { if (alive) setLocalAgentsErr(e instanceof Error ? e.message : '探测失败'); });
     return () => { alive = false; };
-  }, []);
+  }, [harness]);
 
   const doEnableAgent = useCallback(async (id: string, model = '') => {
     setEnabling(id);
@@ -225,11 +230,13 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
 
   useEffect(() => {
     let alive = true;
-    fetchWithRetry(() => fetchModelChannels(), 5, 15000)
+    if (!harness) return;
+    setModelLoading(true);
+    const configuration = selectedHarness === 'api' || selectedHarness === 'openclaw' ? selectedHarness : undefined;
+    fetchWithRetry(() => fetchModelChannels(configuration), 5, 15000)
       .then((d) => {
         if (!alive) return;
         setChatRows(d.channels.chat.rows || []);
-        setTransport(d.transport || 'openclaw');
         setTransRows(d.channels.transcribe.rows || []);
         setMediaRows({
           image: d.channels.image?.rows || [],
@@ -242,7 +249,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
       .catch((e) => { if (alive) setModelErr(e instanceof Error ? e.message : '模型配置读取失败'); })
       .finally(() => { if (alive) setModelLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [harness, selectedHarness]);
 
   const doSelftest = useCallback(async (channel: string) => {
     setTesting(true);
@@ -264,20 +271,6 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   // ── 模型配置可编辑（v2）：保存到 .env / openclaw ──────────
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState('');
-
-  const changeTransport = async (value: 'api' | 'openclaw') => {
-    setSaving(true);
-    try {
-      const result = await saveChatTransport(value);
-      setTransport(result.transport || value);
-      setChatRows(result.channels.chat.rows || []);
-      setSavedNote('✓ 模式已切换，请新建对话；未保存的通道草稿已重新加载');
-    } catch (error) {
-      setSavedNote(`保存失败：${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const saveCurrent = useCallback(async () => {
     const rows = chan === 'chat' ? chatRows : chan === 'transcribe' ? transRows : (mediaRows[chan] || []);
@@ -661,14 +654,16 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
             <button
               className="btn btn-sm btn-primary"
               onClick={() => void saveCurrent()}
-              disabled={saving || sec !== 'model'}
+              disabled={saving || modelLoading || sec !== 'model' || (chan === 'chat' && (selectedHarness !== harness || !['api', 'openclaw'].includes(harness)))}
+              title={chan === 'chat' && !['api', 'openclaw'].includes(harness) ? '请使用下方「保存底座」保存原生配置' : undefined}
             >
               {saving ? '保存中…' : '保存配置'}
             </button>
             <button
               className="btn btn-sm"
               onClick={() => void doSelftest(sec === 'model' ? chan : 'all')}
-              disabled={testing}
+              disabled={testing || modelLoading || selectedHarness !== harness || (!['api', 'openclaw'].includes(harness) && (sec !== 'model' || chan === 'chat'))}
+              title={!['api', 'openclaw'].includes(harness) ? '原生对话请发送消息或运行 easel ping 验证' : undefined}
             >
               {testing ? '自测中…' : '全部自测'}
             </button>
@@ -714,23 +709,20 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 </div>
                 {savedNote ? <div className={`save-note${savedNote.startsWith('保存失败') || savedNote.startsWith('没有') ? ' err' : ''}`}>{savedNote}</div> : null}
 
-                {chan === 'chat' && (
+                {chan === 'chat' && <HarnessSettings onChange={setHarness} onSelect={setSelectedHarness} />}
+                {chan === 'chat' && (selectedHarness === 'api' || selectedHarness === 'openclaw') && (
                   <section className="st-panel active">
                     <div className="panel-top">
-                      <span className={`pill ${chatOk ? 'ok' : 'off'}`}><span className="dot" />{chatOk ? (transport === 'api' ? 'API 已配置' : '主通道在线') : '未配置'}</span>
-                      <label className="desc">连接方式： <select value={transport} disabled={saving || modelLoading}
-                        onChange={(e) => void changeTransport(e.target.value as 'api' | 'openclaw')}>
-                        <option value="api">API 直连（无需 OpenClaw）</option>
-                        <option value="openclaw">OpenClaw Agent</option>
-                      </select></label>
+                      <strong>{selectedHarness === 'api' ? '仅聊天模式 API 配置' : 'OpenClaw API 配置'}</strong>
+                      <span className={`pill ${chatOk ? 'ok' : 'off'}`}><span className="dot" />{chatOk ? '已配置' : '未配置'}</span>
                       {selftest && <span className="desc">上次自测 {hhmm(selftest.testedAt)}</span>}
                       <span className="spacer" />
-                      <button className="btn btn-sm" onClick={() => void doSelftest('chat')} disabled={testing}>自测本通道</button>
+                      <button className="btn btn-sm" onClick={() => void doSelftest('chat')} disabled={testing || selectedHarness !== harness}>自测本通道</button>
                     </div>
                     {renderBoard(chatRows, { onRow: (i, p) => updateRow(setChatRows, i, p), onPrimary: setPrimaryRow, onRemove: removeRow })}
-                    {transport === 'api' ? <div className="foot-note">此通道使用独立的 EASEL_DIRECT_API_* 配置，与原有 OpenAI 通道分开保存。支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
+                    {selectedHarness === 'api' ? <div className="foot-note">此通道使用独立的 EASEL_DIRECT_API_* 配置，与原有 OpenAI 通道分开保存。支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
                       : <div className="add-row" onClick={addProvider}>＋ 添加供应商（填名称 / 模型 / Base URL / Key；点「设为主」切换生效通道）</div>}
-                    {transport !== 'api' && (() => {
+                    {harness === 'openclaw' && (() => {
                       // 本机 agent 区块：装了 Claude Code / Gemini CLI 并登录过的用户不需要填 API Key。
                       // 只展示「已装」的行 —— 没装的用户看一眼全是灰的只会困惑。
                       const shown = localAgents.filter((a) => a.installed);
@@ -885,7 +877,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
         </div>
 
         <div className="settings-foot">
-          ⓘ 模型配置保存写入 .env；API 直连无需同步 OpenClaw，下一轮生效。切换连接方式后请新建对话。
+          {harness === 'api' || harness === 'openclaw'
+            ? 'ⓘ 供应商配置保存到 .env；API 直连仅聊天、无工具。切换底座或对话模式后请新建对话。'
+            : 'ⓘ 原生 Agent 认证由其 CLI 管理；「保存底座」只保存底座、模型覆盖和权限设置。媒体通道仍单独配置。'}
         </div>
       </div>
     </div>
@@ -915,102 +909,5 @@ function FixedDropdown({ anchor, models, current, emptyHint, onPull, pulling, on
       onPick={onPick}
       onClose={onClose}
     />
-  );
-}
-
-/** 通用选项浮层（协议下拉与模型下拉共用同一视觉：圆角/阴影/悬停/当前项标注）。 */
-function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pulling, onPick, onClose }: {
-  anchor: HTMLElement | null;
-  items: { value: string; label: string }[];
-  current: string;
-  emptyHint?: string;
-  onPull?: () => void;
-  pulling?: boolean;
-  onPick: (value: string) => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  useEffect(() => {
-    if (!anchor) return;
-    const measure = () => {
-      const r = anchor.getBoundingClientRect();
-      const width = Math.max(r.width, 240);
-      // 优先向下展开；下方空间不足时向上翻
-      const below = window.innerHeight - r.bottom;
-      const est = Math.min(items.length, 8) * 30 + 10;
-      const openUp = below < Math.min(est, 240) && r.top > est;
-      setPos({
-        top: openUp ? r.top - Math.min(est, 240) - 4 : r.bottom + 4,
-        left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)),
-        width,
-      });
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    window.addEventListener('scroll', measure, true);
-    return () => {
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
-    };
-  }, [anchor, items.length]);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)
-          && !(anchor && anchor.contains(e.target as Node))) onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        onClose();
-        anchor?.focus();
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [anchor, onClose]);
-
-  if (!pos) return null;
-  return createPortal(
-    <div ref={ref} className="model-dd" role="listbox" onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-      style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}>
-      {items.length === 0 && (
-        <div className="dd-empty">
-          <span>{emptyHint || '该端点没有返回模型'}</span>
-          {onPull && (
-            <button className="dd-pull" onMouseDown={(e) => { e.preventDefault(); onPull(); }} disabled={pulling}>
-              {pulling ? <><span className="spin" />拉取中</> : '立即拉取'}
-            </button>
-          )}
-        </div>
-      )}
-      {items.map((it) => (
-        <div
-          key={it.value}
-          role="option"
-          aria-selected={it.value === current}
-          tabIndex={0}
-          className={`dd-item${it.value === current ? ' active' : ''}`}
-          onMouseDown={(e) => { e.preventDefault(); onPick(it.value); }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              onPick(it.value);
-            }
-          }}
-        >
-          <span>{it.label}</span>
-          {it.value === current && <small>当前</small>}
-        </div>
-      ))}
-    </div>,
-    document.body,
   );
 }

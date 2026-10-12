@@ -104,7 +104,8 @@ function transformLink(seg: string): string {
   if (!rel || rel.split('/').some(part => part === '..' || part === '.')) return seg;
   // 文件进入内容库预览；图片保留媒体目标，以便已有 ![图片] 正常内联。
   try {
-    const url = IMG_RE.test(target) ? toMediaUrl(target) : toJumpUrl(target);
+    const previewable = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico|html?|mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|pdf)$/i.test(target);
+    const url = previewable ? toMediaUrl(target) : toJumpUrl(target);
     return `${match[1]}(${url})`;
   } catch {
     return seg;

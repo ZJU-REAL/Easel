@@ -25,10 +25,13 @@ from easel.commands.skill import cmd_skill
 from easel.openclaw_cmd import openclaw_base_cmd
 from easel.persona import list_personas as _list_personas
 from easel.persona import persona_prefix
+from easel.persona import chat_turn_message
 from easel.persona import load_profile_text
-from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_mode, history_path,
+from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, history_path,
                               read_settings, stream_chat)
 from easel.timeouts import TIMEOUT_CHAT
+from easel import harnesses
+from easel.harnesses.base import HarnessError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROFILES_DIR = PROJECT_ROOT / "profiles"
@@ -127,7 +130,32 @@ def cmd_chat(_args) -> int:
 
     session_key = f"easel-{time.strftime('%m%d-%H%M%S')}"
 
-    if api_mode(read_settings()):
+    settings = read_settings()
+    runtime = harnesses.settings(PROJECT_ROOT / "outputs", settings)["runtime"]
+    if runtime not in ("api", "openclaw"):
+        print(f"  Agent 底座：{runtime}（/exit 退出）")
+        native_id = ""
+
+        def remember(value):
+            nonlocal native_id
+            native_id = value
+
+        while True:
+            try:
+                message = input("你：").strip()
+                if message in ("/exit", "/quit"):
+                    return 0
+                if message:
+                    _, native_id = asyncio.run(harnesses.console_turn(
+                        chat_turn_message(message, selected_persona), PROJECT_ROOT,
+                        {**settings, **_proxy_env()}, native_id, on_bind=remember))
+                    print()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            except (HarnessError, asyncio.TimeoutError) as error:
+                print(f"\nAgent 执行失败：{error or '请求超时'}")
+    if runtime == "api":
         print("  API 直连模式（文字问答；/exit 退出）\n")
         system = SYSTEM_PROMPT
         if selected_persona:
@@ -174,8 +202,10 @@ def cmd_chat(_args) -> int:
 
 def cmd_web(args) -> int:
     """启动 Web 工作台（FastAPI + React），默认 http://localhost:7860。"""
+    from easel.runtime_env import web_environment
+
     port = getattr(args, "port", 7860)
-    env = _proxy_env()
+    env = web_environment(_proxy_env())
     env["EASEL_PORT"] = str(port)
     script = PROJECT_ROOT / "web" / "app.py"
     if not script.is_file():
@@ -230,7 +260,11 @@ def main(argv: list[str] | None = None) -> int:
     p_web.set_defaults(func=cmd_web)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except HarnessError as error:
+        print(f"Agent 设置错误：{error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

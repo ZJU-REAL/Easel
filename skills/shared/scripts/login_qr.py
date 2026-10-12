@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 
 
-def save_qr(image_bytes: bytes, output: Path) -> bool:
+def save_qr(image_bytes: bytes, output: Path, *, minimum_size: int = 0) -> bool:
     """只检测二维码位置，不解码或记录其中的登录令牌。"""
     import cv2
     import numpy as np
@@ -35,6 +35,8 @@ def save_qr(image_bytes: bytes, output: Path) -> bool:
     right = min(image.width, math.ceil(float(corners[:, 0].max())) + 1)
     bottom = min(image.height, math.ceil(float(corners[:, 1].max())) + 1)
     if right <= left or bottom <= top:
+        return False
+    if min(right - left, bottom - top) < minimum_size:
         return False
     cropped = image.crop((left, top, right, bottom))
     padding = max(8, math.ceil(max(cropped.size) * 0.12))
@@ -66,7 +68,8 @@ def save_qr(image_bytes: bytes, output: Path) -> bool:
     return True
 
 
-def capture_qr(page, output: Path, selectors: str, *, attempts: int = 3) -> None:
+def capture_qr(page, output: Path, selectors: str, *, attempts: int = 3,
+               minimum_size: int = 0) -> None:
     """遍历可见图片/画布及二维码容器，等待实际像素就绪后裁剪。"""
     candidates = [selector.strip() for selector in selectors.split(",") if selector.strip()]
     leaf_selectors = [f"{selector} img, {selector} canvas" for selector in candidates]
@@ -91,7 +94,7 @@ def capture_qr(page, output: Path, selectors: str, *, attempts: int = 3) -> None
                     if image_bytes in seen:
                         continue
                     seen.add(image_bytes)
-                    if save_qr(image_bytes, output):
+                    if save_qr(image_bytes, output, minimum_size=minimum_size):
                         return
                 except Exception:
                     continue
@@ -100,14 +103,15 @@ def capture_qr(page, output: Path, selectors: str, *, attempts: int = 3) -> None
     raise RuntimeError("未找到可识别的登录二维码；页面可能尚未加载、被平台拦截或需要切换扫码登录")
 
 
-def prepare_qr(page, output: Path, selectors: str, switch_selectors: str) -> None:
+def prepare_qr(page, output: Path, selectors: str, switch_selectors: str, *,
+               minimum_size: int = 0) -> None:
     """已有可识别二维码时不点击切换控件，以免切回短信登录。"""
     try:
         page.wait_for_selector(f"{selectors}, {switch_selectors}", timeout=15000, state="visible")
     except Exception:
         pass
     try:
-        capture_qr(page, output, selectors)
+        capture_qr(page, output, selectors, minimum_size=minimum_size)
         return
     except RuntimeError as error:
         missing = error
@@ -118,6 +122,6 @@ def prepare_qr(page, output: Path, selectors: str, switch_selectors: str) -> Non
                 page.wait_for_selector(selectors, timeout=15000, state="visible")
             except Exception:
                 pass
-            capture_qr(page, output, selectors)
+            capture_qr(page, output, selectors, minimum_size=minimum_size)
             return
     raise missing

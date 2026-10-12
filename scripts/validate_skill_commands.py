@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILLS = ROOT / "skills" / "openclaw"
+SKILLS = ROOT / "skills" / "builtin"
 FENCE_RE = re.compile(r"```(?:bash|sh|shell)\s*\n(.*?)```", re.S)
 OPTION_RE = re.compile(r"(?<!\S)(--[a-zA-Z][a-zA-Z0-9-]*|-[a-zA-Z])")
 
@@ -40,7 +40,14 @@ def resolve_script(doc: Path, token: str) -> Path | None:
     candidate = Path(token)
     if candidate.is_absolute():
         return candidate
-    if token.startswith(("skills/", "scripts/", "openclaw/")):
+    if token.startswith(("skills/", "agents/")):
+        return ROOT / candidate
+    if token.startswith("scripts/"):
+        for parent in doc.parents:
+            if parent == ROOT:
+                break
+            if (parent / "SKILL.md").is_file():
+                return parent / candidate
         return ROOT / candidate
     return doc.parent / candidate
 
@@ -70,7 +77,9 @@ def cli_schema(script: Path) -> tuple[set[str], set[str]]:
 def main() -> int:
     failures = []
     checked = 0
-    docs = sorted(SKILLS.glob("*/SKILL.md")) + sorted(SKILLS.glob("*/references/*.md"))
+    docs = sorted(SKILLS.rglob("*.md")) + sorted((ROOT / "agents").rglob("*.md")) \
+        + sorted((ROOT / "skills" / "shared").rglob("*.md")) \
+        + sorted(ROOT.glob("*.md")) + sorted((ROOT / "docs").rglob("*.md"))
     cache: dict[Path, tuple[set[str], set[str]]] = {}
     for doc in docs:
         for line, invocation in commands(doc):

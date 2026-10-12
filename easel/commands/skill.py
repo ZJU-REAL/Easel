@@ -22,10 +22,10 @@ from pathlib import Path
 from easel.openclaw_cmd import openclaw_base_cmd
 from easel.persona import persona_prefix, profile_exists
 from easel.timeouts import TIMEOUT_PRODUCE
-from easel.direct_api import api_mode, read_settings
+from easel.direct_api import read_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SKILLS_DIR = PROJECT_ROOT / "skills" / "openclaw"
+SKILLS_DIR = PROJECT_ROOT / "skills" / "builtin"
 PROFILES_DIR = PROJECT_ROOT / "profiles"
 OPENCLAW_PROFILE = "easel"
 
@@ -142,7 +142,12 @@ def _run_via_openclaw(message: str, timeout: int = 300) -> int:
 
 
 def cmd_skill(args) -> int:
-    if api_mode(read_settings()):
+    from easel import harnesses
+    from easel.harnesses.base import HarnessError
+    import asyncio
+    settings = read_settings()
+    runtime = harnesses.settings(PROJECT_ROOT / "outputs", settings)["runtime"]
+    if runtime == "api":
         print("[easel] API 直连支持聊天；SKILL 执行需要具备本机工具的 Agent 运行时")
         return 1
     skill_name = args.name
@@ -172,4 +177,12 @@ def cmd_skill(args) -> int:
         print(f"[easel] 画像: {args.profile}")
     print("─" * 50)
 
+    if runtime != "openclaw":
+        try:
+            asyncio.run(harnesses.console_turn(message, PROJECT_ROOT, settings, timeout=timeout))
+            print()
+            return 0
+        except (HarnessError, asyncio.TimeoutError) as error:
+            print(f"\nAgent 执行失败：{error or '请求超时'}")
+            return 1
     return _run_via_openclaw(message, timeout=timeout)

@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web"))
 import app as web
 from easel import direct_api
+from easel.harnesses import store
 
 BASE = "http://localhost:50288/v1"
 SETTINGS = {"EASEL_DIRECT_API_BASE_URL": BASE, "EASEL_DIRECT_API_MODEL": "gpt-6.1-sol", "EASEL_DIRECT_API_KEY": "gateway-secret"}
@@ -43,7 +44,7 @@ def upstream(monkeypatch, handler):
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
-    for key in (*SETTINGS, "EASEL_CHAT_TRANSPORT"):
+    for key in (*SETTINGS, "EASEL_CHAT_TRANSPORT", "EASEL_AGENT_RUNTIME"):
         monkeypatch.delenv(key, raising=False)
     env = tmp_path / ".env"
     env.write_text("EASEL_CHAT_TRANSPORT=api\n" + "\n".join(f"{k}={v}" for k, v in SETTINGS.items()))
@@ -66,7 +67,12 @@ def sandbox(tmp_path, monkeypatch):
         yield client
 
 
-def test_stream_history_and_recovery_without_openclaw(sandbox, monkeypatch):
+@pytest.mark.parametrize("legacy_transport", ["api", "http"])
+def test_stream_history_and_recovery_without_openclaw(sandbox, monkeypatch, legacy_transport):
+    if legacy_transport == "http":
+        web.ENV_FILE.write_text("EASEL_CHAT_TRANSPORT=http\n" + "\n".join(
+            f"{key}={value}" for key, value in SETTINGS.items()), encoding="utf-8")
+        store.write_json(web.OUTPUTS_DIR / "_harness" / "config.json", {"runtime": "api"})
     requests = []
     def respond(request):
         assert str(request.url) == BASE + "/chat/completions"
@@ -133,7 +139,12 @@ def test_nonstream_and_model_save_without_openclaw(sandbox, monkeypatch):
     assert sandbox.post("/api/skill", json={"skill": "check-compliance", "input": "hi"}).status_code == 409
 
 
-def test_private_models_only_allowed_for_configured_gateway(sandbox, monkeypatch):
+@pytest.mark.parametrize("legacy_transport", ["api", "http"])
+def test_private_models_only_allowed_for_configured_gateway(sandbox, monkeypatch, legacy_transport):
+    if legacy_transport == "http":
+        web.ENV_FILE.write_text("EASEL_CHAT_TRANSPORT=http\n" + "\n".join(
+            f"{key}={value}" for key, value in SETTINGS.items()), encoding="utf-8")
+        store.write_json(web.OUTPUTS_DIR / "_harness" / "config.json", {"runtime": "api"})
     monkeypatch.setattr(web, "_ssrf_safe", lambda url: False)
     captured = []
     class Response:
@@ -509,12 +520,12 @@ oc_set() { printf '%s\\n' "$3" > "$PROVIDER_CAPTURE"; }
                             env=environment, capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
     assert json.loads(capture.read_text())["authHeader"] is False
-    start = script.index('if [ "$SETUP_MODE" = check ]; then\n    emit_action env_set EASEL_CHAT_TRANSPORT')
+    start = script.index('if [ "$SKIP_OPENCLAW" != true ]; then\nif [ "$SETUP_MODE" = check ]; then')
     end = script.index('if [ "$CHAT_MODE" = "api" ]; then', start)
     env_file = tmp_path / ".env"
     env_file.write_text("EASEL_CHAT_TRANSPORT=http\n")
     result = subprocess.run(["bash", "-c", "set -e\nemit_action() { :; }\n" + script[start:end]],
-                            env={**environment, "SETUP_MODE": "check", "CHAT_MODE": "api",
+                            env={**environment, "SETUP_MODE": "check", "CHAT_MODE": "api", "SKIP_OPENCLAW": "false",
                                  "PROJECT_ROOT": str(tmp_path)}, capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
     assert env_file.read_text() == "EASEL_CHAT_TRANSPORT=http\n"

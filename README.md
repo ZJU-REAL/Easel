@@ -368,12 +368,12 @@ cp -r profiles/_template "profiles/我的账号"
 Easel/
 ├── easel/                    Python CLI：chat / web / skill / doctor / ping
 ├── web/                      FastAPI 后端与 React 工作台
-├── skills/openclaw/          发现、策划、制作、发布、归因技能
+├── skills/builtin/           发现、策划、制作、发布、归因技能
 ├── skills/shared/            跨技能脚本与参考资料
 ├── assets/                   品牌、README 媒体与用户导入素材
 ├── profiles/                 账号画像（每个画像一个目录）
 ├── outputs/                  内容项目与最终产物
-├── openclaw/                 隔离 profile、workspace 与同步脚本
+├── agents/                   共享 Agent 工作区、底座配置与同步脚本
 └── docs/                     能力规范、能力地图与架构文档
 ```
 

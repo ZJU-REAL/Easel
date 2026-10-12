@@ -22,9 +22,11 @@ import argparse
 import json
 import os
 import random
+import signal
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import login_state  # noqa: E402
@@ -949,6 +951,19 @@ def cmd_check(_a) -> int:
 
 
 def cmd_login(a) -> int:
+    previous_handler = signal.getsignal(signal.SIGTERM)
+
+    def stop_login(signum, frame):
+        raise SystemExit(0)
+
+    try:
+        signal.signal(signal.SIGTERM, stop_login)
+        return _run_login(a)
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
+
+
+def _run_login(a) -> int:
     try:
         from playwright.sync_api import sync_playwright
     except Exception as e:
@@ -969,14 +984,14 @@ def cmd_login(a) -> int:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             try:
-                page.goto(HOME_URL, wait_until="domcontentloaded", timeout=45000)
+                page.goto(HOME_URL, wait_until="commit", timeout=15000)
             except Exception as e:
                 login_state.write_status(
                     sf, "error",
                     f"打不开抖音页面（{type(e).__name__}）。常见原因：网络，或与「校验账号」抢同一个登录目录。",
                 )
                 _die(f"打开 {HOME_URL} 失败：{e}", 1)
-            page.wait_for_timeout(1000)
+            _wait_ready(page, timeout_ms=10000)
             if _logged_in(page):
                 login_state.write_status(sf, "success", "已登录")
                 print("✅ 抖音已登录（登录态在持久化目录）")
@@ -1032,7 +1047,7 @@ def cmd_login(a) -> int:
             scanned = False
             last_shot = time.time()
             while time.time() < deadline:
-                if _logged_in(page):
+                if any(_logged_in(candidate) for candidate in ctx.pages):
                     login_state.write_status(sf, "success", "登录成功")
                     print("✅ 抖音登录成功，登录态已持久化")
                     try:
@@ -1333,42 +1348,56 @@ def cmd_whoami(a) -> int:
             ctx = _launch(p, headed=False, base=a.profile_base, proxy=_proxy(a.proxy, a.no_proxy))
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                page.goto(HOME_URL, wait_until="domcontentloaded")
-                try:
-                    page.wait_for_selector(SELECTORS["hd_publish"], timeout=4000)
-                except Exception:
-                    pass
+                page.goto(HOME_URL, wait_until="commit", timeout=10000)
+                _wait_ready(page, timeout_ms=10000)
                 logged = _logged_in(page)
                 result["loggedIn"] = logged
-                if logged:
-                    # 昵称/头像用**稳定锚点**取，不靠随机 class（真机校准 2026-08）：
-                    # 头像 src 路径含 aweme-avatar 稳定；昵称是「抖音号：」上一行的非数字文本。
-                    try:
-                        page.wait_for_timeout(1500)  # 主页头像/昵称异步渲染
-                        na = page.evaluate(
-                            r"""() => {
-                                const av = document.querySelector('img[src*="aweme-avatar"]')
-                                       || document.querySelector('img[src*="douyinpic.com/aweme"]');
-                                let name = '', avatar = av ? av.src : '';
-                                const all = [...document.querySelectorAll('*')].filter(
-                                    e => e.children.length === 0 && (e.textContent || '').trim());
-                                const ai = all.findIndex(e => /抖音号[:：]/.test(e.textContent));
-                                if (ai > 0) for (let j = ai - 1; j >= 0 && j >= ai - 4; j--) {
-                                    const t = (all[j].textContent || '').trim();
-                                    if (t && !/^[\d,]+$/.test(t) && t.length <= 40) { name = t; break; }
-                                }
-                                return {name, avatar};
-                            }""")
-                        result["name"] = (na.get("name") or "")[:40]
-                        result["avatar"] = na.get("avatar") or ""
-                    except Exception:
-                        pass
+                response = page.evaluate(platform_readback._JS_FETCH_JSON,
+                                         [platform_readback.DOUYIN_PROFILE_API, 4000])
+                account = _account_identity(response)
+                if account is not None:
+                    result.update(loggedIn=True, **account)
+                elif not logged:
+                    body = response.get("body") if isinstance(response, dict) else None
+                    status = body.get("status_code") if isinstance(body, dict) else None
+                    if status not in (8, 1002, 2154):
+                        result["error"] = "账号页面或身份接口尚未就绪，请稍后重试"
             finally:
                 ctx.close()
     except Exception as e:  # noqa: BLE001 — whoami 永远输出 JSON
         result["error"] = str(e)
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def _account_identity(response) -> dict | None:
+    if not isinstance(response, dict) or response.get("fetchError") or response.get("httpStatus") != 200:
+        return None
+    body = response.get("body")
+    if not isinstance(body, dict) or type(body.get("status_code")) is not int or body["status_code"] != 0:
+        return None
+    user = body.get("user_info") or body.get("user")
+    if not isinstance(user, dict) or not (user.get("uid") or user.get("sec_uid") or user.get("open_id")):
+        return None
+    name = user.get("nickname") or user.get("name")
+    avatar = ""
+    for field in ("avatar_larger", "avatar_medium", "avatar_thumb"):
+        candidate = user.get(field)
+        urls = candidate.get("url_list") if isinstance(candidate, dict) else None
+        if isinstance(urls, list):
+            for url in urls:
+                if not isinstance(url, str):
+                    continue
+                try:
+                    parsed = urlparse(url)
+                    if parsed.scheme in ("https", "http") and parsed.hostname and not parsed.username and not parsed.password:
+                        avatar = url
+                        break
+                except ValueError:
+                    pass
+        if avatar:
+            break
+    return {"name": name.strip()[:40] if isinstance(name, str) else "", "avatar": avatar}
 
 
 def cmd_selftest(_a) -> int:

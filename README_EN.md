@@ -305,12 +305,12 @@ Profiles can also be created and edited from the Web workspace.
 Easel/
 ├── easel/                    Python CLI
 ├── web/                      FastAPI backend and React workspace
-├── skills/openclaw/          Discover, plan, produce, publish, and attribution Skills
+├── skills/builtin/           Discover, plan, produce, publish, and attribution Skills
 ├── skills/shared/            Shared scripts and references
 ├── assets/                   Brand, README media, and imported assets
 ├── profiles/                 Account profiles
 ├── outputs/                  Content projects and final deliverables
-├── openclaw/                 Isolated profile, workspace, and sync scripts
+├── agents/                   Shared Agent workspace, harness configuration, and sync scripts
 └── docs/                     Specifications, capability map, and architecture docs
 ```
 

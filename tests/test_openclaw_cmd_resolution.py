@@ -94,6 +94,24 @@ def test_path_openclaw_symlink_still_preferred(tmp_path, monkeypatch):
     assert cmd == [str(node), str(mjs.resolve())]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix npm symlink layout")
+def test_path_openclaw_uses_its_adjacent_node_without_replacing_system_node(tmp_path, monkeypatch):
+    prefix, system_node = _fake_tree(tmp_path)
+    matching_node = prefix / "bin" / "node"
+    matching_node.parent.mkdir()
+    matching_node.write_text("#!/bin/sh\n", encoding="utf-8")
+    matching_node.chmod(0o755)
+    script = prefix / "lib/node_modules/openclaw/openclaw.mjs"
+    link = prefix / "bin/openclaw"
+    try:
+        link.symlink_to(script)
+    except OSError:
+        pytest.skip("Symbolic links unavailable")
+    monkeypatch.setattr(oc.shutil, "which", lambda command: {
+        "node": str(system_node), "openclaw": str(link)}.get(command))
+    assert oc.openclaw_base_cmd() == [str(matching_node), str(script)]
+
+
 def test_missing_everywhere_raises_with_actionable_message(tmp_path, monkeypatch):
     """真的都没有时才抛错，且错误信息要给出可操作建议。"""
     monkeypatch.setattr(oc.shutil, "which", lambda c: None)
@@ -101,6 +119,19 @@ def test_missing_everywhere_raises_with_actionable_message(tmp_path, monkeypatch
     with pytest.raises(FileNotFoundError) as ei:
         oc.openclaw_base_cmd()
     assert "npm i -g openclaw" in str(ei.value)
+
+
+def test_settings_detection_rechecks_changed_openclaw_installation(tmp_path, monkeypatch):
+    from easel import harnesses
+
+    executable = tmp_path / "openclaw"
+    executable.touch()
+    executable.chmod(0o755)
+    monkeypatch.setattr(oc.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(oc.shutil, "which", lambda command: str(executable) if command == "openclaw" else None)
+    assert harnesses.describe("openclaw")["installed"] is True
+    monkeypatch.setattr(oc.shutil, "which", lambda command: None)
+    assert harnesses.describe("openclaw")["installed"] is False
 
 
 def test_npmrc_prefix_is_read(tmp_path, monkeypatch):

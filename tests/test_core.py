@@ -16,7 +16,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "web"))
-sys.path.insert(0, str(PROJECT_ROOT / "skills" / "openclaw" / "paper-explainer" / "scripts"))
+sys.path.insert(0, str(PROJECT_ROOT / "skills" / "builtin" / "paper-explainer" / "scripts"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from easel.commands import skill as cli_skill  # noqa: E402
@@ -383,6 +383,30 @@ def test_web_find_skill_matches_cli():
     assert web.find_skill("nope-xyz") is None
 
 
+def test_web_skill_list_reads_builtin_directory(monkeypatch):
+    monkeypatch.setattr(web, "_read_env", lambda: {})
+    expected = {
+        directory.name
+        for directory in (PROJECT_ROOT / "skills" / "builtin").iterdir()
+        if (directory / "SKILL.md").is_file()
+    }
+    listed = asyncio.run(web.api_skills())
+    assert expected
+    assert {skill["name"] for skill in listed} == expected
+    assert all(skill["description"] for skill in listed)
+
+
+def test_web_skill_detail_reads_builtin_directory(monkeypatch):
+    monkeypatch.setattr(web, "_read_env", lambda: {})
+    detail = asyncio.run(web.api_skill_detail("social-content"))
+    assert detail["name"] == "social-content"
+    assert detail["description"]
+    assert detail["body"]
+    assert detail["body"] in (
+        PROJECT_ROOT / "skills" / "builtin" / "social-content" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+
 def test_chat_route_is_registered_to_handler_not_request_model():
     route = next(
         route for route in web.app.routes
@@ -434,7 +458,7 @@ def test_persona_gate_low_score_warns_but_never_blocks_publish():
 
 
 def test_persona_skill_prioritizes_positioning_and_caps_cross_niche_scores():
-    skill = (PROJECT_ROOT / "skills/openclaw/skill-persona-check/SKILL.md").read_text(encoding="utf-8")
+    skill = (PROJECT_ROOT / "skills/builtin/skill-persona-check/SKILL.md").read_text(encoding="utf-8")
     assert "账号定位与内容赛道" in skill and "| 30% |" in skill
     assert "内容形式一致性" in skill and "目标受众匹配" in skill
     assert "总分最高 59" in skill

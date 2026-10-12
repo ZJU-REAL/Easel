@@ -1,5 +1,12 @@
 ﻿# 注意：本文件为 UTF-8 with BOM。Windows PowerShell 5.1 需 BOM 才能正确解析中文字符串（否则报「语法错误」）；请勿移除。
+param(
+    [switch]$SkipOpenClaw,
+    [switch]$OpenClaw,
+    [switch]$NonInteractive
+)
+
 $ErrorActionPreference = 'Stop'
+if ($SkipOpenClaw -and $OpenClaw) { throw '不能同时指定 -SkipOpenClaw 和 -OpenClaw。' }
 $Root = (Resolve-Path (Split-Path -Parent $MyInvocation.MyCommand.Path)).Path
 $Venv = Join-Path $Root '.venv'
 $Python = Join-Path $Venv 'Scripts\python.exe'
@@ -257,6 +264,15 @@ print(json.dumps(p))
 }
 
 Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta
+if (-not $SkipOpenClaw -and -not $OpenClaw -and -not $NonInteractive -and
+    [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    Info '默认安装或复用 OpenClaw；也可以跳过，进入 Web 后选择已安装的 Codex / OpenCode。'
+    $installAnswer = Read-Host '是否安装或复用 OpenClaw？[Y/n]'
+    if ($installAnswer.Trim() -match '^(n|no|0)$') { $SkipOpenClaw = $true }
+}
+if ($SkipOpenClaw) {
+    Info '只安装 Easel 与 Web 依赖，不安装、配置或启动 OpenClaw；已有底座与凭证保留。'
+}
 Step '1/8' '检查系统环境' 'Python · Node.js · Git · FFmpeg'
 Info '检查系统环境...'
 Install-RequiredCommand 'git' 'Git.Git' '请安装 Git for Windows 并加入 PATH。'
@@ -267,7 +283,10 @@ Install-RequiredCommand 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH�
 # 跟随 openclaw@latest 的引擎要求（当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0，25.x/26.0 被排除）。
 $nodeParts = (& node -p 'process.versions.node').Split('.') | ForEach-Object { [int]$_ }
 $nodeOk = ($nodeParts[0] -eq 24 -and $nodeParts[1] -ge 16) -or ($nodeParts[0] -eq 26 -and $nodeParts[1] -ge 1) -or ($nodeParts[0] -ge 27)
-if (-not $nodeOk) { Fail 'Node.js 24.16+（24.x）或 26.1+ 是必需依赖（openclaw@latest 要求）；winget 的 LTS 若仍是 22.x，请手动安装 Node 24。' }
+if ($SkipOpenClaw) {
+    $nodeOk = ($nodeParts[0] -eq 20 -and $nodeParts[1] -ge 19) -or ($nodeParts[0] -eq 22 -and $nodeParts[1] -ge 12) -or ($nodeParts[0] -ge 23)
+}
+if (-not $nodeOk) { Fail '当前 Node.js 不满足安装依赖；仅安装 Web 需要 20.19+（20.x）或 22.12+，安装 openclaw@latest 需要 24.16+（24.x）或 26.1+。' }
 $pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
 # 这是一次可用性探测：python 存在但跑不起来（典型是 Windows 应用商店的占位 python.exe）
 # 时要安静地换下一个候选，不能让它抛 NativeCommandError 把安装打断。
@@ -280,10 +299,12 @@ if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & $pythonCom
 if (-not (Test-Path $Python)) { Fail 'Python venv 创建失败。' }
 Ok '系统环境检查完成'
 
+if (-not $SkipOpenClaw) {
 Step '2/8' '检测 OpenClaw' '已有安装将直接复用'
 Info '安装 OpenClaw...'
 if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) { & npm install -g openclaw@latest --loglevel warn; if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 安装失败。' } }
 Assert-Command 'openclaw' '请确认 npm 全局 bin 已加入 PATH。'
+}
 Step '3/8' '安装 Easel 运行依赖' 'Web · 媒体 · 浏览器发布'
 Info '安装 Easel Python 依赖...'
 & $Python -m pip install --upgrade pip --progress-bar on
@@ -308,6 +329,16 @@ if (-not (Invoke-WithProgress 'Playwright Chromium' $Python @('-m','playwright',
         "$Python -m playwright install chromium"
 }
 
+$envPath = Join-Path $Root '.env'
+if (-not (Test-Path $envPath)) { Copy-Item (Join-Path $Root '.env.example') $envPath }
+$envValues = Read-EnvFile $envPath
+function Test-UsableKey($Value) { return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch 'REPLACE_ME|your[-_ ]?api[-_ ]?key' }
+
+if ($SkipOpenClaw) {
+    Step '6/8' '准备执行引擎设置' '进入 Web 后选择已安装的 Agent；不迁移原生凭证'
+    & $Python -m easel.installation $Root api
+    if ($LASTEXITCODE -ne 0) { Fail '执行引擎设置初始化失败；已有配置未覆盖，请检查文件后重试。' }
+} else {
 Step '6/8' '初始化 Easel profile' '独立配置、独立 workspace、独立 Gateway'
 Info '准备 Easel OpenClaw profile...'
 $onboardHelp = (Invoke-NativeCapture 'openclaw' @('onboard','--help')).Output
@@ -365,8 +396,21 @@ if ([string]::IsNullOrWhiteSpace($workspace)) {
 Info "  workspace → $workspace"
 $skills = Join-Path $workspace 'skills'
 New-Item -ItemType Directory -Force -Path $skills | Out-Null
-if (Test-Path (Join-Path $Root 'skills\openclaw')) { Copy-Item (Join-Path $Root 'skills\openclaw\*') $skills -Recurse -Force }
-Copy-Item (Join-Path $Root 'openclaw\workspace\*.md') $workspace -Force -ErrorAction SilentlyContinue
+if (Test-Path (Join-Path $Root 'skills\builtin')) { Copy-Item (Join-Path $Root 'skills\builtin\*') $skills -Recurse -Force }
+Copy-Item (Join-Path $Root 'agents\workspace\*.md') $workspace -Force -ErrorAction SilentlyContinue
+@"
+
+## 运行时项目根与执行引擎
+
+当前执行引擎：OpenClaw。使用当前引擎实际提供的工具和权限，不冒充其它引擎。
+Easel 项目根绝对路径：$Root
+运行项目脚本前先切换到该目录，使用项目的 .venv Python 和 skills/shared/scripts/；
+Python 绝对路径：$(Join-Path $Root '.venv\Scripts\python.exe')
+内置技能源：$(Join-Path $Root 'skills\builtin')
+共享资源：$(Join-Path $Root 'skills\shared')
+用户画像实际路径：$(Join-Path $Root 'profiles')；easel-profiles 仅为工作区链接，不是项目根必需目录。
+不要在 workspace 的 shared/ 副本中检查 Key、URL 或模型配置。
+"@ | Add-Content -Path (Join-Path $workspace 'AGENTS.md') -Encoding UTF8
 $context = Join-Path $workspace 'CONTEXT.md'
 @"
 # Easel 项目路径
@@ -391,11 +435,9 @@ if (Test-Path $outputs) {
     if ($outputsItem.LinkType -ne 'Junction') { Fail "$outputs 已存在但不是项目 outputs Junction，请移走后重试。" }
 } else { New-Item -ItemType Junction -Path $outputs -Target (Join-Path $Root 'outputs') | Out-Null }
 
-$envPath = Join-Path $Root '.env'
-if (-not (Test-Path $envPath)) { Copy-Item (Join-Path $Root '.env.example') $envPath }
 $envValues = Read-EnvFile $envPath
-function Test-UsableKey($Value) { return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch 'REPLACE_ME|your[-_ ]?api[-_ ]?key' }
-if (-not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_API_KEY']) -and -not (Test-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and -not (Test-UsableKey $envValues['EASEL_LLM_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_MAAS_API_KEY'])) {
+if (-not $NonInteractive -and -not [Console]::IsInputRedirected -and
+    -not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_API_KEY']) -and -not (Test-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and -not (Test-UsableKey $envValues['EASEL_LLM_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_MAAS_API_KEY'])) {
     $choice = Read-Host '模型服务：1 Anthropic / 2 OpenAI-compatible / 0 稍后配置 [1]'
     if ($choice -eq '2') { $key = Read-Secret 'OpenAI API Key（不会回显）'; $url = Read-Host 'Base URL [https://api.openai.com/v1]'; $model = Read-Host '模型 [gpt-4o]'; Add-Content $envPath "`nOPENAI_API_KEY=$key`nOPENAI_BASE_URL=$url`nOPENAI_MODEL=$model" }
     elseif ($choice -eq '1' -or [string]::IsNullOrWhiteSpace($choice)) { $key = Read-Secret 'Anthropic API Key（不会回显）'; $model = Read-Host '模型 [anthropic/claude-sonnet-4-6]'; Add-Content $envPath "`nANTHROPIC_API_KEY=$key`nCLAUDE_MODEL=$model" }
@@ -531,9 +573,15 @@ $gw = Invoke-NativeCapture 'powershell' @('-NoProfile','-ExecutionPolicy','Bypas
 if (-not $gw.Ok) {
     Add-Warning 'Gateway' '启动失败' 'powershell -File scripts\gateway.ps1 start' 'high'
 }
+}
 
 Show-Summary
-if (-not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and
+if ($SkipOpenClaw) {
+    Write-Host ''
+    Write-Host '  下一步：启动 Web → 设置 → Agent 底座 → 执行引擎 → 选择已安装的 Codex / OpenCode → 保存' -ForegroundColor Cyan
+    Write-Host '  原生认证由对应 CLI 管理；新用户默认仅聊天模式，可稍后填写模型 API 配置。' -ForegroundColor DarkGray
+    Write-Host '  以后需要 OpenClaw：重新运行 .\setup.ps1 -OpenClaw，再在 Web 设置切换底座。' -ForegroundColor DarkGray
+} elseif (-not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and
     -not (Test-UsableKey $envValues['OPENAI_API_KEY']) -and
     -not (Test-UsableKey $envValues['EASEL_LLM_API_KEY'])) {
     Write-Host ''
@@ -546,3 +594,6 @@ if (-not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and
 Write-Host ''
 Write-Host "  启动 Web：$Venv\Scripts\easel.exe web" -ForegroundColor Cyan
 Write-Host "  检查环境：$Venv\Scripts\easel.exe doctor" -ForegroundColor Cyan
+if (-not $SkipOpenClaw) {
+    Write-Host '  默认执行引擎：OpenClaw；Web 设置可切换到已安装的 Codex、OpenCode 或其它 ACP 引擎。' -ForegroundColor DarkGray
+}

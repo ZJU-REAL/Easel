@@ -2,7 +2,7 @@
 
 历史上三处各写一份画像逻辑，且 CLI 还残留全局 USER.md（并发竞态）。
 统一到这里后：画像一律**作为消息内联**注入（`我当前使用的画像是「X」。`），
-由 OpenClaw 按 AGENTS.md 自行读取 `profiles/<X>/` 并凝练，每个请求自包含，无全局文件污染。
+由当前 Agent 执行引擎按 AGENTS.md 自行读取 `profiles/<X>/` 并凝练，每个请求自包含，无全局文件污染。
 参见 docs/prompt-stack.md。
 """
 

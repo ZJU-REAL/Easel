@@ -103,6 +103,139 @@ def test_non_qr_image_does_not_create_output(tmp_path):
     assert not output.exists()
 
 
+def test_xhs_minimum_qr_size_rejects_small_switch_icon(tmp_path):
+    output = tmp_path / "qr.png"
+    assert not login_qr.save_qr(qr_bytes(scale=2), output, minimum_size=96)
+    assert not output.exists()
+    assert login_qr.save_qr(qr_bytes(scale=5), output, minimum_size=96)
+
+
+@pytest.mark.parametrize("body", [
+    "工程师正在维护页面，请稍后再试",
+    "系统正在维护，请稍后重试",
+])
+def test_xhs_maintenance_is_not_expiry_or_authenticated_route(body):
+    page = xhs_page(xhs_publish.CREATOR_HOME_URL, body=body)
+    assert "维护页面" in xhs_publish._login_error(page)
+    assert not xhs_publish._is_logged_in(page)
+
+
+@pytest.mark.parametrize(("body", "expected"), [
+    ("扫码成功，请在手机上确认", "scanned"),
+    ("二维码已失效 点击刷新", "expired"),
+    ("二维码已过期", "expired"),
+    ("APP扫一扫登录", ""),
+    ("扫码成功 二维码已失效", "scanned"),
+])
+def test_xhs_qr_state_distinguishes_confirmation_and_expiry(body, expected):
+    assert xhs_publish._qr_state(xhs_page(body=body)) == expected
+
+
+def test_xhs_qr_expiry_refresh_does_not_toggle_login_mode(tmp_path, monkeypatch):
+    page = xhs_page(body="二维码已失效 点击刷新")
+    button = SimpleNamespace(is_visible=lambda: True, click=Mock())
+    page.query_selector_all = lambda selector: [button] if "点击刷新" in selector else []
+    capture = Mock()
+    monkeypatch.setattr(login_qr, "capture_qr", capture)
+    assert xhs_publish._refresh_expired_qr(page, tmp_path / "qr.png")
+    button.click.assert_called_once()
+    capture.assert_called_once_with(page, tmp_path / "qr.png",
+                                   xhs_publish.SELECTORS["qrcode"], minimum_size=96)
+
+
+def test_xhs_scanned_qr_is_never_refreshed(tmp_path, monkeypatch):
+    page = xhs_page(body="扫码成功 请在手机上确认 二维码已失效")
+    capture = Mock()
+    monkeypatch.setattr(login_qr, "capture_qr", capture)
+    assert not xhs_publish._refresh_expired_qr(page, tmp_path / "qr.png")
+    capture.assert_not_called()
+
+
+def test_xhs_whoami_falls_back_when_home_navigation_times_out(monkeypatch):
+    page = xhs_page()
+
+    def goto(destination, **kwargs):
+        if destination == xhs_publish.CREATOR_HOME_URL:
+            raise TimeoutError("navigation failed")
+        page.url = destination
+
+    page.goto = Mock(side_effect=goto)
+    monkeypatch.setattr(xhs_publish, "_verify_login", lambda page, **kwargs: True)
+    assert xhs_publish._check_account_login(page)
+    assert page.goto.call_args_list[-1].args == (xhs_publish.EXPLORE_URL,)
+
+
+def test_xhs_whoami_waits_for_creator_redirect(monkeypatch):
+    page = xhs_page(xhs_publish.CREATOR_HOME_URL)
+    anchor = SimpleNamespace(is_visible=lambda: True)
+    cycles = []
+
+    def wait(duration):
+        cycles.append(duration)
+        page.url = xhs_publish.CREATOR_LOGIN_URL
+        page.query_selector_all = lambda selector: [anchor] \
+            if selector in xhs_publish.SELECTORS["logged_out"].split(", ") else []
+
+    page.wait_for_timeout = wait
+    assert not xhs_publish._verify_login(page)
+    assert cycles == [500]
+
+
+def test_xhs_whoami_returns_unknown_for_two_maintenance_pages(monkeypatch):
+    page = xhs_page(body="工程师正在维护页面")
+    monkeypatch.setattr(xhs_publish, "_verify_login", lambda page, **kwargs: False)
+    with pytest.raises(RuntimeError, match="保留上次登录"):
+        xhs_publish._check_account_login(page)
+
+
+def test_xhs_whoami_returns_logged_out_only_for_visible_login_wall(monkeypatch):
+    page = xhs_page(body="短信登录")
+    anchor = SimpleNamespace(is_visible=lambda: True)
+    page.query_selector_all = lambda selector: [anchor] \
+        if selector in xhs_publish.SELECTORS["logged_out"].split(", ") else []
+    monkeypatch.setattr(xhs_publish, "_verify_login", lambda page, **kwargs: False)
+    assert not xhs_publish._check_account_login(page)
+
+
+def test_xhs_whoami_keeps_state_when_home_has_login_wall_but_creator_is_unknown(monkeypatch):
+    page = xhs_page(body="短信登录")
+    anchor = SimpleNamespace(is_visible=lambda: True)
+    page.goto = lambda destination, **kwargs: setattr(page, "url", destination)
+    page.query_selector_all = lambda selector: [anchor] if (
+        page.url == xhs_publish.EXPLORE_URL
+        and selector in xhs_publish.SELECTORS["logged_out"].split(", ")) else []
+    monkeypatch.setattr(xhs_publish, "_verify_login", lambda page, **kwargs: False)
+    with pytest.raises(RuntimeError, match="保留上次登录状态"):
+        xhs_publish._check_account_login(page)
+
+
+@pytest.mark.parametrize(("status", "payload", "verified"), [
+    (200, {"success": True, "data": {"userId": "account-id", "userName": "Test"}}, True),
+    (200, {"success": True, "data": {"userId": ""}}, False),
+    (200, {"success": True, "data": {"userId": None}}, False),
+    (200, {"success": True, "data": {"userId": True}}, False),
+    (200, {"success": False, "data": {"userId": "account-id"}}, False),
+    (200, {"success": True, "data": "maintenance"}, False),
+    (401, {"success": False, "msg": "登录已过期"}, False),
+    (503, {"success": True, "data": {"userId": "account-id"}}, False),
+])
+def test_creator_account_accepts_only_verified_server_identity(status, payload, verified):
+    response = SimpleNamespace(status=status, json=lambda: payload)
+    request = SimpleNamespace(get=Mock(return_value=response))
+    result = xhs_publish._creator_account(SimpleNamespace(request=request))
+    assert (result is not None) is verified
+    request.get.assert_called_once_with(
+        xhs_publish.CREATOR_ACCOUNT_URL,
+        headers={"Referer": xhs_publish.CREATOR_HOME_URL},
+        timeout=5000,
+    )
+
+
+def test_creator_account_network_error_is_unknown():
+    request = SimpleNamespace(get=Mock(side_effect=TimeoutError("private cookie")))
+    assert xhs_publish._creator_account(SimpleNamespace(request=request)) is None
+
+
 def qr_element(image=None, visible=True):
     return SimpleNamespace(
         is_visible=lambda: visible,
@@ -290,12 +423,12 @@ def test_error_message_does_not_leak_url_login_tokens():
     (xhs_publish.EXPLORE_URL, True, True),
     (xhs_publish.CREATOR_LOGIN_URL, False, False),
     ("https://creator.xiaohongshu.com/website-login/error", False, False),
-    ("https://creator.xiaohongshu.com/publish/publish", False, True),
+    ("https://creator.xiaohongshu.com/publish/publish", False, False),
     ("https://creator.xiaohongshu.com/publish/publish?error_code=300012", False, False),
     ("https://creator.xiaohongshu.com/home-error", False, False),
     ("https://other.example/?next=creator.xiaohongshu.com/home", False, False),
 ])
-def test_xhs_requires_visible_anchor_or_creator_authenticated_route(url, visible, logged):
+def test_xhs_requires_visible_account_anchor(url, visible, logged):
     page = xhs_page(url)
     page.query_selector_all = lambda selector: [SimpleNamespace(is_visible=lambda: visible)] \
         if selector == xhs_publish.SELECTORS["login_ok"] else []
@@ -305,10 +438,29 @@ def test_xhs_requires_visible_anchor_or_creator_authenticated_route(url, visible
 @pytest.mark.parametrize("visible", [True, False])
 def test_creator_authenticated_route_with_login_wall_is_not_logged_in(visible):
     page = xhs_page("https://creator.xiaohongshu.com/publish/publish")
+    avatar = SimpleNamespace(is_visible=lambda: True, get_attribute=lambda key: "/avatar.jpg")
+    name = SimpleNamespace(is_visible=lambda: True, inner_text=lambda: "Test account")
+    account = SimpleNamespace(is_visible=lambda: True,
+                              query_selector=lambda selector: avatar if selector.startswith("img") else name)
     page.query_selector_all = lambda selector: [SimpleNamespace(is_visible=lambda: visible)] \
-        if selector == xhs_publish.SELECTORS["logged_out"] else []
+        if selector == xhs_publish.SELECTORS["logged_out"] else [account] if selector == ".user-info" else []
     assert xhs_publish._is_logged_in(page) is not visible
 
+
+@pytest.mark.parametrize(("name_text", "avatar_src", "visible", "expected"), [
+    ("Test account", "/avatar.jpg", True, True),
+    ("", "/avatar.jpg", True, False),
+    ("Test account", "", True, False),
+    ("Test account", "/avatar.jpg", False, False),
+])
+def test_creator_requires_populated_visible_account(name_text, avatar_src, visible, expected):
+    page = xhs_page(xhs_publish.CREATOR_HOME_URL)
+    avatar = SimpleNamespace(is_visible=lambda: visible, get_attribute=lambda key: avatar_src)
+    name = SimpleNamespace(is_visible=lambda: visible, inner_text=lambda: name_text)
+    account = SimpleNamespace(is_visible=lambda: visible,
+                              query_selector=lambda selector: avatar if selector.startswith("img") else name)
+    page.query_selector_all = lambda selector: [account] if selector == ".user-info" else []
+    assert xhs_publish._is_logged_in(page) is expected
 
 def test_xhs_existing_qr_is_not_toggled_back_to_sms(tmp_path, monkeypatch):
     page = xhs_page()
@@ -336,7 +488,7 @@ def test_xhs_creator_obfuscated_image_is_captured_after_corner_switch(tmp_path):
 
     def query(selector):
         if selector == ".sso-login-wrapper img":
-            return [switch, qr_element()] if ready else [switch]
+            return [switch, qr_element(image=qr_bytes(scale=5))] if ready else [switch]
         if selector in (".sso-login-wrapper > div > div > img", xhs_publish.SELECTORS["qr_switch"]):
             return [switch]
         return []
@@ -353,7 +505,7 @@ def test_xhs_creator_obfuscated_image_is_captured_after_corner_switch(tmp_path):
 def test_xhs_creator_existing_obfuscated_qr_does_not_click_icon(tmp_path):
     page = xhs_page(xhs_publish.CREATOR_LOGIN_URL, body="APP扫一扫登录")
     button = SimpleNamespace(is_visible=lambda: True, click=Mock())
-    page.query_selector_all = lambda selector: [qr_element()] \
+    page.query_selector_all = lambda selector: [qr_element(image=qr_bytes(scale=5))] \
         if selector == ".sso-login-wrapper img" \
         else ([button] if selector == xhs_publish.SELECTORS["qr_switch"] else [])
     assert xhs_publish._capture_login_qr(page, tmp_path / "qr.png")
@@ -418,6 +570,7 @@ def test_xhs_creator_navigation_failure_has_actionable_message(tmp_path, monkeyp
 
 def test_xhs_login_during_capture_is_not_reported_as_error(tmp_path, monkeypatch):
     page = xhs_page()
+    monkeypatch.setattr(xhs_publish, "_is_logged_in", lambda page: page.url.endswith("/home"))
 
     def capture(*args, **kwargs):
         page.url = "https://creator.xiaohongshu.com/home"
@@ -460,6 +613,7 @@ def test_xhs_both_entries_blocked_report_actual_risk(tmp_path, monkeypatch):
 
 def test_creator_existing_login_does_not_request_qr(tmp_path, monkeypatch):
     page = xhs_page("https://creator.xiaohongshu.com/home")
+    monkeypatch.setattr(xhs_publish, "_is_logged_in", lambda page: True)
     capture = Mock()
     monkeypatch.setattr(login_qr, "capture_qr", capture)
     assert not xhs_publish._capture_login_qr(page, tmp_path / "qr.png")
@@ -507,6 +661,57 @@ def test_xhs_runner_persists_terminal_status_and_closes_browser(tmp_path, monkey
     capture.assert_called_once_with(page, Path(args.qr_out), creator_only=explore_timeout)
 
 
+@pytest.mark.parametrize(("maintenance", "verified", "expected"), [
+    (False, True, "success"),
+    (True, True, "success"),
+    (True, False, "error"),
+    (False, False, "error"),
+])
+def test_xhs_scanned_login_checks_account_before_page_failure(
+        tmp_path, monkeypatch, maintenance, verified, expected):
+    from playwright import sync_api
+
+    page = xhs_page()
+    context = SimpleNamespace(pages=[page], close=Mock())
+
+    class Manager:
+        def __enter__(self):
+            return SimpleNamespace()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(sync_api, "sync_playwright", Manager)
+    monkeypatch.setattr(xhs_publish, "_launch", lambda *args, **kwargs: context)
+    monkeypatch.setattr(xhs_publish, "_is_logged_in", lambda page: False)
+    monkeypatch.setattr(xhs_publish, "_capture_login_qr", Mock(return_value=True))
+    reason = "小红书当前入口显示维护页面" if maintenance else ""
+    monkeypatch.setattr(xhs_publish, "_login_error", Mock(side_effect=["settling", reason]))
+    monkeypatch.setattr(xhs_publish, "_qr_state", lambda page: "scanned")
+    account = Mock(side_effect=[None, {"userId": "verified"} if verified else None])
+    monkeypatch.setattr(xhs_publish, "_creator_account", account)
+    monkeypatch.setattr(xhs_publish, "time", SimpleNamespace(
+        time=Mock(side_effect=[0, 0, 1, 31]),
+        monotonic=Mock(side_effect=range(0, 100, 6))))
+    refresh = Mock()
+    monkeypatch.setattr(login_qr, "capture_qr", refresh)
+    qr_out = tmp_path / "qr.png"
+    qr_out.write_bytes(b"test-qr")
+    args = SimpleNamespace(
+        qr_out=str(qr_out), timeout=30, status_file=str(tmp_path / "status.json"),
+        profile_base=str(tmp_path / "profiles"), headed=False, proxy=None, no_proxy=True)
+    assert xhs_publish.cmd_login(args) == (0 if verified else 1)
+    status = login_state.read_status(args.status_file)
+    assert status["state"] == expected
+    assert account.call_count == 2
+    if not verified:
+        assert ("维护页面" if maintenance else "已扫码") in status["message"]
+    else:
+        assert not qr_out.exists()
+    refresh.assert_not_called()
+    context.close.assert_called_once()
+
+
 @pytest.mark.parametrize("platform", ["xiaohongshu", "zhihu"])
 @pytest.mark.parametrize("refresh_missing", [False, True])
 def test_login_runner_refreshes_qr_and_handles_success(tmp_path, monkeypatch, platform,
@@ -547,7 +752,8 @@ def test_login_runner_refreshes_qr_and_handles_success(tmp_path, monkeypatch, pl
         monkeypatch.setattr(login_qr, "prepare_qr", Mock())
         assert web_publisher.cmd_login_qr(args) == 0
         selectors = web_publisher.PLATFORMS["zhihu"]["login_qr_selector"]
-    refresh.assert_called_once_with(page, Path(args.qr_out), selectors, attempts=1)
+    expected = {"attempts": 1, **({"minimum_size": 96} if platform == "xiaohongshu" else {})}
+    refresh.assert_called_once_with(page, Path(args.qr_out), selectors, **expected)
     assert login_state.read_status(args.status_file)["state"] == "success"
     context.close.assert_called_once()
 
@@ -583,12 +789,13 @@ def test_zhihu_runner_handles_launch_failure_or_login_during_capture(tmp_path, m
 
 def web_functions():
     tree = ast.parse((ROOT / "web/app.py").read_text(encoding="utf-8"))
-    names = {"api_login_start", "_login_status"}
+    names = {"api_login_start", "_start_login", "_login_status"}
     nodes = [node for node in tree.body
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
     for node in nodes:
         node.decorator_list = []
-    env = {"json": json, "subprocess": subprocess, "sys": sys, "asyncio": asyncio}
+    env = {"json": json, "subprocess": subprocess, "sys": sys, "asyncio": asyncio,
+           "_LOGIN_START_LOCKS": {}}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "web/app.py", "exec"), env)
     return env
 
@@ -650,7 +857,7 @@ def test_web_login_sets_child_utf8_without_changing_parent_env(tmp_path, monkeyp
                PROJECT_ROOT=ROOT, LOGIN_TIMEOUT=180, _WHOAMI_LOCK=threading.Lock(),
                _WHOAMI_CACHE={}, _proxy_env=lambda: original.copy(),
                _login_status=lambda platform: {"state": "qr_ready", "qr": ""},
-               asyncio=SimpleNamespace(sleep=sleep))
+               asyncio=SimpleNamespace(sleep=sleep, Lock=asyncio.Lock))
     asyncio.run(env["api_login_start"]("zhihu"))
     child_env = popen.call_args.kwargs["env"]
     assert child_env["PYTHONIOENCODING"] == "utf-8"

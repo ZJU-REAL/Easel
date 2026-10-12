@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Easel — 同步 SKILL + workspace 到 OpenClaw 的 easel 隔离 profile
+#
+# workspace 目标目录**不写死**：OpenClaw 的默认布局变过（2026.6.x 是
+#   ~/.openclaw/workspace-easel，2026.9.x 起是 ~/.openclaw-easel/workspace）。
+# 写死哪一个，都会在另一个版本上同步到 agent 根本不读的地方 —— 而且这里照样打印
+# "synced"、doctor 也照样报绿，技能静默不生效（issue #19）。
+# 统一问 easel/openclaw_workspace.py（它直接问 openclaw 自己要运行时的 workspaceDir），
+# 写入端与读取端同源，布局再变也不用改这里。
+#   config → ~/.openclaw-easel/openclaw.json
+#
+# 用法：bash agents/sync.sh
+# 可用 EASEL_OPENCLAW_WORKSPACE 覆盖（解析器同样认这个变量，优先级最高）。
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DOCS_ONLY=false
+case "${1:-}" in
+    "") ;;
+    --docs-only) DOCS_ONLY=true ;;
+    *) echo "Usage: bash agents/sync.sh [--docs-only]" >&2; exit 2 ;;
+esac
+
+PROFILE="easel"
+# agent 实际读取的 workspace，skills/shared/outputs 必须落在这里。
+# 解析器拿不出来（没装 python / 没装 openclaw）才退回旧默认值，并明确提示，
+# 不能装作同步成功 —— 那正是 issue #19 最难查的地方。
+OPENCLAW_WORKSPACE_DST=""
+for _py in "$PROJECT_ROOT/.venv/bin/python" python3 python; do
+    command -v "$_py" >/dev/null 2>&1 || [ -x "$_py" ] || continue
+    # 只认最后一行：解析器 import 链上任何一个模块打一句废话（deprecation / conda banner）
+    # 都会混进 stdout，整段拿去当路径就会 mkdir 出一个鬼目录，然后照样报同步成功。
+    OPENCLAW_WORKSPACE_DST="$("$_py" "$PROJECT_ROOT/easel/openclaw_workspace.py" 2>/dev/null | tail -n 1 || true)"
+    [ -n "$OPENCLAW_WORKSPACE_DST" ] && break
+done
+if [ -z "$OPENCLAW_WORKSPACE_DST" ]; then
+    OPENCLAW_WORKSPACE_DST="${EASEL_OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace-${PROFILE}}"
+    echo "[easel] 警告：无法向 openclaw 问出 workspace，回退到 $OPENCLAW_WORKSPACE_DST" >&2
+    echo "        若 agent 读不到技能，请用 EASEL_OPENCLAW_WORKSPACE 指定实际目录。" >&2
+fi
+OPENCLAW_SKILL_DST="$OPENCLAW_WORKSPACE_DST/skills"
+OPENCLAW_WORKSPACE_SRC="$SCRIPT_DIR/workspace"
+OPENCLAW_SKILL_SRC="$PROJECT_ROOT/skills/builtin"
+
+echo "[easel] Syncing to OpenClaw profile: $PROFILE"
+echo "  workspace → $OPENCLAW_WORKSPACE_DST"
+echo ""
+
+# ---- 确保目录存在 ----
+mkdir -p "$OPENCLAW_SKILL_DST"
+mkdir -p "$OPENCLAW_WORKSPACE_DST"
+
+# ---- 清理已删除的 SKILL ----
+# 收集源目录中存在的 SKILL 名单，删除 workspace 中多余的
+for dst_dir in "$OPENCLAW_SKILL_DST"/*/; do
+    "$DOCS_ONLY" && break
+    [ -d "$dst_dir" ] || continue
+    name=$(basename "$dst_dir")
+    if [ ! -d "$OPENCLAW_SKILL_SRC/$name" ]; then
+        rm -rf "$dst_dir"
+        echo "  ✗ $name (removed — no longer in source)"
+    fi
+done
+
+# ---- 同步 skills ----
+# 单一技能库：五层（发现/策划/制作/发布/归因）全部由 OpenClaw 直接执行，
+# SKILL 完整同步进 workspace，OpenClaw 读进来照其流程自己产出。
+echo "Skills:"
+synced=0
+for skill_dir in "$OPENCLAW_SKILL_SRC"/*/; do
+    [ -d "$skill_dir" ] || continue
+    name=$(basename "$skill_dir")
+    if "$DOCS_ONLY"; then
+        while IFS= read -r -d '' document; do
+            relative="${document#"$skill_dir"}"
+            destination="$OPENCLAW_SKILL_DST/$name/$relative"
+            mkdir -p "$(dirname "$destination")"
+            rm -f "$destination"
+            cp "$document" "$destination"
+        done < <(find "$skill_dir" -type f -name '*.md' -print0)
+        synced=$((synced + 1))
+        continue
+    fi
+    # ${VAR:?} 兜底：DST 若意外为空，裸写法会展开成 `rm -rf /<技能名>`。
+    rm -rf "${OPENCLAW_SKILL_DST:?}/$name"
+    cp -r "$skill_dir" "$OPENCLAW_SKILL_DST/$name"
+    echo "  ✓ $name"
+    synced=$((synced + 1))
+done
+echo "  ($synced skills synced)"
+echo ""
+
+# ---- 同步 shared/ 跨 SKILL 共享层 ----
+# 多个 SKILL 用 ../../shared/xxx.md 引用（workspace 扁平化后解析为 workspace/shared/）
+SHARED_SRC="$PROJECT_ROOT/skills/shared"
+SHARED_DST="$OPENCLAW_WORKSPACE_DST/shared"
+if [ -d "$SHARED_SRC" ]; then
+    if "$DOCS_ONLY"; then
+        while IFS= read -r -d '' document; do
+            relative="${document#"$SHARED_SRC"/}"
+            destination="$SHARED_DST/$relative"
+            mkdir -p "$(dirname "$destination")"
+            rm -f "$destination"
+            cp "$document" "$destination"
+        done < <(find "$SHARED_SRC" -type f -name '*.md' -print0)
+    else
+        rm -rf "$SHARED_DST"
+        cp -r "$SHARED_SRC" "$SHARED_DST"
+    fi
+    echo "Shared: ✓ synced → workspace/shared/ ($(find "$SHARED_DST" -type f | wc -l) files)"
+    echo ""
+fi
+
+# ---- 同步 workspace 文件（AGENTS.md / SOUL.md） ----
+echo "Workspace:"
+for f in "$OPENCLAW_WORKSPACE_SRC"/*.md; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    dst="$OPENCLAW_WORKSPACE_DST/$name"
+    # OpenClaw onboard 生成的 bootstrap 文件是硬链接（nlink>=2），直接 cp 会写穿同一个
+    # inode，链接数不降反被 OpenClaw 以 "path must not be hardlinked" 拒绝加载
+    # （issue #26 P1-5）。先删再拷，把链接数重新做成 1。
+    rm -f "$dst"
+    cp "$f" "$dst"
+    # 写穿检查：仍有链接说明目标没被真正替换，明着失败而不是留下一个起不来的 gateway。
+    links=$(stat -c %h "$dst" 2>/dev/null || stat -f %l "$dst" 2>/dev/null || echo 1)
+    if [ "$links" != "1" ]; then
+        echo "  ✗ $name 仍是硬链接（nlink=$links）；请手动删除 $dst 后重跑 bash agents/sync.sh" >&2
+        exit 1
+    fi
+    echo "  ✓ $name"
+done
+
+# AGENTS.md is injected every turn. Embed the resolved project root there so
+# configuration checks never fall back to the workspace's shared/ copy.
+cat >> "$OPENCLAW_WORKSPACE_DST/AGENTS.md" << AGENTROOTEOF
+
+## 运行时项目根（由 agents/sync.sh 生成）
+
+当前执行引擎：OpenClaw。使用该引擎实际提供的工具和权限；共享工作区规则同样适用于其它引擎。
+
+Easel 项目根绝对路径：\`$PROJECT_ROOT\`
+
+运行任何 \`skills/...\` 项目脚本前都必须先执行：
+
+\`\`\`bash
+cd "$PROJECT_ROOT"
+test -f .env && test -d skills/shared/scripts
+\`\`\`
+
+Python 使用项目虚拟环境：\`$PROJECT_ROOT/.venv/bin/python\`。
+内置技能源：\`$PROJECT_ROOT/skills/builtin/\`；共享资源：\`$PROJECT_ROOT/skills/shared/\`。
+用户画像实际路径：\`$PROJECT_ROOT/profiles/\`；工作区中的 \`easel-profiles/\` 只是该目录的链接。
+
+不得在 \`$OPENCLAW_WORKSPACE_DST\` 的 \`shared/\` 副本中检查 Key、URL 或模型配置。
+AGENTROOTEOF
+echo "  ✓ AGENTS.md runtime project root"
+echo ""
+
+# ---- 清理已废弃的全局 USER.md ----
+# 画像已改为「消息内联」注入（见 docs/prompt-stack.md），不再写全局 USER.md。
+# 清掉历史残留，避免旧画像污染 system prompt。
+if ! "$DOCS_ONLY"; then
+    rm -f "$OPENCLAW_WORKSPACE_DST/USER.md" 2>/dev/null && echo "Cleanup: ✓ 移除残留 USER.md" || true
+# Easel 的长期记忆按画像隔离；全局 MEMORY.md 必须保持为空，避免跨画像污染。
+    : > "$OPENCLAW_WORKSPACE_DST/MEMORY.md"
+    echo "Cleanup: ✓ 清空全局 MEMORY.md（画像记忆按会话读取）"
+fi
+echo ""
+
+# ---- Profile 目录 symlink ----
+# 注意：必须先删除旧 symlink 再创建，否则 ln -sf 会跟着旧 symlink 进入目标目录创建循环
+PROFILE_LINK="$OPENCLAW_WORKSPACE_DST/easel-profiles"
+if ! "$DOCS_ONLY"; then
+    rm -f "$PROFILE_LINK" 2>/dev/null
+    ln -s "$PROJECT_ROOT/profiles" "$PROFILE_LINK"
+    echo "Profiles: ✓ symlinked → $PROJECT_ROOT/profiles"
+fi
+
+# ---- outputs 目录 symlink ----
+# Agent CWD 是 workspace，SKILL 写 outputs/ 会落到 workspace 内
+# 通过 symlink 让 workspace/outputs/ → 项目 outputs/，产物自动归位
+OUTPUTS_LINK="$OPENCLAW_WORKSPACE_DST/outputs"
+if ! "$DOCS_ONLY"; then
+    if [ -d "$OUTPUTS_LINK" ] && [ ! -L "$OUTPUTS_LINK" ]; then
+    # 真目录残留，搬走内容后删除
+        cp -rn "$OUTPUTS_LINK"/* "$PROJECT_ROOT/outputs/" 2>/dev/null || true
+        rm -rf "$OUTPUTS_LINK"
+    fi
+    rm -f "$OUTPUTS_LINK" 2>/dev/null
+    ln -s "$PROJECT_ROOT/outputs" "$OUTPUTS_LINK"
+    echo "Outputs: ✓ symlinked → $PROJECT_ROOT/outputs"
+fi
+echo ""
+
+# ---- 记录项目根路径（供 workspace 内人工/工具读取；AGENTS.md 另有每轮注入副本） ----
+cat > "$OPENCLAW_WORKSPACE_DST/CONTEXT.md" << CTXEOF
+# Easel 项目路径
+
+项目根目录：$PROJECT_ROOT
+
+当前执行引擎：OpenClaw。发现 / 策划 / 制作 / 发布 / 归因五层全部由你直接执行。
+跑项目脚本 / 产出成品前先 \`cd\` 到项目根：
+\`\`\`
+cd "$PROJECT_ROOT"
+"$PROJECT_ROOT/.venv/bin/python" skills/shared/scripts/<脚本>.py ...
+\`\`\`
+技能阅读副本已同步到 \`$OPENCLAW_WORKSPACE_DST/skills/\`。
+执行命令使用项目源目录 \`$PROJECT_ROOT/skills/builtin/\` 与 \`$PROJECT_ROOT/skills/shared/\`，不是工作区副本。
+产物写到项目根的 \`outputs/\`，技能资源路径按各技能目录解析。
+
+产物输出到：$PROJECT_ROOT/outputs/
+用户素材在：$PROJECT_ROOT/assets/
+用户画像在：$PROJECT_ROOT/profiles/
+CTXEOF
+echo "Project context: ✓ CONTEXT.md"
+echo ""
+
+echo "[easel] Sync done."
