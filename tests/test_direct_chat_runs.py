@@ -1,13 +1,21 @@
 """API-only chat persistence; all model responses are local test doubles."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import importlib.util
+from pathlib import Path
 import sqlite3
 import threading
 
 import httpx
 import pytest
 
-from tests.test_direct_api import sandbox, web, upstream, sse, chunk
+# Skill-local suites also define a package named tests. Load this sibling by
+# its exact path so root-level pytest collection cannot select the wrong one.
+_spec = importlib.util.spec_from_file_location("direct_chat_fixtures", Path(__file__).with_name("test_direct_api.py"))
+_support = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_support)
+sandbox, web = _support.sandbox, _support.web
+upstream, sse, chunk = _support.upstream, _support.sse, _support.chunk
 from easel.chat_runs import DirectChatRun
 from easel.run_store import RunStore
 
