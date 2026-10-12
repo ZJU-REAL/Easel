@@ -1,6 +1,7 @@
 """Reconciliation must neither steal an active run nor replay a model request."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import importlib.util
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -11,7 +12,12 @@ import time
 import pytest
 from fastapi import HTTPException
 
-from tests.test_direct_api import sandbox, web
+# Other skill suites also use the package name tests. Resolve the shared
+# fixture by file location, independent of pytest's package collection order.
+_spec = importlib.util.spec_from_file_location("reconcile_chat_fixtures", Path(__file__).with_name("test_direct_api.py"))
+_support = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_support)
+sandbox, web = _support.sandbox, _support.web
 from easel.run_store import RunStore
 
 
