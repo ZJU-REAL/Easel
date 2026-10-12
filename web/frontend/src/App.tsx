@@ -447,14 +447,14 @@ export default function App() {
           } else {
             appendAssistant(sessionId, {
               role: 'assistant',
-              content: '上一轮任务记录已失效，无法继续恢复。请重新发送上一条消息。',
+              content: '上一轮任务记录不可恢复，执行结果尚未确认。请先检查已有结果及外部操作记录，再决定是否发起新任务。',
             });
           }
           clearStream(sessionId);
           try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
         }).catch(() => {
           appendAssistant(sessionId, {
-            role: 'assistant', content: '上一轮任务记录已失效，请重新发送上一条消息。',
+            role: 'assistant', content: '暂时无法读取上一轮结果。请先核验已有结果，不要直接重复执行外部操作。',
           });
           clearStream(sessionId);
         });

@@ -751,6 +751,27 @@ export function streamChat(
   return controller;
 }
 
+/** Persisted state is historical evidence, not a worker liveness check. */
+export interface ChatRun {
+  turn_id: string;
+  tracking: 'persisted' | 'legacy';
+  state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted' | 'unknown';
+  backend?: string;
+  version?: number;
+  can_resume: false;
+}
+
+export function fetchChatRun(turnId: string, signal?: AbortSignal): Promise<ChatRun> {
+  return request(`/api/chat/jobs/${encodeURIComponent(turnId)}`, { signal });
+}
+
+export function updateChatRun(turnId: string, action: 'reconcile' | 'cancel-queued', version: number): Promise<ChatRun> {
+  return request(`/api/chat/jobs/${encodeURIComponent(turnId)}/${action}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_version: version }),
+  });
+}
+
 /** 取某会话最近一轮的完整结果（SSE 断线后据此取回）。 */
 export function fetchLastTurn(sessionId: string, turnId?: string): Promise<{ status: string; text: string; turn_id?: string }> {
   const query = turnId ? `?turn_id=${encodeURIComponent(turnId)}` : '';
