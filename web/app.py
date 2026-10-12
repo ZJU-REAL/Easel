@@ -3210,6 +3210,7 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
         cursor = max(0, after)
         idle_since = time.monotonic()
         checked_at = 0.0
+        replayed_text = ""
         while True:
             batch = _read_job_events(turn_id, cursor)
             if batch:
@@ -3217,6 +3218,8 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
                 for event in batch:
                     cursor = int(event["id"])
                     raw = event.get("data")
+                    if event["event"] == "token" and isinstance(raw, str):
+                        replayed_text += raw
                     # job 日志里 question 的 data 已是序列化 JSON 字符串（实时流
                     # forward() 对 question 原样透传），这里若再 json.dumps 会双层
                     # 转义 → 前端 JSON.parse 拿到字符串而非对象 → ask_user 选项
@@ -3248,11 +3251,17 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
                     else:
                         if status["tracking"] == "persisted" and status["state"] not in ("queued", "running"):
                             if status["state"] == "succeeded":
-                                if cursor == 0:
+                                if after <= 0:
                                     saved = await api_chat_last(status["session_id"], turn_id)
                                     if saved.get("status") == "done" and saved.get("text"):
-                                        yield {"event": "token", "data": json.dumps(saved["text"], ensure_ascii=False)}
-                                    else:
+                                        if not saved["text"].startswith(replayed_text):
+                                            yield {"event": "error", "data": json.dumps(
+                                                "保存结果与回放内容不一致，请核验已有结果；不会自动重试", ensure_ascii=False)}
+                                            return
+                                        missing = saved["text"][len(replayed_text):]
+                                        if missing:
+                                            yield {"event": "token", "data": json.dumps(missing, ensure_ascii=False)}
+                                    elif not replayed_text:
                                         yield {"event": "error", "data": json.dumps(
                                             "任务已结束，但没有可恢复的完整结果；请检查已保存的产物", ensure_ascii=False)}
                                         return

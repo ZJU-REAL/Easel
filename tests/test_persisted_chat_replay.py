@@ -72,6 +72,35 @@ def test_missing_unadmitted_turn_is_still_404(sandbox):
     assert sandbox.get("/api/chat/jobs/missing/stream").status_code == 404
 
 
+@pytest.mark.parametrize("prefix", ["", "saved ", "saved answer"])
+def test_snapshot_completes_partial_replay_without_duplicate_tokens(sandbox, prefix):
+    finish("succeeded")
+    web._save_turn("web:session", "done", "saved answer", {"turn_id": "turn"})
+    log = web._job_event_file("turn")
+    log.parent.mkdir()
+    events = [{"id": 1, "event": "activity", "data": "received"}]
+    if prefix:
+        events.append({"id": 2, "event": "token", "data": prefix})
+    log.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+    async def scenario():
+        response = await web.api_chat_job_stream("turn")
+        result = [event async for event in response.body_iterator]
+        assert "".join(json.loads(event["data"]) for event in result if event["event"] == "token") == "saved answer"
+        assert result[-1]["event"] == "done"
+    asyncio.run(scenario())
+
+
+def test_conflicting_snapshot_is_not_appended_to_existing_output(sandbox):
+    finish("succeeded")
+    web._save_turn("web:session", "done", "different answer", {"turn_id": "turn"})
+    log = web._job_event_file("turn")
+    log.parent.mkdir()
+    log.write_text(json.dumps({"id": 1, "event": "token", "data": "saved answer"}) + "\n", encoding="utf-8")
+    response = sandbox.get("/api/chat/jobs/turn/stream")
+    assert "saved answer" in response.text and "different answer" not in response.text
+    assert "event: error" in response.text and "event: done" not in response.text
+
+
 def test_storage_failure_is_reported_without_infinite_tail(sandbox):
     log = web._job_event_file("turn")
     log.parent.mkdir(parents=True)
