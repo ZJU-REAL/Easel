@@ -58,7 +58,7 @@ def test_invalid_manifest_is_preserved_and_releases_lock(tmp_path, content):
     path = tmp_path / "checkpoints.json"
     path.write_text(content, encoding="utf-8")
     for _ in range(2):
-        with pytest.raises((ValueError, checkpoints.CheckpointError)):
+        with pytest.raises(checkpoints.CheckpointError):
             with checkpoints.ArtifactCheckpoints(tmp_path):
                 pytest.fail("invalid manifest accepted")
         assert path.read_text(encoding="utf-8") == content

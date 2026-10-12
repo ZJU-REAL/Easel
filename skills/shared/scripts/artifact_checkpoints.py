@@ -96,8 +96,11 @@ class ArtifactCheckpoints:
         self._lock = lock
         try:
             path = self.directory / "checkpoints.json"
-            self._manifest = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {
-                "schema": 1, "steps": {}}
+            try:
+                self._manifest = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {
+                    "schema": 1, "steps": {}}
+            except (ValueError, UnicodeError) as error:
+                raise CheckpointError("Damaged checkpoint manifest; preserve it for inspection") from error
             self._validate_manifest()
         except BaseException:
             self.__exit__(None, None, None)
