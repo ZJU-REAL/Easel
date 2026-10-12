@@ -35,7 +35,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +53,7 @@ from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
 from easel.manual_publish import build_package, publishing_mode
 from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_config, api_mode,
                               history_path, read_settings, stream_chat)
-from easel.chat_runs import DirectChatRun
+from easel.chat_runs import DirectChatRun, durable_call
 from easel.run_store import RunConflict, RunStore, UnsupportedSchema
 from easel import harnesses
 from easel.harnesses import store as harness_store
@@ -3231,7 +3231,7 @@ async def api_chat_job_status(turn_id: str):
         raise HTTPException(422, "任务标识格式无效")
     path = SESSIONS_DIR / "runs.sqlite3"
     try:
-        record = await asyncio.to_thread(lambda: RunStore(path).get(turn_id)) if path.is_file() else None
+        record = await asyncio.to_thread(lambda: RunStore(path).get(turn_id)) if path.exists() else None
     except (OSError, sqlite3.Error, UnsupportedSchema):
         raise HTTPException(503, "任务状态暂不可读取，请保留数据并检查存储") from None
     if record is not None:
@@ -3240,6 +3240,62 @@ async def api_chat_job_status(turn_id: str):
         return {"turn_id": turn_id, "tracking": "legacy", "state": "unknown",
                 "live_status": "not_checked", "can_resume": False}
     raise HTTPException(404, "对话任务记录不存在或已失效")
+
+
+class ReconcileChatRunRequest(BaseModel):
+    expected_version: StrictInt = Field(gt=0)
+
+
+@app.post("/api/chat/jobs/{turn_id}/reconcile")
+async def api_chat_job_reconcile(turn_id: str, req: ReconcileChatRunRequest):
+    """Resolve orphaned local API metadata without replaying an upstream request."""
+    status = await api_chat_job_status(turn_id)
+    if status["tracking"] != "persisted":
+        raise HTTPException(409, "旧任务没有可核验的执行记录")
+    if status["version"] != req.expected_version:
+        raise HTTPException(409, "任务状态已变化，请重新读取")
+    if status["backend"] != "direct_api" or status["state"] == "queued":
+        # A queued task may still be waiting for a lock. Other backends may
+        # outlive the local process, so a free local lock proves nothing there.
+        raise HTTPException(409, "此执行后端或排队状态暂不支持核验")
+    if status["state"] != "running":
+        return {**status, "reconciliation": "unchanged"}
+
+    lock = _session_lock(status["session_id"])
+    if lock.locked():
+        raise HTTPException(409, "会话仍被占用，请稍后核验")
+    await lock.acquire()
+    xlock = _CrossProcLock(status["session_id"])
+    try:
+        if not xlock.acquire(0):
+            # Failure to obtain the lock is not evidence of a live owner or of
+            # its death (it may also be a filesystem permission failure).
+            raise HTTPException(409, "无法取得会话执行锁，未修改任务状态")
+
+        def reconcile():
+            store = RunStore(SESSIONS_DIR / "runs.sqlite3")
+            record = store.get(turn_id)
+            if (record is None or record.version != req.expected_version
+                    or record.session_id != status["session_id"]
+                    or record.backend != "direct_api" or record.state != "running"):
+                raise RunConflict("Run changed before reconciliation")
+            # API runners hold both locks from before running is committed to
+            # after the terminal commit. A free lock rules out a cooperating
+            # local runner, but cannot establish the remote request's outcome.
+            return store.transition(turn_id, expected_version=record.version,
+                                    state="unknown", owner_id=record.owner_id,
+                                    result_refs=record.result_refs)
+
+        record = await durable_call(reconcile)
+        return {**asdict(record), "tracking": "persisted", "can_resume": False,
+                "live_status": "session_lock_acquired", "reconciliation": "marked_unknown"}
+    except RunConflict:
+        raise HTTPException(409, "任务状态已变化，请重新读取") from None
+    except (OSError, sqlite3.Error, UnsupportedSchema):
+        raise HTTPException(503, "任务核验未完成，请保留数据并检查存储") from None
+    finally:
+        xlock.release()
+        lock.release()
 
 
 @app.post("/api/chat/stream")
