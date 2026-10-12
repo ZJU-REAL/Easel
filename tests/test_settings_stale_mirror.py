@@ -9,6 +9,7 @@ import web.app as web
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
+    monkeypatch.setenv("EASEL_AGENT_RUNTIME", "openclaw")
     env_path = tmp_path / ".env"
     env_path.write_text("", encoding="utf-8")
     config_path = tmp_path / "openclaw.json"

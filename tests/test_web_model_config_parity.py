@@ -24,6 +24,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "web"))
 import app  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def openclaw_engine(monkeypatch):
+    monkeypatch.setenv("EASEL_AGENT_RUNTIME", "openclaw")
+
+
 @pytest.fixture
 def oc_cfg(tmp_path, monkeypatch):
     """把 openclaw.json 指到临时文件，返回读取它的函数。"""

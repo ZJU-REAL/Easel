@@ -48,7 +48,7 @@ def test_undefined_replacement_does_not_modify_quoted_nickname():
     "<script>window.__INITIAL_STATE__=[]</script>",
     "<script>window.__INITIAL_STATE__=null</script>",
     "<div>no state</div>", "x" * 2_000_001,
-])
+], ids=["executable-state", "array-state", "null-state", "missing-state", "oversized-state"])
 def test_invalid_initial_state_is_ignored_without_execution(html):
     assert xhs_publish._web_account_html(html) is None
 

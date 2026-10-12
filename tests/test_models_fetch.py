@@ -36,6 +36,7 @@ ORIGINAL_ENV = (
 
 @pytest.fixture()
 def sandbox(tmp_path, monkeypatch):
+    monkeypatch.setenv("EASEL_AGENT_RUNTIME", "openclaw")
     env_file = tmp_path / ".env"
     env_file.write_text(ORIGINAL_ENV, encoding="utf-8")
     monkeypatch.setattr(web, "ENV_FILE", env_file)
