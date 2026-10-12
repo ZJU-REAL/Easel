@@ -16,6 +16,7 @@ import re
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -26,6 +27,7 @@ import urllib.request
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 import ipaddress
 from pathlib import Path
 
@@ -51,6 +53,8 @@ from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
 from easel.manual_publish import build_package, publishing_mode
 from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_config, api_mode,
                               history_path, read_settings, stream_chat)
+from easel.chat_runs import DirectChatRun
+from easel.run_store import RunConflict, RunStore, UnsupportedSchema
 from easel import harnesses
 from easel.harnesses import store as harness_store
 from easel.harnesses.base import HarnessError, RunRequest
@@ -3054,7 +3058,8 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
     return "".join(full_text)
 
 
-async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit) -> str:
+async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit,
+                           *, run: DirectChatRun | None = None) -> str:
     """Run one API turn with the same stop/recovery/session locking as Gateway chat."""
     pk = f"web:{sk}"
     turn_id = req.turnId or uuid.uuid4().hex
@@ -3093,6 +3098,8 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
                 or (OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(sk)}.jsonl").is_file()
                 or (OPENCLAW_SESSIONS_DIR / f"{_openclaw_session_id(pk)}.jsonl").is_file()):
             raise DirectAPIError("此会话属于 OpenClaw，请新建会话使用 API 直连")
+        if run is not None:
+            await run.transition("running")
         _save_turn(pk, "running", "", {"turn_id": turn_id})
         claimed = True
         proc._task = asyncio.current_task()
@@ -3122,14 +3129,26 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
     except OSError:
         error_message = "会话历史保存失败，请检查项目 outputs 目录权限"
         emit("error", error_message)
+    except (sqlite3.Error, RunConflict, UnsupportedSchema):
+        error_message = "任务状态保存失败或此会话仍有未核验的任务，请检查后重试"
+        emit("error", error_message)
     finally:
         proc.finish()
         snapshot = "".join(full_text) + (f"\n\n❌ {error_message}" if error_message else "")
         try:
-            if claimed:
-                _save_turn(pk, "done", snapshot, {
-                    "turn_id": turn_id, "clean_end": clean_end, "stop_reason": reason,
-                })
+            try:
+                if run is not None:
+                    state = ("cancelled" if reason in ("user_stopped", "cancelled")
+                             else "succeeded" if clean_end else "failed")
+                    try:
+                        await run.transition(state)
+                    except (OSError, sqlite3.Error, RunConflict, UnsupportedSchema):
+                        emit("error", "任务结束状态保存失败，请核验执行结果；不会自动重试")
+            finally:
+                if claimed:
+                    _save_turn(pk, "done", snapshot, {
+                        "turn_id": turn_id, "clean_end": clean_end, "stop_reason": reason,
+                    })
         finally:
             if _RUNNING_CHAT.get(sk) is proc:
                 _RUNNING_CHAT.pop(sk, None)
@@ -3205,6 +3224,24 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
     })
 
 
+@app.get("/api/chat/jobs/{turn_id}")
+async def api_chat_job_status(turn_id: str):
+    """Return the persisted state, without guessing whether a worker is alive."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,160}", turn_id):
+        raise HTTPException(422, "任务标识格式无效")
+    path = SESSIONS_DIR / "runs.sqlite3"
+    try:
+        record = await asyncio.to_thread(lambda: RunStore(path).get(turn_id)) if path.is_file() else None
+    except (OSError, sqlite3.Error, UnsupportedSchema):
+        raise HTTPException(503, "任务状态暂不可读取，请保留数据并检查存储") from None
+    if record is not None:
+        return {**asdict(record), "tracking": "persisted", "live_status": "not_checked", "can_resume": False}
+    if _job_event_file(turn_id).is_file():
+        return {"turn_id": turn_id, "tracking": "legacy", "state": "unknown",
+                "live_status": "not_checked", "can_resume": False}
+    raise HTTPException(404, "对话任务记录不存在或已失效")
+
+
 @app.post("/api/chat/stream")
 async def api_chat_stream(req: ChatRequest):
     """SSE 真流式对话。
@@ -3227,6 +3264,29 @@ async def api_chat_stream(req: ChatRequest):
         if req.sessionId and history_path(SESSIONS_DIR, req.sessionId).is_file():
             raise HTTPException(409, "此会话属于 API 直连，请新建会话使用 OpenClaw")
         message = _chat_message(req)
+
+    run = None
+    if direct:
+        # Reserve before truncating the event log or starting the model. A
+        # repeated turn ID is a conflict, not permission to execute it again.
+        turn_id = req.turnId or uuid.uuid4().hex
+        # New IDs must also be unambiguous on case-insensitive Windows paths.
+        if (not re.fullmatch(r"[a-z0-9_-]{1,160}", turn_id)
+                or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", turn_id)):
+            raise HTTPException(422, "任务标识格式无效")
+        if _job_event_file(turn_id).exists():
+            raise HTTPException(409, "此任务已有事件记录，请恢复事件流或使用新的任务标识")
+        session_id = req.sessionId or f"web-{uuid.uuid4().hex}"
+        run = DirectChatRun(SESSIONS_DIR / "runs.sqlite3")
+        try:
+            await run.create(turn_id, session_id)
+        except RunConflict:
+            raise HTTPException(409, "此任务已经提交，请查询状态或恢复事件流") from None
+        except ValueError:
+            raise HTTPException(422, "任务或会话标识格式无效") from None
+        except (OSError, sqlite3.Error, UnsupportedSchema):
+            raise HTTPException(503, "任务状态无法保存，本次请求尚未启动") from None
+        req = req.model_copy(update={"turnId": turn_id, "sessionId": session_id})
 
     # supervisor（跑 openclaw run）与 forward（转发 SSE 给浏览器）之间的事件通道。
     # 关键：run 跑在独立后台任务里，客户端断开只结束 forward，不取消 supervisor →
@@ -3269,7 +3329,7 @@ async def api_chat_stream(req: ChatRequest):
         if direct:
             try:
                 await _run_direct_chat(
-                    req.model_copy(update={"turnId": turn_id}), sk, content, system, to_client)
+                    req.model_copy(update={"turnId": turn_id}), sk, content, system, to_client, run=run)
             finally:
                 to_client("done", sessionKey=sk)
                 client_q.put_nowait(CLIENT_DONE)
