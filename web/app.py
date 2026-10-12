@@ -3264,6 +3264,29 @@ class ReconcileChatRunRequest(BaseModel):
     expected_version: StrictInt = Field(gt=0)
 
 
+@app.post("/api/chat/jobs/{turn_id}/cancel-queued")
+async def api_chat_job_cancel_queued(turn_id: str, req: ReconcileChatRunRequest):
+    """Withdraw a queued admission, including one left behind by a restart.
+
+    The CAS races the executor's queued->running CAS. Only one may win; a
+    waiting executor cannot dispatch after its admission has been cancelled.
+    This is an explicit cancellation, never an inference about worker death.
+    """
+    status = await api_chat_job_status(turn_id)
+    if (status["tracking"] != "persisted" or status["backend"] != "direct_api"
+            or status["state"] != "queued" or status["version"] != req.expected_version):
+        raise HTTPException(409, "任务已变化或不支持取消排队，请重新读取状态")
+    try:
+        record = await durable_call(lambda: RunStore(SESSIONS_DIR / "runs.sqlite3").transition(
+            turn_id, expected_version=req.expected_version, state="cancelled"))
+    except RunConflict:
+        raise HTTPException(409, "任务已开始或状态已变化，未取消执行") from None
+    except (OSError, sqlite3.Error, UnsupportedSchema):
+        raise HTTPException(503, "取消排队未完成，请重新读取状态") from None
+    return {**asdict(record), "tracking": "persisted", "live_status": "not_checked",
+            "can_resume": False}
+
+
 @app.post("/api/chat/jobs/{turn_id}/reconcile")
 async def api_chat_job_reconcile(turn_id: str, req: ReconcileChatRunRequest):
     """Resolve orphaned local API metadata without replaying an upstream request."""

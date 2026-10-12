@@ -96,6 +96,12 @@ SQLite `user_version` 管理数据库结构版本，和每条记录的 `version`
 
 ## 异常退出后的显式核验
 
+排队任务可显式调用 `POST /api/chat/jobs/{turn_id}/cancel-queued`，
+请求体携带当前 `expected_version`。这适用于仍在等待的 API 请求及重启遗留的排队记录。
+它通过版本比较将 `queued` 原子地改为 `cancelled`，与执行器开始运行的写入只有一方能成功；
+取消成功后，原等待者不能再启动模型。已运行、版本过期及其它后端返回 409。
+该操作表示用户撤回排队请求，不推断进程死亡，也不终止已经启动的远端请求。
+
 先读取任务状态及 `version`，再调用 `POST /api/chat/jobs/{turn_id}/reconcile`，
 请求体为 `{"expected_version": 2}`。该接口只处理 API 直连的 `running` 记录。
 它尝试取得与执行器相同的进程内锁和跨进程锁，在持锁期间重新读取记录并校验版本，
