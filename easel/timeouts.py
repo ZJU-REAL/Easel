@@ -14,3 +14,4 @@ TIMEOUT_MODEL_TOOL_PROBE = 60
 TIMEOUT_PRODUCE = 7200   # 制作层：生视频 / 多镜合成给足时间
 TIMEOUT_DIRECT = 300     # 轻量直接执行层
 TIMEOUT_CHAT = TIMEOUT_PRODUCE   # chat 可能中途触发制作任务，按制作层预算
+TIMEOUT_RUN_STORE = 5           # 本地任务账本等待 SQLite 写锁的上限
