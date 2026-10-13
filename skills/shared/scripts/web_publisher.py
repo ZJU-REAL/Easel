@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import argparse
+import html as _htmllib
 import json
 import re
 import signal
@@ -255,7 +256,7 @@ PLATFORMS: dict[str, dict] = {
             {"action": "goto", "value": "https://zhuanlan.zhihu.com/write"},
             {"action": "waitfor", "selector": "textarea,.WriteIndex-titleInput,input", "value": "30000"},
             {"action": "fill", "selector": ".WriteIndex-titleInput textarea,textarea[placeholder*='标题']", "value": "{title}"},
-            {"action": "type", "selector": ".public-DraftEditor-content,[contenteditable=true]", "value": "{desc}"},
+            {"action": "paste_md", "selector": ".public-DraftEditor-content,[contenteditable=true]", "value": "{desc}"},
             {"action": "wait", "value": "2000"},
             {"action": "click", "selector": "button:text-is('发布')"},
         ],
@@ -266,7 +267,7 @@ PLATFORMS: dict[str, dict] = {
     },
 }
 
-_ACTIONS = {"goto", "upload", "filechooser_upload", "fill", "type", "click", "js_click", "js_eval", "wait", "press", "waitfor", "screenshot"}
+_ACTIONS = {"goto", "upload", "filechooser_upload", "fill", "type", "paste_md", "click", "js_click", "js_eval", "wait", "press", "waitfor", "screenshot"}
 
 # Chromium 启动性能参数（提速冷启动；勿禁用图片——二维码是图片）
 # 国内平台一律直连：下方各 launch 处统一附 --no-proxy-server（Chromium 级屏蔽系统/环境代理，开 VPN 也能用）
@@ -380,6 +381,83 @@ def cmd_check(_a) -> int:
 def _split_sels(sel: str) -> list[str]:
     """逗号分隔的多候选选择器 → 列表（去空）。修掉旧代码 sel.split(',')[0] 丢兜底的坑。"""
     return [s.strip() for s in (sel or "").split(",") if s.strip()]
+
+
+PASTE_MD_JS = """(payload) => {
+    const dt = new DataTransfer();
+    dt.setData('text/html', payload.html);
+    dt.setData('text/plain', payload.text);
+    document.activeElement.dispatchEvent(
+        new ClipboardEvent('paste', {clipboardData: dt, bubbles: true}));
+}"""
+
+
+def _md_to_html(md: str) -> str:
+    """极简 Markdown → HTML 富文本（供 Draft.js 类编辑器粘贴转换）：
+    标题 / **加粗** / *斜体* / 有序·无序列表 / 引用 / 分割线 / 段落。
+    """
+    def inline(s: str) -> str:
+        s = _htmllib.escape(s, quote=False)
+        s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+        s = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<em>\1</em>", s)
+        return s
+
+    out: list[str] = []
+    para: list[str] = []
+    list_type: str | None = None
+
+    def close_list() -> None:
+        nonlocal list_type
+        if list_type:
+            out.append(f"</{list_type}>")
+            list_type = None
+
+    def flush_para() -> None:
+        nonlocal para
+        if para:
+            out.append("<p>" + "<br>".join(inline(x) for x in para) + "</p>")
+            para = []
+
+    for raw in md.split("\n"):
+        ln = raw.rstrip()
+        if not ln.strip():
+            flush_para(); close_list(); continue
+        if ln.strip() == "---":
+            flush_para(); close_list(); out.append("<hr>"); continue
+        m = re.match(r"^(#{1,6})\s+(.*)$", ln)
+        if m:
+            flush_para(); close_list()
+            lvl = 2 if len(m.group(1)) == 1 else 3
+            out.append(f"<h{lvl}>{inline(m.group(2))}</h{lvl}>"); continue
+        m = re.match(r"^\s*\d+\.\s+(.*)$", ln)
+        if m:
+            flush_para()
+            if list_type != "ol":
+                close_list(); out.append("<ol>"); list_type = "ol"
+            out.append(f"<li>{inline(m.group(1))}</li>"); continue
+        m = re.match(r"^\s*[-*]\s+(.*)$", ln)
+        if m:
+            flush_para()
+            if list_type != "ul":
+                close_list(); out.append("<ul>"); list_type = "ul"
+            out.append(f"<li>{inline(m.group(1))}</li>"); continue
+        m = re.match(r"^\s*>\s?(.*)$", ln)
+        if m:
+            flush_para(); close_list()
+            out.append("<blockquote><p>" + inline(m.group(1)) + "</p></blockquote>"); continue
+        para.append(ln.strip())
+    flush_para(); close_list()
+    return "".join(out)
+
+
+def _md_to_plain(md: str) -> str:
+    """去掉 Markdown 标记，得到可回退键入的纯文本。"""
+    t = re.sub(r"^\s{0,3}#{1,6}\s+", "", md, flags=re.M)
+    t = re.sub(r"^\s*>\s?", "", t, flags=re.M)
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
+    t = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"\1", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
 
 
 def _first_visible_el(page, sel: str):
@@ -696,6 +774,23 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                             except Exception:
                                 # 降级：键盘逐字输入（慢但兼容）
                                 page.keyboard.type(val)
+                    elif act == "paste_md":
+                        # 富文本编辑器（知乎 Draft.js 等）：把 Markdown 转成 HTML 富文本粘贴，
+                        # 让编辑器把 #/加粗/列表/引用 转成真正的排版。
+                        # 注：原先用 text/plain 粘贴会把 Markdown 源码原样插进去（知乎文章会显示 ###/**）。
+                        el = _first_visible_el(page, sel)
+                        if el is None:
+                            raise RuntimeError(f"粘贴目标未找到：{sel}")
+                        el.click()
+                        try:
+                            page.evaluate(PASTE_MD_JS,
+                                          {"html": _md_to_html(val), "text": _md_to_plain(val)})
+                            page.wait_for_timeout(1200)
+                            inner = el.inner_text()
+                            if not inner or len(inner.strip()) < 10:
+                                raise RuntimeError("markdown paste inject failed")
+                        except Exception:
+                            page.keyboard.type(_md_to_plain(val))
                     elif act == "js_click":
                         # JS dispatchEvent 点击（快手等框架按钮 Playwright click() 无效）
                         el = _first_visible_el(page, sel)

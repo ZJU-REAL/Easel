@@ -2,6 +2,12 @@
 
 All notable changes to Easel are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed Zhihu column articles rendering raw Markdown (`###`, `**bold**`) as literal text. Zhihu's body editor is Draft.js, which ignores Markdown on `text/plain` paste; the publisher now converts Markdown to rich HTML and pastes it as `text/html` (new `paste_md` action in `web_publisher.py`), so headings, bold, lists and blockquotes render correctly.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added
