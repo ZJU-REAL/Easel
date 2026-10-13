@@ -58,6 +58,11 @@ UA = "Easel-ai-video/0.1"
 
 DEFAULT_DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/api/v1"
 DEFAULT_DASHSCOPE_MODEL = "wan2.1-t2v-turbo"
+# DashScope 已将视频生成统一到 video-generation 路径（旧 text2video/image2video 路径逐步下线）
+DEFAULT_DASHSCOPE_T2V_PATH = "/services/aigc/video-generation/video-synthesis"
+DEFAULT_DASHSCOPE_I2V_PATH = "/services/aigc/video-generation/video-synthesis"
+# DashScope 的 size 需像素尺寸而非比例
+_DASHSCOPE_SIZE = {"9:16": "720*1280", "16:9": "1280*720", "1:1": "960*960"}
 DEFAULT_ARK_BASE = "https://ark.cn-beijing.volces.com/api/v3"
 DEFAULT_ARK_MODEL = "doubao-seedance-1-0-lite-t2v"
 DEFAULT_KLING_BASE = "https://api.klingai.com"
@@ -423,14 +428,16 @@ def generate_dashscope(args: argparse.Namespace, image: str | None) -> Path:
     base = (os.environ.get("DASHSCOPE_BASE_URL", "").strip() or DEFAULT_DASHSCOPE_BASE).rstrip("/")
     model = resolve_model("dashscope", args.model, image=image is not None)
     if image:
-        endpoint = f"{base}/services/aigc/image2video/video-synthesis"
+        path = os.environ.get("DASHSCOPE_I2V_PATH", "").strip() or DEFAULT_DASHSCOPE_I2V_PATH
+        endpoint = f"{base}{path}"
         input_block = {"img_url": _image_to_data_or_url(image), "prompt": args.prompt or ""}
     else:
-        endpoint = f"{base}/services/aigc/text2video/video-synthesis"
+        path = os.environ.get("DASHSCOPE_T2V_PATH", "").strip() or DEFAULT_DASHSCOPE_T2V_PATH
+        endpoint = f"{base}{path}"
         input_block = {"prompt": args.prompt}
     params: dict[str, Any] = {}
     if args.ratio:
-        params["size"] = args.ratio.replace(":", "*")
+        params["size"] = _DASHSCOPE_SIZE.get(args.ratio, args.ratio.replace(":", "*"))
     if args.duration:
         params["duration"] = args.duration
     payload = {"model": model, "input": input_block, "parameters": params}

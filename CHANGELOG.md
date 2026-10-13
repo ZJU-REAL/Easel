@@ -2,6 +2,12 @@
 
 All notable changes to Easel are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed DashScope video generation failing on the legacy `text2video` / `image2video` paths: tasks are now submitted to the unified `video-generation/video-synthesis` endpoint (both t2v and i2v), `size` is sent as explicit pixels (`720*1280` etc. instead of `9*16`), and the endpoint paths stay overridable via `DASHSCOPE_T2V_PATH` / `DASHSCOPE_I2V_PATH` for provider-mirror setups.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added
