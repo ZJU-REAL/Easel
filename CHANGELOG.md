@@ -2,6 +2,12 @@
 
 All notable changes to Easel are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed Zhihu login detection returning false negatives after the 2026 header redesign: `.AppHeader-profile` / `.AppHeader-userInfo` no longer render, so logged-in sessions were treated as logged out and the QR login flow failed with "未找到可识别的登录二维码". `login_check` / `me_avatar_selector` now also match `.AppHeader .Avatar`, and `whoami` falls back to the same-origin `api/v4/me` endpoint when the header renders no nickname.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

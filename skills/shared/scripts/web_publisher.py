@@ -240,7 +240,9 @@ PLATFORMS: dict[str, dict] = {
         "login_probe_url": "https://www.zhihu.com/",
         "publish_url": "https://zhuanlan.zhihu.com/write",
         "profile": "ZhihuProfile",
-        "login_check": ".AppHeader-profile, .AppHeader-userInfo",
+        # 2026 改版后顶栏结构变了：.AppHeader-profile/.AppHeader-userInfo 已不渲染（实测假阴性），
+        # 已登录时 .AppHeader 内的 .Avatar 必在；未登录会先被 URL(signin) 标记拦下，故不会假阳性。
+        "login_check": ".AppHeader .Avatar, img.Avatar, .AppHeader-profile, .AppHeader-userInfo",
         "login_strict": True,
         "logged_out_selector": ".SignContainer, .Login-content, button:has-text('登录')",
         "login_qr_switch": "button:has-text('扫码登录'), [role='tab']:has-text('扫码登录'), "
@@ -250,7 +252,10 @@ PLATFORMS: dict[str, dict] = {
         "qr_loaded": ".Qrcode-img, [class*='qrcode' i] img, [class*='qrcode' i] canvas, canvas",
         "strict_login_qr": True,
         "me_name_selector": ".AppHeader-profile .name, .AppHeader-userInfo .name",
-        "me_avatar_selector": ".AppHeader-profile img[src], .AppHeader-userInfo img[src]",
+        "me_avatar_selector": ".AppHeader .Avatar, .AppHeader-profile img[src], .AppHeader-userInfo img[src]",
+        # 新顶栏不在 DOM 里渲染昵称（仅悬停显示）→ 名字改由同源接口兜底
+        "me_name_api": "https://www.zhihu.com/api/v4/me?include=name",
+        "me_name_api_field": "name",
         "steps": [
             {"action": "goto", "value": "https://zhuanlan.zhihu.com/write"},
             {"action": "waitfor", "selector": "textarea,.WriteIndex-titleInput,input", "value": "30000"},
@@ -1294,6 +1299,17 @@ def _visible_account_identity(page, cfg: dict) -> dict:
                     break
             if account[field]:
                 break
+    # 名字兜底：部分平台新顶栏不在 DOM 渲染昵称（如知乎 2026 改版）→ 打同源接口取
+    if not account["name"] and cfg.get("me_name_api"):
+        try:
+            resp = page.request.get(cfg["me_name_api"])
+            if resp.ok:
+                field = cfg.get("me_name_api_field") or "name"
+                value = (resp.json() or {}).get(field) or ""
+                if value:
+                    account["name"] = str(value).strip()[:40]
+        except Exception:
+            pass
     return _account_identity(account, page.url)
 
 
