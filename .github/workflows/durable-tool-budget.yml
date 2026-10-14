@@ -1,0 +1,29 @@
+name: Durable tool budgets
+
+on:
+  pull_request:
+    paths:
+      - 'agents/tool-budget/**'
+      - 'tests/frontend/durableTool*.test.mjs'
+      - '.github/workflows/durable-tool-budget.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  durable-budget:
+    name: Durable budgets (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Verify persistent reservations and process death
+        run: node --test tests/frontend/durableTool*.test.mjs
