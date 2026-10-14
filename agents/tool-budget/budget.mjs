@@ -7,6 +7,10 @@ export class ToolBudget {
   #lastNow;
   #clock;
   #limit;
+  #finished = false;
+  #admitted = 0;
+  #succeeded = 0;
+  #failed = 0;
 
   constructor({ maxCalls, timeoutMs, clock = () => performance.now() }) {
     if (!Number.isSafeInteger(maxCalls) || maxCalls < 0 || maxCalls > 10000 ||
@@ -29,6 +33,10 @@ export class ToolBudget {
     return this.#reason;
   }
 
+  remainingMs() {
+    return this.expire() ? 0 : Math.max(0, Math.ceil(this.#deadline - this.#lastNow));
+  }
+
   // Synchronous check-and-reserve: callers must invoke before executing a tool.
   // Failures and later policy vetoes do not refund a reservation.
   admit(callId) {
@@ -44,25 +52,29 @@ export class ToolBudget {
       return { allowed: false, reason: this.#reason };
     }
     this.#calls.set(callId, 'pending');
+    this.#admitted++;
     return { allowed: true };
   }
 
   settle(callId, failed = false) {
     if (this.#calls.get(callId) !== 'pending') return false;
     this.#calls.set(callId, failed ? 'failed' : 'succeeded');
+    if (failed) this.#failed++;
+    else this.#succeeded++;
+    if (this.#finished) this.#calls.delete(callId);
     return true;
   }
 
   finish() {
     this.expire();
     this.#reason ??= 'run_finished';
+    this.#finished = true;
+    for (const [id, state] of this.#calls) if (state !== 'pending') this.#calls.delete(id);
   }
 
   snapshot() {
-    const states = [...this.#calls.values()];
-    return Object.freeze({ admitted: states.length, rejected: this.#rejected,
-      pending: states.filter(state => state === 'pending').length,
-      succeeded: states.filter(state => state === 'succeeded').length,
-      failed: states.filter(state => state === 'failed').length, stopReason: this.#reason });
+    return Object.freeze({ admitted: this.#admitted, rejected: this.#rejected,
+      pending: this.#admitted - this.#succeeded - this.#failed,
+      succeeded: this.#succeeded, failed: this.#failed, stopReason: this.#reason });
   }
 }
