@@ -38,7 +38,8 @@ export interface HarnessSettingsResponse {
   sandbox: string;
   codex_auto_approve: boolean;
   locked: boolean;
-  agents: { id: string; label: string; protocol: string; installed: boolean; install_hint: string }[];
+  agents: { id: string; label: string; protocol: string; installed: boolean; install_hint: string;
+    tool_budget?: { admission: string; enforcement_verified: boolean; reason: string } }[];
 }
 
 export function fetchHarnessSettings(): Promise<HarnessSettingsResponse> {

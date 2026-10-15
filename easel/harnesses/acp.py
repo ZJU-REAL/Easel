@@ -6,6 +6,7 @@ import asyncio
 from easel import __version__
 
 from .base import Descriptor, HarnessError, RunRequest
+from .capabilities import require_tool_budget
 from .workspace import harness_instructions
 from .commands import acp_command, base_command
 from .rpc import connection
@@ -15,6 +16,7 @@ class ACPAdapter:
     descriptor = Descriptor("acp", "通用 ACP", "ACP v1", "配置本机 ACP CLI，详见 docs/agent-harnesses.md")
 
     async def run(self, request: RunRequest, emit, ask, bind):
+        require_tool_budget(self.descriptor.id, request.env)
         session_id = request.native_id
         active = False
 
@@ -110,5 +112,6 @@ class OpenCodeAdapter(ACPAdapter):
 
     async def run(self, request: RunRequest, emit, ask, bind):
         from dataclasses import replace
+        require_tool_budget(self.descriptor.id, request.env)
         command = request.command or tuple(base_command("opencode") + ["acp"])
         await super().run(replace(request, command=command), emit, ask, bind)

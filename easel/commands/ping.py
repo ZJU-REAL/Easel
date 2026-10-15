@@ -58,6 +58,7 @@ def cmd_ping(_args) -> int:
     from easel.harnesses.base import HarnessError
     root = Path(__file__).resolve().parents[2]
     runtime = harnesses.settings(root / "outputs", settings)["runtime"]
+    harnesses.require_tool_budget(runtime, settings)
     if runtime not in ("api", "openclaw"):
         try:
             asyncio.run(asyncio.wait_for(

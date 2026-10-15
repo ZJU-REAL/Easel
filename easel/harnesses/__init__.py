@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .acp import ACPAdapter, OpenCodeAdapter
 from .base import Descriptor, HarnessError, RunRequest
+from .capabilities import require_tool_budget, tool_budget_capability
 from .codex import CodexAdapter
 from .commands import acp_command, base_command
 from .store import settings
@@ -25,6 +26,7 @@ def describe(runtime: str) -> dict:
     descriptor = CHAT_ONLY if runtime == "api" else OPENCLAW if runtime == "openclaw" else adapter(runtime).descriptor
     from dataclasses import asdict
     result = asdict(descriptor)
+    result["tool_budget"] = tool_budget_capability(runtime)
     try:
         if runtime == "api":
             pass
@@ -46,6 +48,7 @@ async def console_turn(prompt: str, root: Path, env: dict, native_id="", *,
                        timeout=1800, interactive=True, on_bind=None) -> tuple[str, str]:
     config = settings(root / "outputs", env)
     runtime = config["runtime"]
+    require_tool_budget(runtime, env)
     full_text = []
     identifiers = [native_id]
 

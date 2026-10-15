@@ -6,6 +6,7 @@ import asyncio
 from easel import __version__
 
 from .base import Descriptor, HarnessError, RunRequest
+from .capabilities import require_tool_budget
 from .commands import base_command
 from .permissions import can_auto_approve
 from .rpc import connection
@@ -16,6 +17,7 @@ class CodexAdapter:
     descriptor = Descriptor("codex", "Codex", "app-server", "npm install -g @openai/codex；codex login")
 
     async def run(self, request: RunRequest, emit, ask, bind):
+        require_tool_budget(self.descriptor.id, request.env)
         if request.sandbox not in ("read-only", "workspace-write"):
             raise HarnessError("Codex 只允许只读或工作区写入权限")
         completion = asyncio.get_running_loop().create_future()

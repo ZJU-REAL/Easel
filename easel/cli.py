@@ -132,6 +132,7 @@ def cmd_chat(_args) -> int:
 
     settings = read_settings()
     runtime = harnesses.settings(PROJECT_ROOT / "outputs", settings)["runtime"]
+    harnesses.require_tool_budget(runtime, settings)
     if runtime not in ("api", "openclaw"):
         print(f"  Agent 底座：{runtime}（/exit 退出）")
         native_id = ""

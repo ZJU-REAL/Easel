@@ -192,6 +192,13 @@ export default function HarnessSettings({ onChange, onSelect }: {
           <p className="desc">“已安装”仅表示找到 CLI，不代表模型已登录；保存后请发送消息验证。</p>
         </>
       )}
+      <p className="desc">工具调用限额：{selected?.tool_budget?.admission === 'no_tools'
+        ? '此通道不执行工具。'
+        : selected?.tool_budget?.admission === 'observation_only'
+          ? '当前适配器可观察工具通知，无法保证执行前强制限额。'
+          : selected?.tool_budget?.admission === 'plugin_required'
+            ? '需要执行端插件；尚未验证当前 Gateway 的限额保障。'
+            : '尚未确认此通道的限额保障。'}</p>
       {settings?.locked && <p className="desc">启动环境 EASEL_AGENT_RUNTIME 已固定底座，请修改启动环境后重启。</p>}
       {note && <div className={`save-note${note.includes('失败') ? ' err' : ''}`} role="status">{note}</div>}
     </section>

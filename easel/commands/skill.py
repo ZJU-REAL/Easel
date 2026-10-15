@@ -147,6 +147,7 @@ def cmd_skill(args) -> int:
     import asyncio
     settings = read_settings()
     runtime = harnesses.settings(PROJECT_ROOT / "outputs", settings)["runtime"]
+    harnesses.require_tool_budget(runtime, settings)
     if runtime == "api":
         print("[easel] API 直连支持聊天；SKILL 执行需要具备本机工具的 Agent 运行时")
         return 1

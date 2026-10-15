@@ -846,6 +846,10 @@ def _harness_settings() -> dict:
 
 def _chat_backend(session_id: str | None) -> str:
     selected = "api" if _direct_api_enabled() else _harness_settings()["runtime"]
+    try:
+        harnesses.require_tool_budget(selected, read_settings(ENV_FILE))
+    except HarnessError as error:
+        raise HTTPException(409, str(error)) from error
     if not session_id:
         return selected
     try:
