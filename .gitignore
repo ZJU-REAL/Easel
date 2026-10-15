@@ -12,6 +12,9 @@ build/
 .env
 .env.local
 .env.xhs
+# 密钥备份不得入库：脚本/编辑器常留 .env.bak.<时间戳>，一次 git add -A 就可能把真实 Key 提交上来
+.env.bak*
+.env.*.bak
 # setup.sh 默认把 Python 依赖装进项目内的 .venv（见 setup.sh 的虚拟环境分支）
 .venv/
 
@@ -75,6 +78,7 @@ skill-test/
 
 # 备份/临时文件
 *.bak
+*.bak.*
 *.orig
 *.tmp
 *.swp
