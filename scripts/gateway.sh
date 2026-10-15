@@ -45,10 +45,12 @@ export OPENCLAW_GATEWAY_PORT="$GATEWAY_PORT"
 # 按可用性回退，让 gateway.sh 在 Linux 与 macOS 上都能起停。
 _port_pid() {
     # 取监听指定端口的进程 PID。Linux 用 ss，macOS/BSD 用 lsof。找不到返回空、退出码 0。
+    # 端口后必须锚定非数字（[^0-9]）：否则查 3728 会匹配到 127.0.0.1:37289 的监听者，
+    # stop 拿错 PID 直接 kill —— 本脚本历史上正是为防这类误杀才层层加固的。
     local port="$1"
     if command -v ss >/dev/null 2>&1; then
         ss -ltnp 2>/dev/null \
-            | sed -n "s/.*127\\.0\\.0\\.1:${port}.*pid=\\([0-9][0-9]*\\).*/\\1/p" \
+            | sed -n "s/.*127\\.0\\.0\\.1:${port}[^0-9].*pid=\\([0-9][0-9]*\\).*/\\1/p" \
             | head -n 1 || true
     elif command -v lsof >/dev/null 2>&1; then
         lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true

@@ -62,6 +62,12 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
   const [anaWin, setAnaWin] = useState<'last' | 'day' | 'week' | 'month' | 'year'>('week');
   // whoami 自愈：登录态以真实 profile 为准（与账号页共享 localStorage 缓存）
   const [whoamiMap, setWhoamiMap] = useState<Record<string, AccountWhoami>>(() => getWhoamiCache());
+  // 与 AccountsPage 同款：卸载后不再触发 setState（whoami 每个平台要起浏览器，最慢数秒）
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   useEffect(() => {
     fetchTrends('weibo,douyin', 6).then((d) => setTrends(d.trends)).catch(() => {});
@@ -79,6 +85,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
       // B 站走 cookie、公众号走凭证/官方 API 判定，都不起浏览器。
       const API_BASED = new Set(['bilibili', 'wechat-oa']);
       verifyStale(ps.filter((p) => !API_BASED.has(p.platform)).map((p) => p.platform), {
+        alive: () => aliveRef.current,
         onUpdate: (platform, r) => {
           setWhoamiMap((m) => ({ ...m, [platform]: r }));
           if (r.loggedIn) setAnaSel((s) => s || platform);
@@ -111,7 +118,9 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
 
   const hour = new Date().getHours();
   const greet = hour < 6 ? '夜深了' : hour < 12 ? '上午好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // 本地日期（与日历页 ymd 一致）：toISOString 是 UTC，会把「今天」错判成昨天/明天
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const upcoming = [...schedule]
     .filter((s) => s.date >= todayStr && s.status !== 'published')
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).slice(0, 5);

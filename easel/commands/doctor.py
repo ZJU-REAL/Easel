@@ -123,7 +123,10 @@ def _gateway_healthy() -> bool:
     不是 18789，写死就会「gateway 活着、doctor 报 FAIL」。
     """
     try:
-        with urllib.request.urlopen(healthz_url(), timeout=5) as response:
+        # 127.0.0.1 探针绝不能继承系统 http_proxy（direct_api 同款 doctrine）：
+        # 默认 opener 会把回环请求发给代理，代理不可达时健康的网关被误报为 FAIL。
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(healthz_url(), timeout=5) as response:
             return response.status == 200
     except (OSError, urllib.error.URLError):
         return False

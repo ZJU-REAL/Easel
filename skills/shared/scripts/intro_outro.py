@@ -169,8 +169,10 @@ def cmd_card(a) -> int:
         logo = _require_input(a.logo)
         inputs += ["-i", str(logo)]
         lw = a.logo_width or w // 5
-        # logo 缩放后叠加在标题上方
-        chain.append(f"[{1 + (1 if a.bg_image else 0)}:v]scale={lw}:-1[logo]")
+        # logo 恒为输入 1：_bg_source 三种背景都只产生恰好一个 -i（见 _audio_idx 注释）。
+        # 之前按 bg_image 再 +1 会指向 anullsrc 音频输入 → filtergraph 报
+        # "Stream specifier ':v' … matches no streams"，--bg-image+--logo 组合必挂。
+        chain.append(f"[1:v]scale={lw}:-1[logo]")
         chain.append(f"{cur}[logo]overlay=(W-w)/2:{int(h*0.22)}[v_logo]")
         cur = "[v_logo]"
 

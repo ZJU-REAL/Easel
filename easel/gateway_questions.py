@@ -306,19 +306,24 @@ class GatewayClient:
             },
         }
         ws.send(json.dumps(conn))
-        ok = False
-        deadline = time.time() + self.timeout
-        while time.time() < deadline:
-            msg = json.loads(ws.recv())
-            if msg.get("id") == "1":
-                ok = msg.get("ok", False)
-                if not ok:
-                    raise GatewayQuestionError(
-                        f"gateway connect failed: {json.dumps(msg.get('error'))[:200]}")
-                break
-        if not ok:
+        try:
+            ok = False
+            deadline = time.time() + self.timeout
+            while time.time() < deadline:
+                msg = json.loads(ws.recv())
+                if msg.get("id") == "1":
+                    ok = msg.get("ok", False)
+                    if not ok:
+                        raise GatewayQuestionError(
+                            f"gateway connect failed: {json.dumps(msg.get('error'))[:200]}")
+                    break
+            if not ok:
+                raise GatewayQuestionError("gateway connect timed out")
+        except Exception:
+            # 被网关拒绝（NOT_PAIRED/scope-upgrade）或收到非 JSON 帧时同样要关连接：
+            # 否则每轮 connect 都在网关侧留下一个悬挂 socket/配对申请，直到 GC。
             ws.close()
-            raise GatewayQuestionError("gateway connect timed out")
+            raise
         self.ws = ws
 
     def _rpc(self, method: str, params: dict, timeout: float | None = None):

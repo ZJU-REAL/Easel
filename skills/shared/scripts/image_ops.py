@@ -257,8 +257,13 @@ def cmd_compress(args) -> int:
     if args.max_kb:
         # 二分/递减逼近目标大小
         limit = args.max_kb * 1024
+        # quality<=9 时 range(q, 9, -5) 为空 → 循环一次都不跑，best=None → len(None) 崩。
+        # 兜底用用户给的 quality 至少压一次。
+        qualities = list(range(args.quality, 9, -5)) or [args.quality]
         best = None
-        for q in range(args.quality, 9, -5):
+        last_q = None
+        for q in qualities:
+            last_q = q
             data = _bytes(q)
             if len(data) <= limit:
                 best = data
@@ -266,7 +271,7 @@ def cmd_compress(args) -> int:
             best = data  # 记录最后一个（即使超限也保留最小）
         data = best
         if len(data) > limit:
-            print(f"WARN: 即使 quality=10 仍为 {len(data)/1024:.0f}KB，"
+            print(f"WARN: 即使 quality={last_q} 仍为 {len(data)/1024:.0f}KB，"
                   f"超过目标 {args.max_kb}KB。可先 resize 缩小尺寸。", file=sys.stderr)
     else:
         data = _bytes(args.quality)

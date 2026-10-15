@@ -170,9 +170,11 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const [laModels, setLaModels] = useState<Record<string, string>>({});
   const [localAgentNote, setLocalAgentNote] = useState('');
 
-  // 拉取模型列表：{ 行号 → { loading, models, err } }。结果按 baseUrl 落 localStorage（7 天过期），
+  // 拉取模型列表：{ 通道#行号 → { loading, models, err } }。结果按 baseUrl 落 localStorage（7 天过期），
   // 刷新页面/重开设置不用重新拉。
-  const [modelLists, setModelLists] = useState<Record<number, { loading: boolean; models: string[]; err: string; fetchedAt?: number }>>({});
+  // 键必须带通道前缀：六个通道共用 renderBoard，裸行号会让「对话」通道拉到的
+  // 模型列表串到「生图」同名行上（下拉可选到另一个 provider 的模型）。
+  const [modelLists, setModelLists] = useState<Record<string, { loading: boolean; models: string[]; err: string; fetchedAt?: number }>>({});
   // localStorage 里按 baseUrl 存的拉取结果（7 天过期），初始化时一次性读入。
   const [modelCache, setModelCache] = useState<Record<string, { models: string[]; fetchedAt: number }>>(() => {
     try {
@@ -180,11 +182,11 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
       return raw ? JSON.parse(raw) : {};
     } catch { return {}; }
   });
-  // 自定义下拉面板的展开状态与收起检测
-  const [openDd, setOpenDd] = useState<Record<number, boolean>>({});
-  const [protoDd, setProtoDd] = useState<Record<number, boolean>>({});
-  const protoRefs = useRef<Record<number, HTMLSpanElement | null>>({});
-  const modelCellRefs = useRef<Record<number, HTMLSpanElement | null>>({});
+  // 自定义下拉面板的展开状态与收起检测（键同样带通道前缀，见 modelLists）
+  const [openDd, setOpenDd] = useState<Record<string, boolean>>({});
+  const [protoDd, setProtoDd] = useState<Record<string, boolean>>({});
+  const protoRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const modelCellRefs = useRef<Record<string, HTMLSpanElement | null>>({});
 
   useEffect(() => {
     if (harness !== 'openclaw') return;
@@ -209,13 +211,13 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     }
   }, []);
 
-  const pullModels = useCallback(async (i: number, r: ModelRow) => {
-    setModelLists((m) => ({ ...m, [i]: { loading: true, models: m[i]?.models || [], err: '' } }));
+  const pullModels = useCallback(async (key: string, r: ModelRow) => {
+    setModelLists((m) => ({ ...m, [key]: { loading: true, models: m[key]?.models || [], err: '' } }));
     try {
       const proto = r.slot === 'custom' ? (r.protocol || 'openai') : (r.type === 'anthropic' ? 'anthropic' : 'openai');
       const d = await fetchAvailableModels(r.baseUrl || '', r.keyNew || '', proto, r.slot || '', r.name || '');
       const fetchedAt = Date.now();
-      setModelLists((m) => ({ ...m, [i]: { loading: false, models: d.models, err: d.models.length ? '' : '该端点没有返回模型', fetchedAt } }));
+      setModelLists((m) => ({ ...m, [key]: { loading: false, models: d.models, err: d.models.length ? '' : '该端点没有返回模型', fetchedAt } }));
       if (d.models.length) {
         setModelCache((c) => {
           const next = { ...c, [cacheKeyFor(r)]: { models: d.models, fetchedAt } };
@@ -224,7 +226,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
         });
       }
     } catch (e) {
-      setModelLists((m) => ({ ...m, [i]: { loading: false, models: m[i]?.models || [], err: e instanceof Error ? e.message : '拉取失败' } }));
+      setModelLists((m) => ({ ...m, [key]: { loading: false, models: m[key]?.models || [], err: e instanceof Error ? e.message : '拉取失败' } }));
     }
   }, []);
 
@@ -367,7 +369,27 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const setPrimaryRow = (i: number) =>
     setChatRows((rs) => rs.map((r, j) => (r.slot ? { ...r, role: j === i ? '主' : '备' } : r)));
 
-  const removeRow = (i: number) =>
+  const removeRow = (i: number) => {
+    // 删行后整体索引前移一位：把该通道的会话态键同步平移，
+    // 否则「已拉取/错误」标记会错挂到别行上。localStorage 缓存按 baseUrl，不受影响。
+    const shiftBoardKeys = (board: string) => {
+      const prefix = `${board}#`;
+      const shift = <T,>(rec: Record<string, T>): Record<string, T> => {
+        const next: Record<string, T> = {};
+        for (const [key, val] of Object.entries(rec)) {
+          if (!key.startsWith(prefix)) { next[key] = val; continue; }
+          const idx = Number(key.slice(prefix.length));
+          if (Number.isNaN(idx)) { next[key] = val; continue; }
+          if (idx === i) continue;                 // 被删行的状态随之丢弃
+          next[prefix + (idx > i ? idx - 1 : idx)] = val;
+        }
+        return next;
+      };
+      setModelLists(shift);
+      setOpenDd(shift);
+      setProtoDd(shift);
+    };
+    shiftBoardKeys('chat');
     setChatRows((rs) => {
       const gone = rs[i];
       const left = rs.filter((_, j) => j !== i);
@@ -377,6 +399,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
       }
       return left;
     });
+  };
 
   const updateRow = (
     setRows: Dispatch<SetStateAction<ModelRow[]>>,
@@ -409,7 +432,11 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const renderBoard = (
     rows: ModelRow[],
     ops?: { onRow?: (i: number, patch: Partial<ModelRow>) => void; onPrimary?: (i: number) => void; onRemove?: (i: number) => void; media?: boolean },
-  ) => (
+    board = 'chat',
+  ) => {
+    // 每行的会话态键：通道#行号 —— 不同通道/删除行后错位不再互相污染（见 modelLists 注释）
+    const k = (i: number) => `${board}#${i}`;
+    return (
     modelLoading && rows.length === 0 ? (
       <div className="board"><div className="empty"><span className="spin" /> 正在读取配置…<span className="hint">（后台繁忙时可能稍慢，会自动重试）</span></div></div>
     ) : rows.length === 0 ? (
@@ -449,21 +476,21 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                   role="button"
                   tabIndex={0}
                   aria-haspopup="listbox"
-                  aria-expanded={!!protoDd[i]}
-                  ref={(el) => { protoRefs.current[i] = el; }}
+                  aria-expanded={!!protoDd[k(i)]}
+                  ref={(el) => { protoRefs.current[k(i)] = el; }}
                   title="上游协议：中转站是 OpenAI 兼容格式选 openai；原生 Anthropic 格式（/v1/messages）选 anthropic"
-                  onClick={() => setProtoDd((s) => ({ ...s, [i]: !s[i] }))}
+                  onClick={() => setProtoDd((s) => ({ ...s, [k(i)]: !s[k(i)] }))}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      setProtoDd((state) => ({ ...state, [i]: !state[i] }));
+                      setProtoDd((state) => ({ ...state, [k(i)]: !state[k(i)] }));
                     }
                   }}
                 >
                   <span className="proto-label">{r.protocol === 'anthropic' ? 'anthropic' : 'openai'}</span>
-                  {protoDd[i] && (
+                  {protoDd[k(i)] && (
                     <OptionsDropdown
-                      anchor={protoRefs.current[i]}
+                      anchor={protoRefs.current[k(i)]}
                       items={[{ value: 'openai', label: 'openai（OpenAI 兼容）' }, { value: 'anthropic', label: 'anthropic（原生 /v1/messages）' }]}
                       current={r.protocol || 'openai'}
                       onPick={(v) => {
@@ -471,13 +498,13 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                         // 协议变了，旧协议拉来的模型列表不再适用：清内存列表 + 收起
                         setModelLists((m) => {
                           const next = { ...m };
-                          delete next[i];
+                          delete next[k(i)];
                           return next;
                         });
-                        setProtoDd((s) => ({ ...s, [i]: false }));
-                        setOpenDd((state) => ({ ...state, [i]: false }));
+                        setProtoDd((s) => ({ ...s, [k(i)]: false }));
+                        setOpenDd((state) => ({ ...state, [k(i)]: false }));
                       }}
-                      onClose={() => setProtoDd((s) => ({ ...s, [i]: false }))}
+                      onClose={() => setProtoDd((s) => ({ ...s, [k(i)]: false }))}
                     />
                   )}
                 </span>
@@ -487,28 +514,28 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 <span>{r.type}</span>
               )}
               {ed && ed.model && (!ops?.media || r.adv) ? (
-                <span className={`model-cell${isCustom ? ' custom-model-cell' : ''}`} ref={(el) => { modelCellRefs.current[i] = el; }}>
+                <span className={`model-cell${isCustom ? ' custom-model-cell' : ''}`} ref={(el) => { modelCellRefs.current[k(i)] = el; }}>
                   <input
                     className="mock"
                     value={r.model}
                     placeholder={isCustom ? '模型名' : ''}
                     onChange={(e) => ops?.onRow?.(i, { model: e.target.value })}
-                    onFocus={() => setOpenDd((s) => ({ ...s, [i]: true }))}
+                    onFocus={() => setOpenDd((s) => ({ ...s, [k(i)]: true }))}
                   />
-                  {openDd[i] ? (
+                  {openDd[k(i)] ? (
                     <FixedDropdown
-                      anchor={modelCellRefs.current[i]}
-                      models={modelLists[i]?.models.length ? modelLists[i].models : (cachedListFor(r)?.models || [])}
+                      anchor={modelCellRefs.current[k(i)]}
+                      models={modelLists[k(i)]?.models.length ? modelLists[k(i)].models : (cachedListFor(r)?.models || [])}
                       current={r.model}
-                      emptyHint={modelLists[i]?.err || undefined}
-                      onPull={() => void pullModels(i, r)}
-                      pulling={modelLists[i]?.loading}
-                      onPick={(mid) => { ops?.onRow?.(i, { model: mid }); setOpenDd((s) => ({ ...s, [i]: false })); }}
-                      onClose={() => setOpenDd((s) => ({ ...s, [i]: false }))}
+                      emptyHint={modelLists[k(i)]?.err || undefined}
+                      onPull={() => void pullModels(k(i), r)}
+                      pulling={modelLists[k(i)]?.loading}
+                      onPick={(mid) => { ops?.onRow?.(i, { model: mid }); setOpenDd((s) => ({ ...s, [k(i)]: false })); }}
+                      onClose={() => setOpenDd((s) => ({ ...s, [k(i)]: false }))}
                     />
                   ) : null}
                   {(() => {
-                    const mem = modelLists[i];
+                    const mem = modelLists[k(i)];
                     const cached = mem?.fetchedAt ? undefined : cachedListFor(r);
                     const has = !!(mem?.fetchedAt || cached);
                     return (
@@ -516,8 +543,8 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                         className={`fetch-btn${has ? ' ok' : ''}`}
                         title={has ? `已拉取 ${(mem?.models.length || cached!.models.length)} 个模型，点击重新拉取` : '从该端点拉取可用模型列表'}
                         onClick={() => {
-                          setOpenDd((s) => ({ ...s, [i]: true }));
-                          void pullModels(i, r);
+                          setOpenDd((s) => ({ ...s, [k(i)]: true }));
+                          void pullModels(k(i), r);
                         }}
                         disabled={mem?.loading}
                       >
@@ -529,8 +556,8 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       </button>
                     );
                   })()}
-                  {modelLists[i]?.err && (
-                    <span className="fetch-err" title={modelLists[i].err}>⚠</span>
+                  {modelLists[k(i)]?.err && (
+                    <span className="fetch-err" title={modelLists[k(i)].err}>⚠</span>
                   )}
                   {isCustom ? (
                     <span className="thinking-controls">
@@ -634,7 +661,8 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
         })}
       </div>
     )
-  );
+    );
+  };
 
   const chatOk = chatRows.length > 0 && !chatRows[0].result.includes('缺');
   const transOk = transRows.length > 1 && transRows[1].result.includes('已配置');
@@ -719,7 +747,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       <span className="spacer" />
                       <button className="btn btn-sm" onClick={() => void doSelftest('chat')} disabled={testing || selectedHarness !== harness}>自测本通道</button>
                     </div>
-                    {renderBoard(chatRows, { onRow: (i, p) => updateRow(setChatRows, i, p), onPrimary: setPrimaryRow, onRemove: removeRow })}
+                    {renderBoard(chatRows, { onRow: (i, p) => updateRow(setChatRows, i, p), onPrimary: setPrimaryRow, onRemove: removeRow }, 'chat')}
                     {selectedHarness === 'api' ? <div className="foot-note">此通道使用独立的 EASEL_DIRECT_API_* 配置，与原有 OpenAI 通道分开保存。支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
                       : <div className="add-row" onClick={addProvider}>＋ 添加供应商（填名称 / 模型 / Base URL / Key；点「设为主」切换生效通道）</div>}
                     {harness === 'openclaw' && (() => {
@@ -787,7 +815,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       <span className="spacer" />
                       <button className="btn btn-sm" onClick={() => void doSelftest('transcribe')} disabled={testing}>自测本通道</button>
                     </div>
-                    {renderBoard([...transRows, localRow], { onRow: (i, p) => updateRow(setTransRows, i, p) })}
+                    {renderBoard([...transRows, localRow], { onRow: (i, p) => updateRow(setTransRows, i, p) }, 'transcribe')}
                     <div className="foot-note">有字幕不下模型；API 通道缺 key 自动落到本地 whisper（本地组件在「环境安装」页装）。保存即写入 .env 生效。</div>
                   </section>
                 )}
@@ -799,7 +827,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       <span className="desc">只填 Key 即用（地址/模型内建）；「主/备」= 默认</span>
                       <span className="spacer" />
                     </div>
-                    {renderBoard(mediaRows.speech || [], { onRow: (i, p) => updateMediaRow('speech', i, p), onPrimary: (i) => setMediaPrimary('speech', i), media: true })}
+                    {renderBoard(mediaRows.speech || [], { onRow: (i, p) => updateMediaRow('speech', i, p), onPrimary: (i) => setMediaPrimary('speech', i), media: true }, 'speech')}
                     <div className="foot-note">配音脚本按「主」provider 合成；本地 VoxCPM / edge-tts 在视频产线里可直接替代。</div>
                   </section>
                 )}
@@ -811,7 +839,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       <span className="desc">只填 Key 即用（地址/模型内建，点「高级」可覆盖）</span>
                       <span className="spacer" />
                     </div>
-                    {renderBoard(mediaRows.image || [], { onRow: (i, p) => updateMediaRow('image', i, p), media: true })}
+                    {renderBoard(mediaRows.image || [], { onRow: (i, p) => updateMediaRow('image', i, p), media: true }, 'image')}
                     <div className="foot-note">按 Base URL 自动选同步 / 异步（apimart）模式；模型名留空用服务端默认。</div>
                   </section>
                 )}
@@ -823,7 +851,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       <span className="desc">只填 Key 即用（地址/模型内建，点「高级」可覆盖）；「主/备」= 默认</span>
                       <span className="spacer" />
                     </div>
-                    {renderBoard(mediaRows.video || [], { onRow: (i, p) => updateMediaRow('video', i, p), onPrimary: (i) => setMediaPrimary('video', i), media: true })}
+                    {renderBoard(mediaRows.video || [], { onRow: (i, p) => updateMediaRow('video', i, p), onPrimary: (i) => setMediaPrimary('video', i), media: true }, 'video')}
                     <div className="foot-note">脚本按「主」provider 出片；同类多家的自动降级随统一网关接入开放。</div>
                   </section>
                 )}
@@ -835,7 +863,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       <span className="desc">只填 Key 即用；「主/备」= 默认</span>
                       <span className="spacer" />
                     </div>
-                    {renderBoard(mediaRows.music || [], { onRow: (i, p) => updateMediaRow('music', i, p), onPrimary: (i) => setMediaPrimary('music', i), media: true })}
+                    {renderBoard(mediaRows.music || [], { onRow: (i, p) => updateMediaRow('music', i, p), onPrimary: (i) => setMediaPrimary('music', i), media: true }, 'music')}
                   </section>
                 )}
 

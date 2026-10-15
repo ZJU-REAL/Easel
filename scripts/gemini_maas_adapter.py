@@ -161,6 +161,10 @@ def gemini_to_openai(data: dict, model: str) -> dict:
     if tool_calls:
         message["tool_calls"] = tool_calls
     usage = data.get("usageMetadata") or {}
+    # 非流式与流式（stream_gemini 用 map_finish_reason）保持一致：上游
+    # MAX_TOKENS/SAFETY 截断不能一律报成 "stop"，否则客户端无从感知被截。
+    finish = ("tool_calls" if tool_calls
+              else map_finish_reason(candidate.get("finishReason")))
     return {
         "id": data.get("responseId") or "chatcmpl-" + uuid.uuid4().hex,
         "object": "chat.completion",
@@ -169,7 +173,7 @@ def gemini_to_openai(data: dict, model: str) -> dict:
         "choices": [{
             "index": 0,
             "message": message,
-            "finish_reason": "tool_calls" if tool_calls else "stop",
+            "finish_reason": finish,
         }],
         "usage": {
             "prompt_tokens": usage.get("promptTokenCount", 0),

@@ -146,9 +146,12 @@ def cmd_chat(_args) -> int:
                 if message in ("/exit", "/quit"):
                     return 0
                 if message:
+                    # timeout 与同命令的 openclaw TUI / web 路径对齐（TIMEOUT_CHAT=7200）：
+                    # chat 可能中途触发制作层任务，console_turn 默认 1800s 会把它掐断。
                     _, native_id = asyncio.run(harnesses.console_turn(
                         chat_turn_message(message, selected_persona), PROJECT_ROOT,
-                        {**settings, **_proxy_env()}, native_id, on_bind=remember))
+                        {**settings, **_proxy_env()}, native_id, on_bind=remember,
+                        timeout=TIMEOUT_CHAT))
                     print()
             except (EOFError, KeyboardInterrupt):
                 print()

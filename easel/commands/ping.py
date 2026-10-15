@@ -85,7 +85,10 @@ def cmd_ping(_args) -> int:
     # Step 1: Gateway healthz（端口不写死：非默认 profile 走哈希，easel → 37289）
     gateway_step = f"Step 1: Gateway healthz (localhost:{resolve_gateway_port()})"
     try:
-        with urllib.request.urlopen(healthz_url(), timeout=10) as response:
+        # 回环探针不走继承的 http_proxy（doctor 同款）：否则代理环境下健康的
+        # 网关会被误报 FAIL，诱导用户去重启一个其实活着的 gateway。
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(healthz_url(), timeout=10) as response:
             gateway_ok = response.status == 200
     except (OSError, urllib.error.URLError):
         gateway_ok = False

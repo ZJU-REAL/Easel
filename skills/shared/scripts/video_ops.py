@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -175,15 +176,42 @@ def _done(out: Path) -> None:
 
 
 # ── 子命令实现 ────────────────────────────────────────────────────────
+def _tsec(v: str) -> float:
+    """解析 HH:MM:SS(.ms) / MM:SS(.ms) / 纯秒数，返回秒。非法输入抛 ValueError。"""
+    v = (v or "").strip()
+    if not v:
+        raise ValueError("empty time")
+    parts = v.split(":")
+    if len(parts) > 3:
+        raise ValueError(v)
+    secs = 0.0
+    for p in parts:
+        if not re.fullmatch(r"\d{1,6}(?:\.\d{1,3})?", p):
+            raise ValueError(v)
+        secs = secs * 60 + float(p)
+    return secs
+
+
 def cmd_cut(a) -> int:
     src = _require_input(a.input)
     out = _prep_out(a.output)
     cmd = ["ffmpeg", "-y"]
-    # -ss 放 -i 前更快（关键帧定位）；精确裁剪用 -accurate_seek + 重编码
+    # -ss 放 -i 前更快（关键帧定位）；精确裁剪用 -accurate_seek + 重编码。
+    # 注意：输入侧 -ss 会把时间戳归零，输出侧的 -to/-t 从新零点起算——
+    # 所以 start+end 同时给时必须换算成 -t (end-start)，否则 --start 2 --end 6
+    # 会得到 [2s,8s) 共 6s，而不是想要的 [2s,6s) 共 4s（实测踩过）。
     if a.start:
         cmd += ["-ss", a.start]
     cmd += ["-i", str(src)]
-    if a.end:
+    if a.start and a.end:
+        try:
+            dur = _tsec(a.end) - _tsec(a.start)
+        except ValueError:
+            _die(f"--start/--end 时间格式非法：{a.start!r} / {a.end!r}", 2)
+        if dur <= 0:
+            _die("--end 必须晚于 --start", 2)
+        cmd += ["-t", f"{dur:.3f}"]
+    elif a.end:
         cmd += ["-to", a.end]
     elif a.duration:
         cmd += ["-t", a.duration]

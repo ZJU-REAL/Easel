@@ -24,6 +24,23 @@ class CodexAdapter:
         streamed: set[str] = set()
 
         def notify(method, params):
+            def _thread_scoped() -> bool:
+                # 无 threadId/turnId 的是全局事件（连接级/认证失败常在 turn/start 前发出）；
+                # 带 id 的必须匹配本会话。放行判定独立于 turn_id 是否已闩锁。
+                if params.get("threadId") is None and params.get("turnId") is None:
+                    return True
+                return bool(turn_id) and params.get("threadId") == thread_id \
+                    and params.get("turnId", turn_id) == turn_id
+
+            # 致命 error 事件常不带 thread 上下文（如 turn/start 前的认证失败）；
+            # 放在 id 过滤之前处理，否则只能等外层 wait_for 超时（30min+）才报错。
+            if method == "error":
+                if params.get("willRetry", False) or not _thread_scoped():
+                    return
+                if not completion.done():
+                    completion.set_exception(HarnessError("Codex 执行失败，请检查原生登录与模型配置"))
+                return
+
             if not turn_id or params.get("threadId") != thread_id or params.get("turnId", turn_id) != turn_id:
                 return
             if method == "item/agentMessage/delta":
@@ -49,9 +66,6 @@ class CodexAdapter:
                     error = turn.get("error") or {}
                     completion.set_exception(HarnessError(
                         str(error.get("message") or f"Codex 本轮未完成：{turn.get('status')}")))
-            elif method == "error" and not params.get("willRetry", False):
-                if not completion.done():
-                    completion.set_exception(HarnessError("Codex 执行失败，请检查原生登录与模型配置"))
 
         async def respond(method, params):
             if params.get("threadId") != thread_id or (

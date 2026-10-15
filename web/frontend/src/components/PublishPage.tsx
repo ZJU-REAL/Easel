@@ -55,6 +55,9 @@ export default function PublishPage({ persona }: PublishPageProps) {
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState('');
   const adaptCtl = useRef<AbortController | null>(null);
+  // 异步发布轮询的 interval 集合：离开页面统一清掉，否则最长还会继续转 15 分钟
+  const pollTimers = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
+  const aliveRef = useRef(true);
 
   // 发布相关
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
@@ -73,7 +76,13 @@ export default function PublishPage({ persona }: PublishPageProps) {
     savePublishDraft({ title, body, platforms, overrides, tags });
   }, [title, body, platforms, overrides, tags]);
 
-  useEffect(() => () => adaptCtl.current?.abort(), []);   // 离开页面中止流
+  useEffect(() => {
+    // 卸载：中止流 + 停掉所有发布状态轮询（否则在后台空转最长 15 分钟）
+    aliveRef.current = false;
+    adaptCtl.current?.abort();
+    pollTimers.current.forEach((iv) => clearInterval(iv));
+    pollTimers.current.clear();
+  }, []);
 
   // 登录态 + 可选媒体列表
   useEffect(() => {
@@ -235,8 +244,9 @@ export default function PublishPage({ persona }: PublishPageProps) {
   const pollAsyncPublish = (key: string, label: string) => new Promise<void>((resolve) => {
     const started = Date.now();
     const iv = setInterval(async () => {
+      if (!aliveRef.current) { clearInterval(iv); pollTimers.current.delete(iv); resolve(); return; }
       if (Date.now() - started > 15 * 60 * 1000) {   // 15min 兜底
-        clearInterval(iv); setPubSms(null);
+        clearInterval(iv); pollTimers.current.delete(iv); setPubSms(null);
         setPub((r) => ({ ...r, [key]: { status: 'fail', msg: '发布超时' } }));
         resolve(); return;
       }
@@ -246,17 +256,18 @@ export default function PublishPage({ persona }: PublishPageProps) {
         setPubSms({ platform: key, name: label, state: s.state, message: s.message });
         setPub((r) => ({ ...r, [key]: { status: 'publishing', msg: s.message || '需短信验证' } }));
       } else if (s.state === 'success') {
-        clearInterval(iv); setPubSms(null);
+        clearInterval(iv); pollTimers.current.delete(iv); setPubSms(null);
         setPub((r) => ({ ...r, [key]: { status: 'ok', msg: '已发布 ✅' } }));
         resolve();
       } else if (s.state === 'error') {
-        clearInterval(iv); setPubSms(null);
+        clearInterval(iv); pollTimers.current.delete(iv); setPubSms(null);
         setPub((r) => ({ ...r, [key]: { status: 'fail', msg: s.message || '发布失败' } }));
         resolve();
       } else {
         setPub((r) => ({ ...r, [key]: { status: 'publishing', msg: s.message || '发布中…' } }));
       }
     }, 2500);
+    pollTimers.current.add(iv);
   });
 
   const submitPubSms = async () => {
@@ -282,9 +293,11 @@ export default function PublishPage({ persona }: PublishPageProps) {
   };
   const addToCalendar = async (key: string) => {
     if (empty) return;
+    // 用本地日期（日历页按本地渲染）：toISOString 是 UTC，东八区 0-8 点会落到「昨天」
     const d = new Date();
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     await createSchedule({
-      title: title.trim() || effective(key).slice(0, 20), date: d.toISOString().slice(0, 10),
+      title: title.trim() || effective(key).slice(0, 20), date,
       platform: PLATFORMS.find((p) => p.key === key)?.label || '', time: '', status: 'draft', note: effective(key),
     });
     showToast('已存为草稿并加入今天的日历');

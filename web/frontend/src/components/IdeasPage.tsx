@@ -41,8 +41,10 @@ export default function IdeasPage({ onUseTopic }: IdeasPageProps) {
   const advance = async (it: Idea) => { await updateIdea(it.id, { ...it, status: NEXT[it.status] }); load(); };
   const remove = async (it: Idea) => { await deleteIdea(it.id); load(); };
   const schedule = async (it: Idea) => {
+    // 用本地日期（日历页按本地渲染）：toISOString 是 UTC，东八区 0-8 点会落到「昨天」
     const d = new Date();
-    await createSchedule({ title: it.title, date: d.toISOString().slice(0, 10), platform: '', time: '', status: 'idea', note: it.note });
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    await createSchedule({ title: it.title, date, platform: '', time: '', status: 'idea', note: it.note });
     showToast('已加入日历（今天）');
   };
 
