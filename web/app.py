@@ -1895,11 +1895,13 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
                 models = prov.get('models') if isinstance(prov.get('models'), list) and prov.get('models') else [{}]
                 if not isinstance(models[0], dict):
                     models = [{}]
-                if models[0].get('id') != model:
+                old_model = models[0].get('id')
+                if old_model != model:
                     models[0]['id'] = model
                     changed = True
                 model_name = models[0].get('name')
-                if not isinstance(model_name, str) or not model_name.strip():
+                if (not isinstance(model_name, str) or not model_name.strip()
+                        or (model_name == old_model and old_model != model)):
                     models[0]['name'] = model
                     changed = True
                 prov['models'] = models
@@ -2207,7 +2209,10 @@ async def api_settings_models_save(req: ModelSaveRequest):
             # model 可能本来就是 provider/model 形式：anthropic 行的 model 直接取自
             # .env 的 CLAUDE_MODEL，而那个值按约定就写成 anthropic/claude-opus-4-7。
             # 无脑拼前缀会写出 anthropic/anthropic/claude-opus-4-7，主模型随即不可路由。
-            primary_ref = model if '/' in model else f'{pkey}/{model}'
+            # 自定义供应商的模型 ID 是上游原值，可能包含命名空间
+            # （如 LiteLLM 的 dashscope/qwen-*），必须保留并加上实际供应商。
+            primary_ref = (f'{pkey}/{model}' if slot == 'custom'
+                           else model if model.startswith(f'{pkey}/') else f'{pkey}/{model}')
     if not updates and not provider_updates and not primary_ref:
         raise HTTPException(400, '没有可保存的改动（key 留空表示不改）')
     if is_chat and direct:

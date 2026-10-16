@@ -88,3 +88,21 @@ def test_channels_echo_protocol(client):
     data = c.get("/api/settings/models").json()
     row = next(r for r in data["channels"]["chat"]["rows"] if r.get("name") == "claude-relay")
     assert row["protocol"] == "anthropic"
+
+
+def test_namespaced_model_save_edit_keeps_primary(client):
+    """上游命名空间不是 OpenClaw provider；回显再编辑仍应更新主路由。"""
+    c, oc = client
+    for model in ('dashscope/qwen3.8-flash', 'dashscope/qwen3.7-plus'):
+        if model.endswith('plus'):
+            rows = c.get('/api/settings/models').json()['channels']['chat']['rows']
+            row = next(r for r in rows if r.get('name') == 'litellm')
+            assert row['role'] == '主'
+        response = c.post('/api/settings/models/save', json={
+            'channel': 'chat', 'rows': [_row(name='litellm', model=model)]})
+        assert response.status_code == 200, response.text
+        config = json.loads(oc.read_text())
+        assert config['agents']['defaults']['model']['primary'] == f'litellm/{model}'
+        saved = config['models']['providers']['litellm']['models'][0]
+        assert saved['id'] == model
+        assert saved['name'] == model
