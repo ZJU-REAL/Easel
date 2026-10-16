@@ -2829,11 +2829,25 @@ def _read_job_events(turn_id: str, after: int = 0) -> list[dict]:
         return []
     events = []
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            event = json.loads(line)
-            if int(event.get("id", 0)) > after:
-                events.append(event)
-    except (OSError, ValueError, json.JSONDecodeError):
+        # Read/decode each record separately: a concurrent append can end in
+        # partial JSON or even half a UTF-8 character. Keep valid records and
+        # retry the incomplete tail on the next read without changing the log.
+        with path.open("rb") as stream:
+            for line in stream:
+                try:
+                    event = json.loads(line)
+                except (ValueError, UnicodeError):
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                event_id = event.get("id")
+                if (type(event_id) is not int or event_id <= 0
+                        or not isinstance(event.get("event"), str)
+                        or not event["event"]):
+                    continue
+                if event_id > after:
+                    events.append(event)
+    except OSError:
         return []
     return events
 
