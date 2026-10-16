@@ -1475,3 +1475,29 @@ textarea.field { resize: vertical; min-height: 90px; }
 }
 .proto-trigger:hover { border-color: #9db3d8; }
 .proto-trigger .proto-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Profile library: shared card surfaces and theme tokens. */
+.profile-title-en { color: var(--text-tertiary); font-size: 0.65em; font-weight: 500; margin-left: 6px; }
+.profile-head > div:first-child { min-width: 0; }
+.profile-head .page-title { overflow-wrap: anywhere; }
+.profile-head > .btn { flex-shrink: 0; }
+.profile-mode-note { display: flex; align-items: center; gap: 12px; padding: 15px 18px; margin-top: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev); color: var(--text-secondary); font-size: 13px; }
+.profile-mode-note > svg { flex-shrink: 0; color: var(--accent-start); }
+.profile-mode-note small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: 12px; }
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.profile-summary { display: flex; flex-direction: column; padding: 22px; }
+.profile-summary:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.profile-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+.profile-avatar { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-start); }
+.profile-summary h2 { font-size: 17px; font-weight: 650; line-height: 1.45; margin: 0 0 9px; overflow-wrap: anywhere; }
+.profile-summary-description { color: var(--text-secondary); font-size: 13px; line-height: 1.75; margin: 0 0 24px; overflow-wrap: anywhere; }
+.profile-summary-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); }
+.profile-summary-actions .btn { flex: 1; }
+.profile-empty { min-height: 320px; }
+.profile-detail-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+@media (max-width: 640px) {
+  .profile-page { padding: 22px 18px 40px; }
+  .profile-grid { grid-template-columns: 1fr; }
+  .profile-head { flex-wrap: wrap; }
+  .profile-summary { padding: 18px; }
+}

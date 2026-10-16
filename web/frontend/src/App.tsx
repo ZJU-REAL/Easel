@@ -759,7 +759,7 @@ export default function App() {
       case 'accounts':
         return <AccountsPage />;
       case 'profile':
-        return <ProfilePage persona={selectedPersona} onNewProfile={() => setShowWizard(true)} onDeleted={handleProfileDeleted} />;
+        return <ProfilePage persona={selectedPersona} onUsePersona={handlePersonaChange} onNewProfile={() => setShowWizard(true)} onDeleted={handleProfileDeleted} />;
       default:
         return null;
     }

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { fetchPersonaFiles, savePersonaFile, deletePersona, fetchAccountAnalytics } from '../lib/api';
-import type { PersonaFile, AccountAnalytics } from '../lib/api';
+import { fetchPersonas, fetchPersonaFiles, savePersonaFile, deletePersona, fetchAccountAnalytics } from '../lib/api';
+import type { PersonaItem, PersonaFile, AccountAnalytics } from '../lib/api';
 import { renderMarkdown } from '../lib/sanitize';
+import { IconProfile, IconPlus } from './icons';
 
 // 粉丝量级：把粉丝数映射成人话档位（画像里“粉丝量级”一栏要的是量级而非精确值）
 function fanTier(n: number): string {
@@ -51,6 +52,7 @@ function mergeWechatBlock(existing: string, block: string): string {
 
 interface ProfilePageProps {
   persona: string;
+  onUsePersona: (name: string) => void;
   onNewProfile: () => void;
   onDeleted: (name: string) => void;
 }
@@ -64,8 +66,83 @@ const DIM_META: Record<string, { label: string; icon: string }> = {
   'memory.md': { label: '经验沉淀', icon: '🧠' },
 };
 
-export default function ProfilePage({ persona, onNewProfile, onDeleted }: ProfilePageProps) {
-  const [files, setFiles] = useState<PersonaFile[]>([]);
+export default function ProfilePage(props: ProfilePageProps) {
+  const [viewedPersona, setViewedPersona] = useState(props.persona);
+  const [personas, setPersonas] = useState<PersonaItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => { setViewedPersona(props.persona); }, [props.persona]);
+  useEffect(() => {
+    let ignore = false;
+    setLoading(true);
+    setError('');
+    fetchPersonas().then((list) => {
+      if (!ignore) setPersonas(list);
+    }).catch(() => {
+      if (!ignore) setError('加载画像列表失败，请重试。');
+    }).finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, [revision]);
+
+  if (viewedPersona) {
+    return <ProfileDetail key={viewedPersona} {...props} persona={viewedPersona}
+      inUse={viewedPersona === props.persona}
+      onBack={() => { setViewedPersona(''); setRevision((n) => n + 1); }}
+      onDeleted={(name) => {
+        setPersonas((list) => list.filter((p) => p.name !== name));
+        setViewedPersona('');
+        setRevision((n) => n + 1);
+        props.onDeleted(name);
+      }} />;
+  }
+
+  return (
+    <div className="profile-page">
+      <div className="profile-head">
+        <div>
+          <h1 className="page-title">用户画像 <span className="profile-title-en">Profile</span></h1>
+          <p className="page-subtitle">管理你的定位、风格与受众，为每一种创作找到合适的身份。</p>
+        </div>
+        <button className="btn btn-primary" onClick={props.onNewProfile}><IconPlus size={15} /> 新建画像</button>
+      </div>
+      <div className="profile-mode-note">
+        <IconProfile size={18} />
+        <span>{props.persona ? `当前对话使用「${props.persona}」` : '当前对话为通用模式'}<small>查看和编辑画像不会切换对话身份。</small></span>
+      </div>
+      {loading ? <div className="loading"><div className="spinner" />加载画像…</div>
+        : error ? <div className="empty-state"><p role="alert">{error}</p><button className="btn" onClick={() => setRevision((n) => n + 1)}>重新加载</button></div>
+        : personas.length === 0 ? <div className="empty-state profile-empty">
+          <div className="profile-avatar"><IconProfile size={28} /></div>
+          <h3>创建你的第一个画像</h3>
+          <p>记录账号定位、内容风格和偏好，让每次创作都更贴合你。</p>
+          <button className="btn btn-primary" onClick={props.onNewProfile}><IconPlus size={15} /> 新建画像</button>
+        </div> : <>
+          <div className="section-title">我的画像 · {personas.length}</div>
+          <div className="profile-grid">
+            {personas.map((p) => <article className="card profile-summary" key={p.name}>
+              <div className="profile-summary-head">
+                <div className="profile-avatar"><IconProfile size={22} /></div>
+                {p.name === props.persona && <span className="badge badge-accent">当前使用</span>}
+              </div>
+              <h2>{p.name}</h2>
+              <p className="profile-summary-description">{p.description || '还没有定位简介，打开画像完善你的创作方向。'}</p>
+              <div className="profile-summary-actions">
+                <button className="btn" onClick={() => setViewedPersona(p.name)}>查看 / 编辑</button>
+                <button className="btn btn-primary" onClick={() => props.onUsePersona(p.name)}>切换画像</button>
+              </div>
+            </article>)}
+          </div>
+        </>}
+    </div>
+  );
+}
+
+function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: ProfilePageProps & {
+  onBack: () => void;
+  inUse: boolean;
+}) {  const [files, setFiles] = useState<PersonaFile[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -145,22 +222,18 @@ export default function ProfilePage({ persona, onNewProfile, onDeleted }: Profil
     }
   };
 
-  if (!persona) {
-    return (
-      <div className="profile-page">
-        <h1 className="page-title">用户画像 Profile</h1>
-        <div className="empty-state" style={{ height: '70%' }}>
-          <div className="empty-icon">👤</div>
-          <h3>还没有选择画像</h3>
-          <p>画像沉淀你的定位、风格、受众与红线，生成内容会更贴合你的人设。</p>
-          <button className="btn btn-primary" onClick={onNewProfile}>+ 新建画像</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="profile-page">
+      <div className="profile-detail-nav">
+        <button className="btn btn-sm" disabled={!!savingFile || fetchingWx || deleting} onClick={() => {
+          if (files.some((f) => (drafts[f.filename] ?? '') !== f.content)
+              && !window.confirm('还有未保存的修改，确定返回画像列表吗？')) return;
+          onBack();
+        }}>← 全部画像</button>
+        {inUse ? <span className="badge badge-accent">当前对话使用中</span>
+          : <button className="btn btn-sm" onClick={() => onUsePersona(persona)}>切换画像</button>}
+      </div>
       <div className="profile-head">
         <div>
           <h1 className="page-title">{persona}</h1>
