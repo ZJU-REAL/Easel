@@ -23,8 +23,9 @@
 """
 
 from __future__ import annotations
-import argparse, json, os, sys
+import argparse, json, os, re, sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import content_guard  # noqa: E402  出站内容安全闸门
@@ -215,6 +216,40 @@ def _click_publish_btn(page) -> bool:
     return False
 
 
+def classify_publish_outcome(question_url: str, final_url: str) -> dict:
+    """判定发布结果。只解析 URL 的路径部分，不做整串子串匹配。
+
+    返回 {"outcome": ..., "success": bool, "detail": str}，其中
+    outcome ∈ {"verified", "login_required", "unverified"}。
+
+    - verified：落在同一问题 id 下的回答地址，且回答 id 不是输入地址里原有的。
+    - login_required：发布后跳到登录页（可能未登录或登录态失效）。
+    - unverified：仍在问题页或其他情况，需手动检查账号回答列表确认。
+    """
+    q_path = urlparse(question_url).path
+    f_path = urlparse(final_url).path
+
+    if re.search(r"(signin|login)", f_path, re.IGNORECASE):
+        return {"outcome": "login_required", "success": False,
+                "detail": "发布后跳到登录页，可能未登录或登录态失效"}
+
+    m_q = re.search(r"/question/(\d+)", q_path)
+    qid = m_q.group(1) if m_q else None
+
+    m_a = re.search(r"/question/(\d+)/answer/(\d+)", f_path)
+    if m_a and qid and m_a.group(1) == qid:
+        # 输入地址本身可能是某个回答链接：回答 id 与输入一致则不是本次新发布
+        m_input = re.search(r"/answer/(\d+)", q_path)
+        if m_input and m_input.group(1) == m_a.group(2):
+            return {"outcome": "unverified", "success": False,
+                    "detail": "地址中的回答 id 与输入地址一致，非本次新发布"}
+        return {"outcome": "verified", "success": True,
+                "detail": f"新回答地址 /question/{qid}/answer/{m_a.group(2)}"}
+
+    return {"outcome": "unverified", "success": False,
+            "detail": "发布后未落到新回答地址，请手动检查账号回答列表确认"}
+
+
 def publish_answer(question_url: str, content: str, headed: bool = False, dry_run: bool = True) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -275,11 +310,17 @@ def publish_answer(question_url: str, content: str, headed: bool = False, dry_ru
             ctx.close()
             return result
 
-        # 4. 验证
+        # 4. 验证：只解析 URL 路径部分判定，不做整串子串匹配（issue #113）
         current_url = page.url
         print(f"[INFO] 当前页面 URL: {current_url}", file=sys.stderr)
-        result["success"] = "/answer/" in current_url or "question" in current_url
+        outcome = classify_publish_outcome(question_url, current_url)
+        result["success"] = outcome["success"]
+        result["outcome"] = outcome["outcome"]
         result["url"] = current_url
+        if outcome["success"]:
+            print(f"[INFO] 发布已验证: {outcome['detail']}", file=sys.stderr)
+        else:
+            result["error"] = outcome["detail"]
 
         ctx.close()
         return result
@@ -297,6 +338,29 @@ def _selftest() -> int:
     # 相对 content-file 应挂到 PROJECT_ROOT 下
     rel = Path("outputs/x/answer.md")
     assert (PROJECT_ROOT / rel).is_absolute()
+    # issue #113：发布结果判定（离线，不启浏览器）
+    outcome_cases = [
+        # (question_url, final_url, 期望 outcome, 期望 success)
+        ("https://www.zhihu.com/question/12345",
+         "https://www.zhihu.com/question/12345",
+         "unverified", False),  # 仍在问题页：发布被拒/风控/验证
+        ("https://www.zhihu.com/question/12345",
+         "https://www.zhihu.com/question/12345/answer/67890",
+         "verified", True),  # 新回答地址
+        ("https://www.zhihu.com/question/12345",
+         "https://www.zhihu.com/signin?next=%2Fquestion%2F12345",
+         "login_required", False),  # 跳登录页（回跳参数含 question 也不能误判）
+        ("https://www.zhihu.com/question/12345/answer/11111",
+         "https://www.zhihu.com/question/12345/answer/11111",
+         "unverified", False),  # 输入的是别人回答链接
+        ("https://www.zhihu.com/question/12345",
+         "https://www.zhihu.com/question/99999/answer/67890",
+         "unverified", False),  # 落到其他问题下
+    ]
+    for q, f, exp_outcome, exp_success in outcome_cases:
+        r = classify_publish_outcome(q, f)
+        assert r["outcome"] == exp_outcome, f"{f}: 期望 {exp_outcome}，实际 {r['outcome']}"
+        assert r["success"] is exp_success, f"{f}: success 应为 {exp_success}"
     try:
         import playwright  # noqa: F401
         pw = "yes"
