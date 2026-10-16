@@ -3302,11 +3302,14 @@ async def api_chat_stream(req: ChatRequest):
                             if rc:
                                 run_info["sse_thinking"] = True
                                 run_info["thinking_chars"] += len(rc)
-                                _emit("thinking", rc)
+                                q.put_nowait({"t": "thinking", "text": rc})
                             c = delta.get("content")
                             if c:
                                 got_text = True
-                                _emit("token", c)
+                                # Already on the event loop: enqueue directly.
+                                # _emit schedules a callback which can run after
+                                # this coroutine's completion sentinel.
+                                q.put_nowait({"t": "token", "text": c})
                             if delta.get("tool_calls") and not tool_noted:
                                 tool_noted = True
                                 to_client("activity", "🔧 正在执行操作…")
@@ -3593,7 +3596,10 @@ async def api_chat_stream(req: ChatRequest):
             except Exception:
                 pass
             finally:
-                loop.call_soon_threadsafe(q.put_nowait, SENTINEL)
+                # HTTP completion belongs to _run_gateway_turn. The optional
+                # raw reader must not end that stream or overtake its tokens.
+                if not is_http:
+                    loop.call_soon_threadsafe(q.put_nowait, SENTINEL)
 
         stdout_fut = None
         if is_http:
