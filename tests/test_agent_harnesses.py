@@ -807,7 +807,8 @@ def test_web_stream_replay_resume_and_delete(sandbox, monkeypatch):
 
 
 @pytest.mark.parametrize("runtime", ["codex", "opencode", "acp"])
-def test_native_stream_persists_identity_and_rejects_duplicate(sandbox, monkeypatch, runtime):
+@pytest.mark.parametrize("endpoint", ["/api/chat", "/api/chat/stream"])
+def test_native_stream_persists_identity_and_rejects_duplicate(sandbox, monkeypatch, runtime, endpoint):
     from easel.run_store import RunStore
     calls = []
     monkeypatch.setattr(web, "_chat_backend", lambda key: runtime)
@@ -823,13 +824,19 @@ def test_native_stream_persists_identity_and_rejects_duplicate(sandbox, monkeypa
 
     monkeypatch.setattr(web.harnesses, "adapter", lambda runtime: Fake())
     payload = {"message": "hello", "sessionId": "same", "turnId": "native-turn"}
-    assert sandbox.post("/api/chat/stream", json=payload).status_code == 200
+    response = sandbox.post(endpoint, json=payload)
+    assert response.status_code == 200
+    if endpoint == "/api/chat":
+        assert response.json()["turnId"] == "native-turn"
     result = sandbox.get("/api/chat/jobs/native-turn").json()
     assert (result["backend"], result["state"], result["version"]) == (runtime, "succeeded", 3)
     assert result["session_id"] == "same" and result["finished_at"]
-    log = web._job_event_file("native-turn").read_bytes()
+    event_file = web._job_event_file("native-turn")
+    log = event_file.read_bytes() if event_file.exists() else None
     assert sandbox.post("/api/chat/stream", json=payload).status_code == 409
-    assert len(calls) == 1 and web._job_event_file("native-turn").read_bytes() == log
+    assert sandbox.post("/api/chat", json=payload).status_code == 409
+    assert len(calls) == 1
+    assert (event_file.read_bytes() if event_file.exists() else None) == log
 
 
 @pytest.mark.parametrize("stage", ["create", "running"])

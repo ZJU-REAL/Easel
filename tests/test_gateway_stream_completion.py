@@ -107,5 +107,20 @@ def test_gateway_stream_preserves_every_token(tmp_path, monkeypatch, parts, buff
         assert status["backend"] == "openclaw"
         assert status["state"] == ("succeeded" if ending == "done" else "unknown")
         assert bool(status["finished_at"]) == (ending == "done")
+        if buffered and not raw_failure:
+            from fastapi import HTTPException
+            request = web.ChatRequest(message="test", sessionId="nonstream", turnId="nonstream-turn")
+            if ending == "done":
+                result = await web.api_chat(request)
+                assert result == {"response": "".join(parts), "sessionKey": "nonstream",
+                                  "turnId": "nonstream-turn"}
+            else:
+                with pytest.raises(HTTPException) as caught:
+                    await web.api_chat(request)
+                assert caught.value.status_code == 502
+            assert (await web.api_chat_job_status("nonstream-turn"))["state"] == status["state"]
+            with pytest.raises(HTTPException) as duplicate:
+                await web.api_chat(request)
+            assert duplicate.value.status_code == 409
 
     asyncio.run(scenario())

@@ -51,6 +51,22 @@ def test_duplicate_submission_does_not_repeat_model_or_erase_replay(sandbox, mon
     assert web._job_event_file("turn").read_bytes() == original
 
 
+@pytest.mark.parametrize("first", ["/api/chat", "/api/chat/stream"])
+def test_nonstream_and_stream_share_task_identity(sandbox, monkeypatch, first):
+    calls = []
+    upstream(monkeypatch, lambda request: (calls.append(request) or httpx.Response(
+        200, text=sse(chunk("answer"), chunk(finish="stop"), "[DONE]"))))
+    body = {"message": "hello", "sessionId": "same", "turnId": "shared-turn"}
+    response = sandbox.post(first, json=body)
+    assert response.status_code == 200
+    if first == "/api/chat":
+        assert response.json() == {"response": "answer", "sessionKey": "same", "turnId": "shared-turn"}
+    second = "/api/chat/stream" if first == "/api/chat" else "/api/chat"
+    assert sandbox.post(second, json=body).status_code == 409
+    assert len(calls) == 1
+    assert sandbox.get("/api/chat/jobs/shared-turn").json()["state"] == "succeeded"
+
+
 def test_simultaneous_duplicate_requests_start_only_one_model(sandbox, monkeypatch):
     calls = []
     upstream(monkeypatch, lambda request: (calls.append(request) or httpx.Response(

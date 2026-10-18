@@ -3316,6 +3316,31 @@ async def api_chat_job_reconcile(turn_id: str, req: ReconcileChatRunRequest):
         lock.release()
 
 
+async def _reserve_chat_run(req: ChatRequest, runtime: str):
+    # Reserve before truncating the event log or starting the model. A
+    # repeated turn ID is a conflict, not permission to execute it again.
+    turn_id = req.turnId or uuid.uuid4().hex
+    # New IDs must also be unambiguous on case-insensitive Windows paths.
+    if (not re.fullmatch(r"[a-z0-9_-]{1,160}", turn_id)
+            or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", turn_id)):
+        raise HTTPException(422, "任务标识格式无效")
+    if _job_event_file(turn_id).exists():
+        raise HTTPException(409, "此任务已有事件记录，请恢复事件流或使用新的任务标识")
+    session_id = req.sessionId or f"web-{uuid.uuid4().hex}"
+    run = DirectChatRun(SESSIONS_DIR / "runs.sqlite3", "direct_api" if runtime == "api" else runtime)
+    try:
+        await run.create(turn_id, session_id)
+    except RunConflict:
+        raise HTTPException(409, "此任务已经提交，请查询状态或恢复事件流") from None
+    except ValueError:
+        raise HTTPException(422, "任务或会话标识格式无效") from None
+    except (OSError, sqlite3.Error, UnsupportedSchema):
+        raise HTTPException(503, "任务状态无法保存，本次请求尚未启动") from None
+    req = req.model_copy(update={"turnId": turn_id, "sessionId": session_id})
+
+    return req, run
+
+
 @app.post("/api/chat/stream")
 async def api_chat_stream(req: ChatRequest):
     """SSE 真流式对话。
@@ -3339,26 +3364,7 @@ async def api_chat_stream(req: ChatRequest):
             raise HTTPException(409, "此会话属于 API 直连，请新建会话使用 OpenClaw")
         message = _chat_message(req)
 
-    # Reserve before truncating the event log or starting the model. A
-    # repeated turn ID is a conflict, not permission to execute it again.
-    turn_id = req.turnId or uuid.uuid4().hex
-    # New IDs must also be unambiguous on case-insensitive Windows paths.
-    if (not re.fullmatch(r"[a-z0-9_-]{1,160}", turn_id)
-            or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", turn_id)):
-        raise HTTPException(422, "任务标识格式无效")
-    if _job_event_file(turn_id).exists():
-        raise HTTPException(409, "此任务已有事件记录，请恢复事件流或使用新的任务标识")
-    session_id = req.sessionId or f"web-{uuid.uuid4().hex}"
-    run = DirectChatRun(SESSIONS_DIR / "runs.sqlite3", "direct_api" if direct else runtime)
-    try:
-        await run.create(turn_id, session_id)
-    except RunConflict:
-        raise HTTPException(409, "此任务已经提交，请查询状态或恢复事件流") from None
-    except ValueError:
-        raise HTTPException(422, "任务或会话标识格式无效") from None
-    except (OSError, sqlite3.Error, UnsupportedSchema):
-        raise HTTPException(503, "任务状态无法保存，本次请求尚未启动") from None
-    req = req.model_copy(update={"turnId": turn_id, "sessionId": session_id})
+    req, run = await _reserve_chat_run(req, runtime)
 
     # supervisor（跑 openclaw run）与 forward（转发 SSE 给浏览器）之间的事件通道。
     # 关键：run 跑在独立后台任务里，客户端断开只结束 forward，不取消 supervisor →
@@ -4123,35 +4129,44 @@ async def api_chat(req: ChatRequest):
     runtime = _chat_backend(req.sessionId)
     if runtime not in ("api", "openclaw"):
         message = _chat_message(req)
-        sk = req.sessionId or uuid.uuid4().hex
+        req, run = await _reserve_chat_run(req, runtime)
+        sk = req.sessionId
         errors = []
         def emit(kind, text):
             if kind == "error":
                 errors.append(text)
         result = await _run_harness_chat(req, sk, message, runtime, _harness_settings(), emit,
-                                         interactive=False)
+                                         interactive=False, run=run)
         if errors:
             raise HTTPException(502, errors[0])
-        return {"response": result, "sessionKey": sk}
+        return {"response": result, "sessionKey": sk, "turnId": req.turnId}
     if runtime == "api":
         content, system = _direct_chat_content(req)
         errors = []
         def emit(kind, text):
             if kind == "error":
                 errors.append(text)
-        sk = req.sessionId or uuid.uuid4().hex
-        result = await _run_direct_chat(req, sk, content, system, emit)
+        req, run = await _reserve_chat_run(req, runtime)
+        sk = req.sessionId
+        result = await _run_direct_chat(req, sk, content, system, emit, run=run)
         if errors:
             raise HTTPException(502, errors[0])
-        return {"response": result, "sessionKey": sk}
-    if req.sessionId and history_path(SESSIONS_DIR, req.sessionId).is_file():
-        raise HTTPException(409, "此会话属于 API 直连，请新建会话使用 OpenClaw")
-    # 每轮末尾追加「先查技能库」提醒，抗长对话指令衰减（对用户不可见）
-    message = _chat_message(req)
-    loop = asyncio.get_event_loop()
-    # chat 可能中途触发制作层长任务 → 用 TIMEOUT_CHAT，与流式 /api/chat/stream 一致（勿用 300s）
-    result = await loop.run_in_executor(None, run_agent_sync, message, TIMEOUT_CHAT, req.sessionId)
-    return {"response": result}
+        return {"response": result, "sessionKey": sk, "turnId": req.turnId}
+    # Use the same Gateway executor, locks, event log and durable lifecycle as
+    # streaming callers. HTTP disconnection must not start a second execution.
+    req = req.model_copy(update={"turnId": req.turnId or uuid.uuid4().hex,
+                                 "sessionId": req.sessionId or f"web-{uuid.uuid4().hex}"})
+    response = await api_chat_stream(req)
+    tokens, errors = [], []
+    async for event in response.body_iterator:
+        if event["event"] == "token":
+            tokens.append(json.loads(event["data"]))
+        elif event["event"] == "error":
+            errors.append(json.loads(event["data"]))
+    status = await api_chat_job_status(req.turnId)
+    if errors or status["state"] != "succeeded":
+        raise HTTPException(502, errors[0] if errors else "任务结果尚未确认，请查询任务状态，勿重复提交")
+    return {"response": "".join(tokens), "sessionKey": req.sessionId, "turnId": req.turnId}
 
 
 class SkillRequest(BaseModel):
