@@ -4206,28 +4206,40 @@ async def api_chat_stop(req: StopRequest):
 async def api_chat(req: ChatRequest):
     """非流式对话（备选）。"""
     runtime = _chat_backend(req.sessionId)
-    if runtime not in ("api", "openclaw"):
-        message = _chat_message(req)
+    if runtime != "openclaw":
+        if runtime == "api":
+            content, system = _direct_chat_content(req)
+        else:
+            message = _chat_message(req)
         req, run = await _reserve_chat_run(req, runtime)
         sk = req.sessionId
         errors = []
+        sequence = 0
+        event_path = _job_event_file(req.turnId)
+
         def emit(kind, text):
+            nonlocal sequence
+            sequence += 1
             if kind == "error":
                 errors.append(text)
-        result = await _run_harness_chat(req, sk, message, runtime, _harness_settings(), emit,
-                                         interactive=False, run=run)
-        if errors:
-            raise HTTPException(502, errors[0])
-        return {"response": result, "sessionKey": sk, "turnId": req.turnId}
-    if runtime == "api":
-        content, system = _direct_chat_content(req)
-        errors = []
-        def emit(kind, text):
-            if kind == "error":
-                errors.append(text)
-        req, run = await _reserve_chat_run(req, runtime)
-        sk = req.sessionId
-        result = await _run_direct_chat(req, sk, content, system, emit, run=run)
+            try:
+                event_path.parent.mkdir(parents=True, exist_ok=True)
+                with event_path.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps({"id": sequence, "event": kind, "data": text},
+                                            ensure_ascii=False) + "\n")
+                    stream.flush()
+            except OSError:
+                if not errors:
+                    errors.append("任务事件未能保存，请保留当前结果并检查存储")
+
+        if runtime == "api":
+            result = await _run_direct_chat(req, sk, content, system, emit, run=run)
+        else:
+            result = await _run_harness_chat(req, sk, message, runtime, _harness_settings(), emit,
+                                             interactive=False, run=run)
+        if errors or run.record is None or run.record.state != "succeeded":
+            raise HTTPException(502, errors[0] if errors else "任务结果尚未确认，请核验状态，勿重复提交")
+        emit("done", {"sessionKey": sk})
         if errors:
             raise HTTPException(502, errors[0])
         return {"response": result, "sessionKey": sk, "turnId": req.turnId}

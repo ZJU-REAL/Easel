@@ -67,6 +67,19 @@ def test_nonstream_and_stream_share_task_identity(sandbox, monkeypatch, first):
     assert sandbox.get("/api/chat/jobs/shared-turn").json()["state"] == "succeeded"
 
 
+def test_nonstream_replays_old_turn_after_session_snapshot_changes(sandbox, monkeypatch):
+    answers = iter(["first answer", "second answer"])
+    upstream(monkeypatch, lambda request: httpx.Response(
+        200, text=sse(chunk(next(answers)), chunk(finish="stop"), "[DONE]")))
+    for turn in ("first", "second"):
+        assert sandbox.post("/api/chat", json={
+            "message": "hello", "sessionId": "same", "turnId": turn}).status_code == 200
+    assert sandbox.get("/api/chat/last/same").json()["text"] == "second answer"
+    replay = sandbox.get("/api/chat/jobs/first/stream")
+    assert "first answer" in replay.text and "second answer" not in replay.text
+    assert "event: done" in replay.text
+
+
 def test_simultaneous_duplicate_requests_start_only_one_model(sandbox, monkeypatch):
     calls = []
     upstream(monkeypatch, lambda request: (calls.append(request) or httpx.Response(
