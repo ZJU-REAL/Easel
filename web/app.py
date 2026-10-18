@@ -5541,4 +5541,5 @@ if __name__ == "__main__":
     print()
     # 监听 0.0.0.0（非仅回环）是为了兼容 Docker/远程容器端口转发访问 Easel 的场景；
     # local_write_guard/TrustedHostMiddleware 只挡浏览器发起的跨站请求，见其注释里的局限说明。
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    # local patch: bind loopback only (upstream defaults to 0.0.0.0 with no auth)
+    uvicorn.run(app, host=os.environ.get("EASEL_WEB_HOST", "127.0.0.1"), port=port, log_level="warning")
