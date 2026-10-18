@@ -3050,6 +3050,8 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
                 # stopped. Only a normal adapter completion confirms success.
                 state = ("succeeded" if clean_end else "unknown" if dispatched else
                          "cancelled" if reason in ("stopped", "shutdown") else "failed")
+                if state == "unknown" and not error_message:
+                    emit("error", "本地执行已结束，但远端工具结果尚未确认；请核验已有结果，勿重复提交")
                 try:
                     await run.transition(state)
                 except (OSError, sqlite3.Error, UnsupportedSchema, RunConflict):
@@ -3217,6 +3219,16 @@ async def api_chat_job_stream(turn_id: str, after: int = 0):
                 idle_since = time.monotonic()
                 for event in batch:
                     cursor = int(event["id"])
+                    if event["event"] == "done":
+                        try:
+                            status = await api_chat_job_status(turn_id)
+                            uncertain = status["tracking"] == "persisted" and status["state"] != "succeeded"
+                        except HTTPException:
+                            uncertain = True
+                        if uncertain:
+                            yield {"event": "error", "data": json.dumps(
+                                "任务没有已确认的成功记录；请核验任务状态，不会自动重试", ensure_ascii=False)}
+                            return
                     raw = event.get("data")
                     if event["event"] == "token" and isinstance(raw, str):
                         replayed_text += raw
@@ -3316,7 +3328,7 @@ async def api_chat_job_cancel_queued(turn_id: str, req: ReconcileChatRunRequest)
     This is an explicit cancellation, never an inference about worker death.
     """
     status = await api_chat_job_status(turn_id)
-    if (status["tracking"] != "persisted" or status["backend"] != "direct_api"
+    if (status["tracking"] != "persisted"
             or status["state"] != "queued" or status["version"] != req.expected_version):
         raise HTTPException(409, "任务已变化或不支持取消排队，请重新读取状态")
     try:
@@ -3332,16 +3344,15 @@ async def api_chat_job_cancel_queued(turn_id: str, req: ReconcileChatRunRequest)
 
 @app.post("/api/chat/jobs/{turn_id}/reconcile")
 async def api_chat_job_reconcile(turn_id: str, req: ReconcileChatRunRequest):
-    """Resolve orphaned local API metadata without replaying an upstream request."""
+    """Reconcile local ownership only; never infer remote termination or replay."""
     status = await api_chat_job_status(turn_id)
     if status["tracking"] != "persisted":
         raise HTTPException(409, "旧任务没有可核验的执行记录")
     if status["version"] != req.expected_version:
         raise HTTPException(409, "任务状态已变化，请重新读取")
-    if status["backend"] != "direct_api" or status["state"] == "queued":
-        # A queued task may still be waiting for a lock. Other backends may
-        # outlive the local process, so a free local lock proves nothing there.
-        raise HTTPException(409, "此执行后端或排队状态暂不支持核验")
+    if status["state"] == "queued":
+        # A queued task may still be waiting for a lock.
+        raise HTTPException(409, "排队状态不能推断失效；可显式取消排队")
     if status["state"] != "running":
         return {**status, "reconciliation": "unchanged"}
 
@@ -3361,9 +3372,9 @@ async def api_chat_job_reconcile(turn_id: str, req: ReconcileChatRunRequest):
             record = store.get(turn_id)
             if (record is None or record.version != req.expected_version
                     or record.session_id != status["session_id"]
-                    or record.backend != "direct_api" or record.state != "running"):
+                    or record.backend != status["backend"] or record.state != "running"):
                 raise RunConflict("Run changed before reconciliation")
-            # API runners hold both locks from before running is committed to
+            # All tracked chat runners hold both locks from before running is committed to
             # after the terminal commit. A free lock rules out a cooperating
             # local runner, but cannot establish the remote request's outcome.
             return store.transition(turn_id, expected_version=record.version,
@@ -4001,6 +4012,8 @@ async def api_chat_stream(req: ChatRequest):
                 completed = (proc.poll() == 0 and not user_stopped and not timed_out
                              and not stream_error and bool(run_info.get("http_completed") if is_http
                                                            else run_info.get("last_ev") == "assistant_message_end"))
+                if not completed and not stream_error:
+                    to_client("error", "未收到已确认的执行完成结果；已保留部分输出，请核验任务状态，勿重复提交")
                 try:
                     await run.transition("succeeded" if completed else "unknown")
                 except (OSError, sqlite3.Error, UnsupportedSchema, RunConflict):

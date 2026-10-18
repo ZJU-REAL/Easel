@@ -48,6 +48,23 @@ def test_missing_log_recovers_only_matching_completed_snapshot(sandbox):
     assert "another turn" not in response.text and "event: error" in response.text
 
 
+@pytest.mark.parametrize("state", ["succeeded", "failed", "cancelled", "unknown", "interrupted"])
+def test_logged_done_cannot_override_persisted_outcome(sandbox, state):
+    finish(state)
+    log = web._job_event_file("turn")
+    log.parent.mkdir()
+    log.write_text("\n".join(json.dumps(event) for event in [
+        {"id": 1, "event": "token", "data": "partial result"},
+        {"id": 2, "event": "done", "data": {"sessionKey": "session"}},
+    ]) + "\n", encoding="utf-8")
+    before = log.read_bytes()
+    response = sandbox.get("/api/chat/jobs/turn/stream")
+    assert "partial result" in response.text
+    assert ("event: done" in response.text) == (state == "succeeded")
+    assert ("event: error" in response.text) == (state != "succeeded")
+    assert log.read_bytes() == before
+
+
 def test_queued_admission_without_log_waits_for_cancellation(sandbox):
     store = RunStore(web.SESSIONS_DIR / "runs.sqlite3")
     store.create("turn", "session", "direct_api")

@@ -46,11 +46,12 @@ function harness(initial, mutate = async () => initial) {
   return { render, flush, buttons, calls, setCurrent: value => { current = value; } };
 }
 
+for (const backend of ['direct_api', 'openclaw', 'codex', 'opencode', 'acp'])
 for (const [state, action, label] of [
   ['queued', 'cancel-queued', '取消排队'], ['running', 'reconcile', '核验执行状态'],
 ]) {
-  test(`${state} uses the observed revision and never sends a prompt`, async () => {
-    const h = harness({ tracking: 'persisted', backend: 'direct_api', state, version: 7 });
+  test(`${backend}/${state} uses the observed revision and never sends a prompt`, async () => {
+    const h = harness({ tracking: 'persisted', backend, state, version: 7 });
     h.render(); await h.flush();
     h.buttons(h.render()).find(b => b.props.children === label).props.onClick();
     await h.flush();
@@ -71,7 +72,6 @@ test('a conflict refreshes the record without repeating the mutation', async () 
 
 for (const run of [
   { tracking: 'legacy', state: 'unknown' },
-  { tracking: 'persisted', backend: 'openclaw', state: 'running', version: 2 },
   { tracking: 'persisted', backend: 'direct_api', state: 'unknown', version: 3 },
 ]) {
   test(`no mutation for ${run.tracking}/${run.backend}/${run.state}`, async () => {

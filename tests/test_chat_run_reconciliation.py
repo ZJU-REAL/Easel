@@ -38,8 +38,9 @@ def reconcile(client, version=2):
     return client.post("/api/chat/jobs/turn/reconcile", json={"expected_version": version})
 
 
-def test_orphan_becomes_unknown_without_erasing_results_or_allowing_replay(sandbox):
-    record = running()
+@pytest.mark.parametrize("backend", ["direct_api", "openclaw", "codex", "opencode", "acp"])
+def test_orphan_becomes_unknown_without_erasing_results_or_allowing_replay(sandbox, backend):
+    record = running(backend)
     web._save_turn("web:session", "done", "saved answer", {"turn_id": "turn"})
     log = web._job_event_file("turn")
     log.parent.mkdir(parents=True)
@@ -59,14 +60,12 @@ def test_orphan_becomes_unknown_without_erasing_results_or_allowing_replay(sandb
     assert RunStore(web.SESSIONS_DIR / "runs.sqlite3").get("turn").version == 3
 
 
-@pytest.mark.parametrize("state", ["queued", "openclaw", "legacy", "missing"])
+@pytest.mark.parametrize("state", ["queued", "legacy", "missing"])
 def test_unverifiable_records_are_never_changed(sandbox, state):
     path = web.SESSIONS_DIR / "runs.sqlite3"
     before = None
     if state == "queued":
         before = RunStore(path).create("turn", "session", "direct_api")
-    elif state == "openclaw":
-        before = running("openclaw")
     elif state == "legacy":
         log = web._job_event_file("turn")
         log.parent.mkdir(parents=True)

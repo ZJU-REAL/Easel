@@ -50,14 +50,53 @@ def test_cancelled_waiter_never_dispatches_or_overwrites_owner_snapshot(sandbox,
     asyncio.run(scenario())
 
 
-def test_restart_leftover_can_be_withdrawn_without_replaying(sandbox):
+@pytest.mark.parametrize("backend", ["direct_api", "openclaw", "codex", "opencode", "acp"])
+def test_restart_leftover_can_be_withdrawn_without_replaying(sandbox, backend):
     path = web.SESSIONS_DIR / "runs.sqlite3"
-    RunStore(path).create("turn", "session", "direct_api")
+    RunStore(path).create("turn", "session", backend)
     result = sandbox.post("/api/chat/jobs/turn/cancel-queued", json={"expected_version": 1})
     assert result.status_code == 200 and result.json()["state"] == "cancelled"
     assert not web._job_event_file("turn").exists()
     assert sandbox.post("/api/chat/jobs/turn/cancel-queued", json={"expected_version": 1}).status_code == 409
     assert sandbox.post("/api/chat/stream", json={"message": "retry", "turnId": "turn"}).status_code == 409
+
+
+@pytest.mark.parametrize("backend", ["openclaw", "codex", "opencode", "acp"])
+def test_cancelled_native_waiter_never_dispatches(sandbox, monkeypatch, backend):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("cancelled admission must never start an agent")
+
+    monkeypatch.setattr(web, "_chat_backend", lambda key: backend)
+    monkeypatch.setattr(web, "_chat_message", lambda req: req.message)
+    monkeypatch.setattr(web.harnesses, "adapter", forbidden)
+    monkeypatch.setattr(web.subprocess, "Popen", forbidden)
+    monkeypatch.setattr(web, "openclaw_base_cmd", lambda: ["unused"])
+    monkeypatch.setattr(web, "_agent_thinking_level", lambda: "off")
+    monkeypatch.setattr(web, "question_bridge_supported", lambda: False)
+    monkeypatch.setattr(web, "_proxy_env", dict)
+
+    async def scenario():
+        lock = web._session_lock("session")
+        await lock.acquire()
+        web._save_turn("web:session", "done", "previous result", {"turn_id": "previous"})
+        try:
+            response = await web.api_chat_stream(web.ChatRequest(
+                message="hello", sessionId="session", turnId="withdrawn"))
+            await response.body_iterator.__anext__()
+            cancelled = await web.api_chat_job_cancel_queued(
+                "withdrawn", web.ReconcileChatRunRequest(expected_version=1))
+            assert cancelled["state"] == "cancelled"
+        finally:
+            lock.release()
+        await asyncio.wait_for(collect(response), 3)
+        assert RunStore(web.SESSIONS_DIR / "runs.sqlite3").get("withdrawn").state == "cancelled"
+        assert (await web.api_chat_last("session"))["text"] == "previous result"
+        assert not web._RUNNING_CHAT and not web._session_lock("session").locked()
+
+    async def collect(response):
+        return [event async for event in response.body_iterator]
+
+    asyncio.run(scenario())
 
 
 def test_executor_and_canceller_have_exactly_one_winner(sandbox):
@@ -80,7 +119,7 @@ def test_executor_and_canceller_have_exactly_one_winner(sandbox):
 
 
 @pytest.mark.parametrize("backend,state,version", [
-    ("openclaw", "queued", 1), ("direct_api", "running", 2), ("direct_api", "queued", 3),
+    ("direct_api", "running", 2), ("direct_api", "queued", 3),
 ])
 def test_unmatched_admissions_are_unchanged(sandbox, backend, state, version):
     store = RunStore(web.SESSIONS_DIR / "runs.sqlite3")
