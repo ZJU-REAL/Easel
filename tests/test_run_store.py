@@ -41,6 +41,59 @@ def test_duplicate_turn_cannot_overwrite_identity_or_progress(store):
     assert store.get("turn") == queued
 
 
+@pytest.mark.parametrize("backend", ["codex", "opencode", "acp"])
+def test_native_backend_survives_reopen(store, backend):
+    record = store.create("native", "session", backend)
+    assert RunStore(store.path).get("native") == record
+
+
+@pytest.mark.parametrize("fail_copy", [False, True])
+def test_v1_upgrade_preserves_rows_and_rolls_back_on_failure(tmp_path, monkeypatch, fail_copy):
+    path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+            CREATE TABLE runs (
+                turn_id TEXT PRIMARY KEY NOT NULL, session_id TEXT NOT NULL,
+                backend TEXT NOT NULL CHECK (backend IN ('openclaw', 'direct_api')),
+                state TEXT NOT NULL CHECK (state IN
+                    ('queued','running','succeeded','failed','cancelled','interrupted','unknown')),
+                version INTEGER NOT NULL CHECK (version > 0), owner_id TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                started_at TEXT, finished_at TEXT, result_refs TEXT NOT NULL,
+                CHECK (state != 'running' OR owner_id IS NOT NULL));
+            CREATE INDEX runs_session ON runs(session_id, created_at, turn_id);
+            CREATE UNIQUE INDEX runs_active_session ON runs(session_id) WHERE state='running';
+            INSERT INTO runs VALUES ('old', 'session', 'direct_api', 'running', 2,
+                'owner', 'created', 'updated', 'started', NULL, '[]');
+            PRAGMA user_version=1;
+        """)
+        before = db.execute("SELECT * FROM runs").fetchall()
+    connect = sqlite3.connect
+
+    class FailingConnection(sqlite3.Connection):
+        def execute(self, sql, *args):
+            if sql.startswith("INSERT INTO runs SELECT"):
+                raise sqlite3.OperationalError("injected copy failure")
+            return super().execute(sql, *args)
+
+    if fail_copy:
+        with monkeypatch.context() as patch:
+            patch.setattr(sqlite3, "connect", lambda *a, **kw: connect(*a, **kw, factory=FailingConnection))
+            with pytest.raises(sqlite3.OperationalError, match="copy failure"):
+                RunStore(path)
+        with connect(path) as db:
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+            assert db.execute("SELECT * FROM runs").fetchall() == before
+            assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='runs_v1'").fetchone()
+    upgraded = RunStore(path)
+    with connect(path) as db:
+        assert db.execute("SELECT * FROM runs").fetchall() == before
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+    upgraded.create("native", "session", "codex")
+    with pytest.raises(RunConflict):
+        upgraded.transition("native", expected_version=1, state="running", owner_id="another")
+
+
 def test_stale_revision_and_wrong_executor_cannot_finish(store):
     store.create("turn", "session", "openclaw")
     running = store.transition("turn", expected_version=1, state="running", owner_id="owner")
@@ -121,12 +174,12 @@ def test_future_and_unversioned_databases_are_not_replaced(tmp_path):
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE future (value TEXT)")
         db.execute("INSERT INTO future VALUES ('keep')")
-        db.execute("PRAGMA user_version=2")
+        db.execute("PRAGMA user_version=3")
     with pytest.raises(UnsupportedSchema):
         RunStore(path)
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT value FROM future").fetchone()[0] == "keep"
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         db.execute("PRAGMA user_version=0")
     with pytest.raises(UnsupportedSchema):
         RunStore(path)
@@ -158,7 +211,7 @@ def test_unversioned_database_with_only_a_view_is_not_adopted(tmp_path):
 def test_existing_instance_refuses_newer_schema(store):
     store.create("turn", "session", "openclaw")
     with sqlite3.connect(store.path) as db:
-        db.execute("PRAGMA user_version=2")
+        db.execute("PRAGMA user_version=3")
     with pytest.raises(UnsupportedSchema):
         store.get("turn")
     with pytest.raises(UnsupportedSchema):

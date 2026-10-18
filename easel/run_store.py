@@ -15,7 +15,8 @@ import sqlite3
 from easel.timeouts import TIMEOUT_RUN_STORE
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+BACKENDS = frozenset({"openclaw", "direct_api", "codex", "opencode", "acp"})
 _FINAL = frozenset({"succeeded", "failed", "cancelled", "interrupted", "unknown"})
 _TRANSITIONS = {"queued": {"running", "failed", "cancelled"}, "running": _FINAL}
 
@@ -90,14 +91,21 @@ class RunStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection(initialize=True, write=True) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 0:
-                if db.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
+            if version in (0, 1):
+                if version == 0 and db.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
                     raise UnsupportedSchema("Unversioned database is not an empty run store")
+                if version == 1:
+                    # Rebuild the CHECK constraint transactionally. Old readers
+                    # reject v2 rather than writing through a changed schema.
+                    db.execute("ALTER TABLE runs RENAME TO runs_v1")
+                    db.execute("DROP INDEX runs_session")
+                    db.execute("DROP INDEX runs_active_session")
                 db.execute("""
                     CREATE TABLE runs (
                         turn_id TEXT PRIMARY KEY NOT NULL,
                         session_id TEXT NOT NULL,
-                        backend TEXT NOT NULL CHECK (backend IN ('openclaw', 'direct_api')),
+                        backend TEXT NOT NULL CHECK (backend IN
+                            ('openclaw', 'direct_api', 'codex', 'opencode', 'acp')),
                         state TEXT NOT NULL CHECK (state IN
                             ('queued','running','succeeded','failed','cancelled','interrupted','unknown')),
                         version INTEGER NOT NULL CHECK (version > 0),
@@ -113,6 +121,9 @@ class RunStore:
                 db.execute("CREATE INDEX runs_session ON runs(session_id, created_at, turn_id)")
                 db.execute("CREATE UNIQUE INDEX runs_active_session ON runs(session_id) "
                            "WHERE state='running'")
+                if version == 1:
+                    db.execute("INSERT INTO runs SELECT * FROM runs_v1")
+                    db.execute("DROP TABLE runs_v1")
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             elif version != SCHEMA_VERSION:
                 raise UnsupportedSchema("Unsupported run-store schema version")
@@ -140,7 +151,7 @@ class RunStore:
     def create(self, turn_id: str, session_id: str, backend: str) -> RunRecord:
         _identifier(turn_id)
         _identifier(session_id)
-        if backend not in ("openclaw", "direct_api"):
+        if backend not in BACKENDS:
             raise ValueError("Unsupported agent backend")
         stamp = _now()
         with self._connection(write=True) as db:

@@ -806,6 +806,137 @@ def test_web_stream_replay_resume_and_delete(sandbox, monkeypatch):
     assert not store.binding(web.SESSIONS_DIR, "same")
 
 
+@pytest.mark.parametrize("runtime", ["codex", "opencode", "acp"])
+def test_native_stream_persists_identity_and_rejects_duplicate(sandbox, monkeypatch, runtime):
+    from easel.run_store import RunStore
+    calls = []
+    monkeypatch.setattr(web, "_chat_backend", lambda key: runtime)
+
+    class Fake:
+        async def run(self, request, emit, ask, bind):
+            record = RunStore(web.SESSIONS_DIR / "runs.sqlite3").get("native-turn")
+            assert record.backend == runtime and record.state == "running"
+            assert web._session_lock("same").locked()
+            calls.append(request)
+            bind("native-session")
+            emit("token", "saved result")
+
+    monkeypatch.setattr(web.harnesses, "adapter", lambda runtime: Fake())
+    payload = {"message": "hello", "sessionId": "same", "turnId": "native-turn"}
+    assert sandbox.post("/api/chat/stream", json=payload).status_code == 200
+    result = sandbox.get("/api/chat/jobs/native-turn").json()
+    assert (result["backend"], result["state"], result["version"]) == (runtime, "succeeded", 3)
+    assert result["session_id"] == "same" and result["finished_at"]
+    log = web._job_event_file("native-turn").read_bytes()
+    assert sandbox.post("/api/chat/stream", json=payload).status_code == 409
+    assert len(calls) == 1 and web._job_event_file("native-turn").read_bytes() == log
+
+
+@pytest.mark.parametrize("stage", ["create", "running"])
+def test_native_storage_failure_prevents_dispatch(sandbox, monkeypatch, stage):
+    from easel.run_store import RunStore
+    import sqlite3
+
+    def unavailable(*args, **kwargs):
+        raise sqlite3.OperationalError("injected write failure")
+
+    def forbidden(runtime):
+        raise AssertionError("storage failure must prevent adapter dispatch")
+
+    monkeypatch.setattr(web.harnesses, "adapter", forbidden)
+    monkeypatch.setattr(RunStore, "create" if stage == "create" else "transition", unavailable)
+    response = sandbox.post("/api/chat/stream", json={
+        "message": "hello", "sessionId": "same", "turnId": "storage-failure"})
+    assert response.status_code == (503 if stage == "create" else 200)
+    if stage == "running":
+        assert "event: error" in response.text
+        assert sandbox.get("/api/chat/jobs/storage-failure").json()["state"] == "queued"
+    assert not web._RUNNING_CHAT and not web._HARNESS_TASKS
+    assert not web._session_lock("same").locked()
+
+
+@pytest.mark.parametrize("runtime", ["codex", "opencode", "acp"])
+def test_stream_ledger_survives_native_process_restart(sandbox, monkeypatch, tmp_path, runtime):
+    from dataclasses import replace
+    from easel.harnesses.rpc import close_sessions
+    from easel.run_store import RunStore
+
+    protocol = "codex" if runtime == "codex" else "acp"
+    native = web.harnesses.ADAPTERS[runtime]
+    monkeypatch.setattr(web, "_chat_backend", lambda key: runtime)
+
+    class LocalProtocol:
+        async def run(self, request, *args):
+            fixture = request_for(tmp_path, protocol, mode="stable-resume")
+            await native.run(replace(request, env=fixture.env, command=fixture.command), *args)
+
+    monkeypatch.setattr(web.harnesses, "adapter", lambda runtime: LocalProtocol())
+
+    async def exercise():
+        try:
+            for turn in ("before-restart", "after-restart"):
+                response = await web.api_chat_stream(web.ChatRequest(
+                    message="hello", sessionId="durable-session", turnId=turn))
+                events = [event async for event in response.body_iterator]
+                assert any(event["event"] == "token" and "你好" in event["data"] for event in events)
+                await close_sessions("durable-session")
+                record = RunStore(web.SESSIONS_DIR / "runs.sqlite3").get(turn)
+                assert record.state == "succeeded" and record.backend == runtime
+            methods = [message.get("method") for message in audit(tmp_path)]
+            assert methods.count("initialize") == 2
+            assert methods.count("thread/start" if protocol == "codex" else "session/new") == 1
+            assert methods.count("thread/resume" if protocol == "codex" else "session/load") == 1
+            assert methods.count("turn/start" if protocol == "codex" else "session/prompt") == 2
+        finally:
+            await close_sessions()
+
+    asyncio.run(exercise())
+
+
+def test_native_interruption_is_unknown_and_snapshot_failure_releases_locks(sandbox, monkeypatch):
+    from easel.chat_runs import DirectChatRun
+    from easel.run_store import RunStore
+
+    async def exercise():
+        started = asyncio.Event()
+
+        class Fake:
+            async def run(self, request, emit, ask, bind):
+                bind("native-session")
+                started.set()
+                await asyncio.Future()
+
+        monkeypatch.setattr(web.harnesses, "adapter", lambda runtime: Fake())
+        save = web._save_turn
+
+        def fail_final(pk, state, *args):
+            if state == "done":
+                raise OSError("snapshot disk failure")
+            save(pk, state, *args)
+
+        monkeypatch.setattr(web, "_save_turn", fail_final)
+        run = DirectChatRun(web.SESSIONS_DIR / "runs.sqlite3", "codex")
+        await run.create("cancelled-native", "same")
+        task = asyncio.create_task(web._run_harness_chat(
+            web.ChatRequest(message="hello", turnId="cancelled-native"), "same", "hello",
+            "codex", web._harness_settings(), lambda *a: None, run=run))
+        await asyncio.wait_for(started.wait(), 3)
+        task.cancel()
+        with pytest.raises(OSError, match="snapshot disk failure"):
+            await task
+        record = RunStore(run.path).get("cancelled-native")
+        assert record.state == "unknown" and record.finished_at is None
+        assert not web._RUNNING_CHAT and not web._HARNESS_TASKS
+        assert not web._session_lock("same").locked()
+        xlock = web._CrossProcLock("same")
+        try:
+            assert xlock.acquire(0)
+        finally:
+            xlock.release()
+
+    asyncio.run(exercise())
+
+
 def test_native_stream_disconnect_keeps_background_turn_and_result(sandbox, monkeypatch):
     async def exercise():
         started = asyncio.Event()

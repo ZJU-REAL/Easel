@@ -2964,7 +2964,8 @@ async def _harness_ask(sk: str, questions: list[dict], emit) -> dict:
 
 
 async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: str,
-                            config: dict, emit, timeout: int = TIMEOUT_CHAT, *, interactive=True) -> str:
+                            config: dict, emit, timeout: int = TIMEOUT_CHAT, *, interactive=True,
+                            run: DirectChatRun | None = None) -> str:
     pk = f"web:{sk}"
     turn_id = req.turnId or uuid.uuid4().hex
     full_text: list[str] = []
@@ -2975,6 +2976,7 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
     xlock = _CrossProcLock(sk)
     acquired = False
     claimed = False
+    dispatched = False
     locked = False
     proc = _HarnessProc()
     task = asyncio.current_task()
@@ -3009,6 +3011,8 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
         record = harness_store.binding(SESSIONS_DIR, sk)
         native_id = record.get("native_id", "")
         harness_store.bind(SESSIONS_DIR, sk, runtime, native_id)
+        if run is not None:
+            await run.transition("running")
         _STOPPED_CHAT.discard(sk)
         proc._task = task
         _RUNNING_CHAT[sk] = proc
@@ -3019,7 +3023,9 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
         request = RunRequest(message, PROJECT_ROOT, env, native_id,
                              config["models"].get(runtime, ""), config["sandbox"], timeout,
                              session_key=sk, codex_auto_approve=config.get("codex_auto_approve", False))
-        await asyncio.wait_for(harnesses.adapter(runtime).run(
+        adapter = harnesses.adapter(runtime)
+        dispatched = True
+        await asyncio.wait_for(adapter.run(
             request, receive, ask,
             lambda identifier: harness_store.bind(SESSIONS_DIR, sk, runtime, identifier)), timeout)
         clean_end = True
@@ -3038,23 +3044,35 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
         error_message = "Agent 执行失败，请检查本机 CLI、登录和模型配置"
         emit("error", error_message)
     finally:
-        if claimed:
-            snapshot = "".join(full_text) + (f"\n\n❌ {error_message}" if error_message else "")
-            _save_turn(pk, "done", snapshot, {
-                "turn_id": turn_id, "runtime": runtime,
-                "clean_end": clean_end, "stop_reason": reason})
-        # 注意：claim 失败（锁被占/底座已切换）时刻意**不**落盘——保留上一轮的
-        # 结果快照不被失败轮覆盖（见 test_failed_ownership_check_does_not_overwrite_
-        # previous_result）；错误经 SSE 事件流（job log）回放可见。
-        proc.finish()
-        if _RUNNING_CHAT.get(sk) is proc:
-            _RUNNING_CHAT.pop(sk, None)
-        if claimed:
-            _STOPPED_CHAT.discard(sk)
-        xlock.release()
-        if locked:
-            lock.release()
-        _HARNESS_TASKS.discard(task)
+        try:
+            if run is not None:
+                # A cancelled RPC/process does not prove that a remote tool
+                # stopped. Only a normal adapter completion confirms success.
+                state = ("succeeded" if clean_end else "unknown" if dispatched else
+                         "cancelled" if reason in ("stopped", "shutdown") else "failed")
+                try:
+                    await run.transition(state)
+                except (OSError, sqlite3.Error, UnsupportedSchema, RunConflict):
+                    emit("error", "任务终态未能保存，请保留数据并核验任务状态")
+        finally:
+            try:
+                if claimed:
+                    snapshot = "".join(full_text) + (f"\n\n❌ {error_message}" if error_message else "")
+                    _save_turn(pk, "done", snapshot, {
+                        "turn_id": turn_id, "runtime": runtime,
+                        "clean_end": clean_end, "stop_reason": reason})
+            finally:
+                # A failed claim must never replace another turn's snapshot;
+                # failed snapshot/ledger writes must never leak either lock.
+                proc.finish()
+                if _RUNNING_CHAT.get(sk) is proc:
+                    _RUNNING_CHAT.pop(sk, None)
+                if claimed:
+                    _STOPPED_CHAT.discard(sk)
+                xlock.release()
+                if locked:
+                    lock.release()
+                _HARNESS_TASKS.discard(task)
     return "".join(full_text)
 
 
@@ -3321,28 +3339,26 @@ async def api_chat_stream(req: ChatRequest):
             raise HTTPException(409, "此会话属于 API 直连，请新建会话使用 OpenClaw")
         message = _chat_message(req)
 
-    run = None
-    if direct:
-        # Reserve before truncating the event log or starting the model. A
-        # repeated turn ID is a conflict, not permission to execute it again.
-        turn_id = req.turnId or uuid.uuid4().hex
-        # New IDs must also be unambiguous on case-insensitive Windows paths.
-        if (not re.fullmatch(r"[a-z0-9_-]{1,160}", turn_id)
-                or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", turn_id)):
-            raise HTTPException(422, "任务标识格式无效")
-        if _job_event_file(turn_id).exists():
-            raise HTTPException(409, "此任务已有事件记录，请恢复事件流或使用新的任务标识")
-        session_id = req.sessionId or f"web-{uuid.uuid4().hex}"
-        run = DirectChatRun(SESSIONS_DIR / "runs.sqlite3")
-        try:
-            await run.create(turn_id, session_id)
-        except RunConflict:
-            raise HTTPException(409, "此任务已经提交，请查询状态或恢复事件流") from None
-        except ValueError:
-            raise HTTPException(422, "任务或会话标识格式无效") from None
-        except (OSError, sqlite3.Error, UnsupportedSchema):
-            raise HTTPException(503, "任务状态无法保存，本次请求尚未启动") from None
-        req = req.model_copy(update={"turnId": turn_id, "sessionId": session_id})
+    # Reserve before truncating the event log or starting the model. A
+    # repeated turn ID is a conflict, not permission to execute it again.
+    turn_id = req.turnId or uuid.uuid4().hex
+    # New IDs must also be unambiguous on case-insensitive Windows paths.
+    if (not re.fullmatch(r"[a-z0-9_-]{1,160}", turn_id)
+            or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", turn_id)):
+        raise HTTPException(422, "任务标识格式无效")
+    if _job_event_file(turn_id).exists():
+        raise HTTPException(409, "此任务已有事件记录，请恢复事件流或使用新的任务标识")
+    session_id = req.sessionId or f"web-{uuid.uuid4().hex}"
+    run = DirectChatRun(SESSIONS_DIR / "runs.sqlite3", "direct_api" if direct else runtime)
+    try:
+        await run.create(turn_id, session_id)
+    except RunConflict:
+        raise HTTPException(409, "此任务已经提交，请查询状态或恢复事件流") from None
+    except ValueError:
+        raise HTTPException(422, "任务或会话标识格式无效") from None
+    except (OSError, sqlite3.Error, UnsupportedSchema):
+        raise HTTPException(503, "任务状态无法保存，本次请求尚未启动") from None
+    req = req.model_copy(update={"turnId": turn_id, "sessionId": session_id})
 
     # supervisor（跑 openclaw run）与 forward（转发 SSE 给浏览器）之间的事件通道。
     # 关键：run 跑在独立后台任务里，客户端断开只结束 forward，不取消 supervisor →
@@ -3357,6 +3373,7 @@ async def api_chat_stream(req: ChatRequest):
         turn_id = req.turnId or uuid.uuid4().hex
         event_seq = 0
         full_text: list[str] = []        # 累积完整回答，供断线取回
+        stream_error = False
         timed_out = False                # 只有真·超时才 terminate 进程；断线绝不杀
 
         event_path = _job_event_file(turn_id)
@@ -3367,7 +3384,9 @@ async def api_chat_stream(req: ChatRequest):
             pass
 
         def to_client(kind, text=None, **extra):
-            nonlocal event_seq
+            nonlocal event_seq, stream_error
+            if kind == "error":
+                stream_error = True
             event_seq += 1
             data = ({"sessionKey": extra.get("sessionKey")} if kind == "done" else text)
             event = {"id": event_seq, "event": kind, "data": data}
@@ -3394,7 +3413,7 @@ async def api_chat_stream(req: ChatRequest):
         if alternate:
             try:
                 await _run_harness_chat(req.model_copy(update={"turnId": turn_id}),
-                                        sk, message, runtime, config, to_client)
+                                        sk, message, runtime, config, to_client, run=run)
             finally:
                 to_client("done", sessionKey=sk)
                 client_q.put_nowait(CLIENT_DONE)
@@ -3466,6 +3485,7 @@ async def api_chat_stream(req: ChatRequest):
                             if delta.get("tool_calls") and not tool_noted:
                                 tool_noted = True
                                 to_client("activity", "🔧 正在执行操作…")
+                run_info["http_completed"] = saw_done
                 # 流正常结束却既没正文也没 [DONE]：多半是端点没真开或中途断了。
                 # 不报错的话这一轮会静默落一条空回答，还会被 /api/chat/last 原样取回。
                 if not got_text and not saw_done:
@@ -3523,6 +3543,10 @@ async def api_chat_stream(req: ChatRequest):
                     return
                 await asyncio.sleep(0.2)
 
+            if _chat_backend(sk) != "openclaw":
+                raise HarnessError("底座已切换，请使用新对话重试")
+            await run.transition("running")
+
             # Only the owner of both locks may replace the session snapshot.
             _save_turn(pk, "running", "", {"turn_id": turn_id})
             claimed = True
@@ -3559,20 +3583,26 @@ async def api_chat_stream(req: ChatRequest):
             return
         finally:
             if not started:
-                # A queued/cancelled waiter never owns the previous snapshot.
-                # Persist an owned failure before releasing either lock.
-                if claimed:
-                    _save_turn(pk, "done", startup_error or "", {
-                        "turn_id": turn_id, "clean_end": False,
-                        "stop_reason": startup_reason,
-                    })
-                xlock.release()
-                if locked:
-                    lock.release()
-                if startup_error:
-                    to_client("error", startup_error)
-                to_client("done", sessionKey=sk)
-                client_q.put_nowait(CLIENT_DONE)
+                try:
+                    try:
+                        await run.transition("cancelled" if startup_reason == "cancelled" else "failed")
+                    except (OSError, sqlite3.Error, UnsupportedSchema, RunConflict):
+                        to_client("error", "任务终态未能保存，请保留数据并核验任务状态")
+                finally:
+                    try:
+                        if claimed:
+                            _save_turn(pk, "done", startup_error or "", {
+                                "turn_id": turn_id, "clean_end": False,
+                                "stop_reason": startup_reason,
+                            })
+                    finally:
+                        xlock.release()
+                        if locked:
+                            lock.release()
+                        if startup_error:
+                            to_client("error", startup_error)
+                        to_client("done", sessionKey=sk)
+                        client_q.put_nowait(CLIENT_DONE)
         _RUNNING_CHAT[sk] = proc         # 注册运行中进程（HTTP 模式为伪进程），供 /api/chat/stop
         # 经 gateway 后客户端 stdout 没有 model-fetch 标记（那是独立跑 agent 才有），先立刻
         # 给一个「正在思考」活动指示，随后 token 从共享 raw stream 流进来接管显示。
@@ -3849,63 +3879,74 @@ async def api_chat_stream(req: ChatRequest):
                     full_text.append(note)
                     to_client("token", note)
         finally:
-            # 只有真的在 HTTP 上跑出了内容，才把这个会话钉到 http 上。钉早了（比如选路时就钉）
-            # 会把一个其实没跑成的会话锁死在 http，之后每轮都往一条不通的路上撞；而钉住之后
-            # 就绝不能再换回 cli —— 网关那份 transcript 我们按名字找不回来，换边即丢历史。
-            if is_http and emitted:
-                _pin_transport(sk, "http")
-            user_stopped = sk in _STOPPED_CHAT
-            _STOPPED_CHAT.discard(sk)
-            # Reaching finally while the child is alive means timeout, explicit
-            # stop, cancellation, or an internal stream failure. Never release
-            # the session locks while such a process can still write history.
-            if proc.poll() is None:
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
-                try:
-                    await asyncio.to_thread(proc.wait, timeout=5)
-                except subprocess.TimeoutExpired:
-                    try:
-                        proc.kill()
-                        await asyncio.to_thread(proc.wait, timeout=2)
-                    except (OSError, subprocess.TimeoutExpired):
-                        pass
-            # 诊断日志：每次对话流收尾都记一行，供事后定位「莫名停下」到底是哪种情况。
             try:
-                DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-                tail = clean_agent_output("".join(stdout_lines))[-800:]
-                with (DEBUG_DIR / "chat-stream.jsonl").open("a", encoding="utf-8") as lf:
-                    lf.write(json.dumps({
-                        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                        "session": sk,
-                        "rc": proc.poll(),
-                        "stop_reason": run_info["stop_reason"],
-                        "last_ev": run_info["last_ev"],
-                        "clean_end": run_info["last_ev"] == "assistant_message_end",
-                        "saw_message_end": run_info["saw_message_end"],
-                        "fetch_count": run_info["fetch_count"],
-                        "token_chars": run_info["token_chars"],
-                        "thinking_chars": run_info["thinking_chars"],
-                        "delegated": run_info["delegated"],
-                        "ignored_foreign_events": run_info["ignored_foreign_events"],
-                        "text_tail": run_info.get("text_tail", ""),
-                        "stdout_tail": tail,
-                    }, ensure_ascii=False) + "\n")
-            except Exception:
-                pass
-            # 落盘完整结果：后端跑完整轮不依赖客户端连接，断线后前端用 /api/chat/last 取回
-            _save_turn(pk, "done", "".join(full_text), {
-                "turn_id": turn_id,
-                "clean_end": run_info.get("last_ev") == "assistant_message_end",
-                "stop_reason": "user_stopped" if user_stopped else run_info.get("stop_reason"),
-            })
-            xlock.release()
-            lock.release()
-            _RUNNING_CHAT.pop(sk, None)
-            to_client("done", sessionKey=sk)
-            client_q.put_nowait(CLIENT_DONE)
+                # 只有真的在 HTTP 上跑出了内容，才把这个会话钉到 http 上。钉早了（比如选路时就钉）
+                # 会把一个其实没跑成的会话锁死在 http，之后每轮都往一条不通的路上撞；而钉住之后
+                # 就绝不能再换回 cli —— 网关那份 transcript 我们按名字找不回来，换边即丢历史。
+                if is_http and emitted:
+                    _pin_transport(sk, "http")
+                user_stopped = sk in _STOPPED_CHAT
+                _STOPPED_CHAT.discard(sk)
+                # Reaching finally while the child is alive means timeout, explicit
+                # stop, cancellation, or an internal stream failure. Never release
+                # the session locks while such a process can still write history.
+                if proc.poll() is None:
+                    try:
+                        proc.terminate()
+                    except OSError:
+                        pass
+                    try:
+                        await asyncio.to_thread(proc.wait, timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            proc.kill()
+                            await asyncio.to_thread(proc.wait, timeout=2)
+                        except (OSError, subprocess.TimeoutExpired):
+                            pass
+                # 诊断日志：每次对话流收尾都记一行，供事后定位「莫名停下」到底是哪种情况。
+                try:
+                    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+                    tail = clean_agent_output("".join(stdout_lines))[-800:]
+                    with (DEBUG_DIR / "chat-stream.jsonl").open("a", encoding="utf-8") as lf:
+                        lf.write(json.dumps({
+                            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                            "session": sk,
+                            "rc": proc.poll(),
+                            "stop_reason": run_info["stop_reason"],
+                            "last_ev": run_info["last_ev"],
+                            "clean_end": run_info["last_ev"] == "assistant_message_end",
+                            "saw_message_end": run_info["saw_message_end"],
+                            "fetch_count": run_info["fetch_count"],
+                            "token_chars": run_info["token_chars"],
+                            "thinking_chars": run_info["thinking_chars"],
+                            "delegated": run_info["delegated"],
+                            "ignored_foreign_events": run_info["ignored_foreign_events"],
+                            "text_tail": run_info.get("text_tail", ""),
+                            "stdout_tail": tail,
+                        }, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
+                completed = (proc.poll() == 0 and not user_stopped and not timed_out
+                             and not stream_error and bool(run_info.get("http_completed") if is_http
+                                                           else run_info.get("last_ev") == "assistant_message_end"))
+                try:
+                    await run.transition("succeeded" if completed else "unknown")
+                except (OSError, sqlite3.Error, UnsupportedSchema, RunConflict):
+                    to_client("error", "任务终态未能保存，请保留数据并核验任务状态")
+                finally:
+                    # 落盘完整结果：后端跑完整轮不依赖客户端连接，断线后前端用 /api/chat/last 取回
+                    _save_turn(pk, "done", "".join(full_text), {
+                        "turn_id": turn_id,
+                        "clean_end": run_info.get("last_ev") == "assistant_message_end",
+                        "stop_reason": "user_stopped" if user_stopped else run_info.get("stop_reason"),
+                    })
+            finally:
+                xlock.release()
+                lock.release()
+                _RUNNING_CHAT.pop(sk, None)
+                to_client("done", sessionKey=sk)
+                client_q.put_nowait(CLIENT_DONE)
+
 
     # 把 run 跑在独立后台任务里（持强引用防 GC）——客户端断开不取消它。
     task = asyncio.create_task(supervisor())

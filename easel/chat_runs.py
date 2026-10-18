@@ -1,4 +1,4 @@
-"""Async lifecycle adapter for API-only chat; never replays a model request."""
+"""Async chat lifecycle adapter; never replays an agent request."""
 from __future__ import annotations
 
 import asyncio
@@ -30,14 +30,15 @@ async def durable_call(operation):
 
 
 class DirectChatRun:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, backend: str = "direct_api"):
         self.path = path
+        self.backend = backend
         self.record: RunRecord | None = None
         self.owner_id = uuid.uuid4().hex
 
     async def create(self, turn_id: str, session_id: str) -> None:
         def write():
-            self.record = RunStore(self.path).create(turn_id, session_id, "direct_api")
+            self.record = RunStore(self.path).create(turn_id, session_id, self.backend)
         try:
             await durable_call(write)
         except asyncio.CancelledError:
