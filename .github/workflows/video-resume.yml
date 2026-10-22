@@ -1,0 +1,36 @@
+name: Video checkpoint acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'skills/builtin/auto-short-video/**'
+      - 'skills/shared/scripts/artifact_checkpoints.py'
+      - 'skills/shared/scripts/output_paths.py'
+      - 'tests/test_artifact_checkpoints.py'
+      - 'tests/test_assemble_checkpoints.py'
+      - 'tests/test_assemble_resume_ffmpeg.py'
+      - '.github/workflows/video-resume.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install local media tools and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install pytest
+      - name: Require real renderers and verify recovery
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          python -m pytest -v tests/test_artifact_checkpoints.py tests/test_assemble_checkpoints.py tests/test_assemble_resume_ffmpeg.py

@@ -1,0 +1,15 @@
+{
+  "id": "easel-tool-budget",
+  "name": "Easel per-run tool budget",
+  "description": "Opt-in admission limits for native OpenClaw runs; requires verified lifecycle identities.",
+  "contracts": { "gatewayMethodDispatch": ["authenticated-request"] },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "anyOf": [{"maxProperties": 0}, {"required": ["maxCalls", "timeoutMs"]}],
+    "properties": {
+      "maxCalls": {"type": "integer", "minimum": 0, "maximum": 10000},
+      "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 3600000}
+    }
+  }
+}

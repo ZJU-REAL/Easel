@@ -61,6 +61,17 @@ layer: produce
    `static`（等比缩放 + 补边，不裁切、不平移）。
    合成器自动做：按 `image_motion` 生成静帧或 Ken Burns、补边到画幅、拼接、配音+BGM 混音（BGM 自动压低）、烧录字幕。
 
+   长流程可在首次合成时加 `--resume`，中断后用同样的参数再次运行：
+   ```bash
+   python skills/builtin/auto-short-video/scripts/assemble.py assemble --resume \
+     --storyboard outputs/成都旅行指南/assets/storyboard.json \
+     -o outputs/成都旅行指南/final.mp4
+   ```
+   已完成镜头在输入参数、素材内容和产物摘要均匹配时复用；修改素材、时长、画幅、运动方式或渲染器会失效。
+   检查点存于成片旁的 `.final.mp4.checkpoints/`，不重复生成图片/视频、不调用付费 API。
+   拼接、混音和字幕每次重新执行；失败时保留上一份成片。未加 `--resume` 时仍使用原有临时目录流程。
+   清单损坏会报错，不自动清空；仅在确认相关进程全部退出后才能人工清理检查点目录。
+
 7. **交付**：产出 final.mp4，附一句制作说明（用了哪些环节、哪些降级了）。
 
 ## 编排原则
