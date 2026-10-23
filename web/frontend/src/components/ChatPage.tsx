@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
 import QuestionCards from './QuestionCards';
 import BrushEntry from './BrushEntry';
+import RunRecovery from './RunRecovery';
 import type { ChatSession, ChatMessage, StreamState } from '../lib/store';
 import { uploadFiles, adoptOversize } from '../lib/api';
 import type { UploadedFile } from '../lib/api';
@@ -257,6 +258,7 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
           {isStreaming && (stream!.questions?.length ?? 0) > 0 && (
             <QuestionCards questions={stream!.questions || []} onDone={(qid) => onQuestionAnswered?.(qid)} />
           )}
+          {session.pendingTurnId && <RunRecovery key={session.pendingTurnId} turnId={session.pendingTurnId} />}
           <div ref={messagesEndRef} />
         </div>
       </div>
