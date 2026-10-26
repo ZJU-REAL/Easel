@@ -64,6 +64,16 @@ PLATFORM_NAMES = {
 # I/O
 # --------------------------------------------------------------------------- #
 def load(path: Path) -> list[dict]:
+    if path.resolve() == DEFAULT_DATA.resolve():
+        sys.path.insert(0, str(PROJECT_ROOT))
+        try:
+            from easel import mysql_store
+        except ModuleNotFoundError as error:
+            if error.name != "easel":
+                raise
+        else:
+            if mysql_store.enabled():
+                return mysql_store.list_records("schedule")
     if not path.exists():
         return []
     try:
@@ -74,6 +84,17 @@ def load(path: Path) -> list[dict]:
 
 
 def atomic_write(path: Path, items: list[dict]) -> None:
+    if path.resolve() == DEFAULT_DATA.resolve():
+        sys.path.insert(0, str(PROJECT_ROOT))
+        try:
+            from easel import mysql_store
+        except ModuleNotFoundError as error:
+            if error.name != "easel":
+                raise
+        else:
+            if mysql_store.enabled():
+                mysql_store.insert_missing("schedule", items)
+                return
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:

@@ -53,6 +53,7 @@ from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_config, api_mod
                               history_path, read_settings, stream_chat)
 from easel import harnesses
 from easel.harnesses import store as harness_store
+from easel import mysql_store
 from easel.harnesses.base import HarnessError, RunRequest
 try:
     from easel.gateway_questions import (
@@ -1764,7 +1765,7 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
     if req.runtime == "codex" and req.codex_auto_approve is not None:
         config["codex_auto_approve"] = req.codex_auto_approve
     config["models"] = {**config["models"], req.runtime: req.model.strip()}
-    harness_store.write_json(OUTPUTS_DIR / "_harness" / "config.json", config)
+    harness_store.save_settings(OUTPUTS_DIR, config)
     from easel.harnesses.rpc import close_sessions
     await close_sessions()
     return await api_harness_settings()
@@ -1783,7 +1784,7 @@ async def api_chat_transport_save(req: ChatTransportRequest):
     config = _harness_settings()
     _write_env_direct({"EASEL_CHAT_TRANSPORT": "api" if req.transport == "api" else "http"})
     config["runtime"] = "api" if req.transport == "api" else "openclaw"
-    harness_store.write_json(OUTPUTS_DIR / "_harness" / "config.json", config)
+    harness_store.save_settings(OUTPUTS_DIR, config)
     from easel.harnesses.rpc import close_sessions
     await close_sessions()
     return _model_channels()
@@ -5271,7 +5272,7 @@ async def api_delete_session(session_key: str):
     if record and record.get("runtime") != "openclaw":
         from easel.harnesses.rpc import close_sessions
         await close_sessions(session_key)
-        harness_store.binding_path(SESSIONS_DIR, session_key).unlink(missing_ok=True)
+        harness_store.delete_binding(SESSIONS_DIR, session_key)
         _turn_file(f"web:{session_key}").unlink(missing_ok=True)
         return {"deleted": True, "nativeHistoryDeleted": False}
     direct_history = history_path(SESSIONS_DIR, session_key)
@@ -5422,6 +5423,8 @@ def _schedule_lock() -> threading.Lock:
 
 
 def _read_schedule() -> list[dict]:
+    if mysql_store.enabled():
+        return mysql_store.list_records("schedule")
     if not SCHEDULE_FILE.is_file():
         return []
     try:
@@ -5432,6 +5435,9 @@ def _read_schedule() -> list[dict]:
 
 
 def _write_schedule(items: list[dict]) -> None:
+    if mysql_store.enabled():
+        mysql_store.insert_missing("schedule", items)
+        return
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     tmp = SCHEDULE_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -5477,13 +5483,31 @@ async def api_schedule_create(req: ScheduleItem):
             "event_type": req.event_type,
             "end_date": req.end_date,
         }
-        items.append(item)
-        _write_schedule(items)
+        if mysql_store.enabled():
+            mysql_store.insert_record("schedule", item)
+        else:
+            items.append(item)
+            _write_schedule(items)
     return item
 
 
 @app.put("/api/schedule/{sid}")
 async def api_schedule_update(sid: str, req: ScheduleItem):
+    if mysql_store.enabled():
+        current = mysql_store.get_record("schedule", sid)
+        if not current:
+            raise HTTPException(404, "排期不存在")
+        kind = req.kind if req.kind in SCHEDULE_KINDS else current.get("kind", "content")
+        item = mysql_store.update_record("schedule", sid, {
+            "title": req.title.strip() or current.get("title", "未命名"),
+            "date": req.date, "platform": req.platform, "time": req.time,
+            "status": req.status if req.status in SCHEDULE_STATUSES else current.get("status", "idea"),
+            "note": req.note, "kind": kind, "url": req.url,
+            "event_type": req.event_type, "end_date": req.end_date,
+        })
+        if item is None:
+            raise HTTPException(404, "排期不存在")
+        return item
     with _schedule_lock():
         items = _read_schedule()
         for it in items:
@@ -5508,6 +5532,10 @@ async def api_schedule_update(sid: str, req: ScheduleItem):
 
 @app.delete("/api/schedule/{sid}")
 async def api_schedule_delete(sid: str):
+    if mysql_store.enabled():
+        if not mysql_store.delete_record("schedule", sid):
+            raise HTTPException(404, "排期不存在")
+        return {"ok": True, "deleted": sid}
     with _schedule_lock():
         items = _read_schedule()
         new = [it for it in items if it.get("id") != sid]
@@ -5538,6 +5566,8 @@ IDEA_STATUSES = {"pending", "doing", "done"}
 
 
 def _read_ideas() -> list[dict]:
+    if mysql_store.enabled():
+        return mysql_store.list_records("ideas")
     if not IDEAS_FILE.is_file():
         return []
     try:
@@ -5548,6 +5578,9 @@ def _read_ideas() -> list[dict]:
 
 
 def _write_ideas(items: list[dict]) -> None:
+    if mysql_store.enabled():
+        mysql_store.insert_missing("ideas", items)
+        return
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     tmp = IDEAS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -5568,7 +5601,7 @@ async def api_ideas_list():
 
 @app.post("/api/ideas")
 async def api_ideas_create(req: IdeaItem):
-    items = _read_ideas()
+    items = _read_ideas() if not mysql_store.enabled() else []
     st = req.status if req.status in IDEA_STATUSES else "pending"
     item = {
         "id": uuid.uuid4().hex[:12],
@@ -5578,13 +5611,28 @@ async def api_ideas_create(req: IdeaItem):
         "status": st,
         "created": int(time.time()),
     }
-    items.insert(0, item)
-    _write_ideas(items)
+    if mysql_store.enabled():
+        mysql_store.insert_record("ideas", item)
+    else:
+        items.insert(0, item)
+        _write_ideas(items)
     return item
 
 
 @app.put("/api/ideas/{iid}")
 async def api_ideas_update(iid: str, req: IdeaItem):
+    if mysql_store.enabled():
+        current = mysql_store.get_record("ideas", iid)
+        if not current:
+            raise HTTPException(404, "选题不存在")
+        item = mysql_store.update_record("ideas", iid, {
+            "title": req.title.strip() or current.get("title", "未命名选题"),
+            "note": req.note, "source": req.source,
+            "status": req.status if req.status in IDEA_STATUSES else current.get("status", "pending"),
+        })
+        if item is None:
+            raise HTTPException(404, "选题不存在")
+        return item
     items = _read_ideas()
     for it in items:
         if it.get("id") == iid:
@@ -5601,6 +5649,10 @@ async def api_ideas_update(iid: str, req: IdeaItem):
 
 @app.delete("/api/ideas/{iid}")
 async def api_ideas_delete(iid: str):
+    if mysql_store.enabled():
+        if not mysql_store.delete_record("ideas", iid):
+            raise HTTPException(404, "选题不存在")
+        return {"ok": True, "deleted": iid}
     items = _read_ideas()
     new = [it for it in items if it.get("id") != iid]
     if len(new) == len(items):
