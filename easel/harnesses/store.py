@@ -39,7 +39,8 @@ def write_json(path: Path, data: dict) -> None:
 
 
 def settings(outputs: Path, env: dict[str, str]) -> dict:
-    data = read_json(outputs / "_harness" / "config.json")
+    from easel import mysql_store
+    data = mysql_store.get_config() if mysql_store.enabled() else read_json(outputs / "_harness" / "config.json")
     state_dir = Path(env.get("EASEL_OPENCLAW_STATE_DIR") or Path.home() / ".openclaw-easel")
     legacy = "EASEL_CHAT_TRANSPORT" in env or (state_dir / "openclaw.json").is_file()
     default = "openclaw" if legacy else "api"
@@ -71,7 +72,8 @@ def binding_path(sessions: Path, key: str) -> Path:
 
 
 def binding(sessions: Path, key: str) -> dict:
-    record = read_json(binding_path(sessions, key))
+    from easel import mysql_store
+    record = mysql_store.get_binding(key) if mysql_store.enabled() else read_json(binding_path(sessions, key))
     if record and (record.get("runtime") not in IDS
                    or not isinstance(record.get("native_id"), str)):
         raise HarnessError("Agent 会话记录格式无效，不会自动重置历史")
@@ -81,9 +83,29 @@ def binding(sessions: Path, key: str) -> dict:
 def bind(sessions: Path, key: str, runtime: str, native_id: str = "") -> None:
     if runtime not in IDS or not isinstance(native_id, str):
         raise HarnessError("Agent 会话绑定无效")
+    from easel import mysql_store
+    if mysql_store.enabled():
+        mysql_store.save_binding(key, runtime, native_id)
+        return
     current = binding(sessions, key)
     if current and current.get("runtime") != runtime:
         raise HarnessError("此会话属于其他 Agent 底座，请新建对话")
     if current.get("native_id") and current["native_id"] != native_id:
         raise HarnessError("Agent 返回了不同的原生会话 ID，不会替换已有历史")
     write_json(binding_path(sessions, key), {"runtime": runtime, "native_id": native_id})
+
+
+def save_settings(outputs: Path, data: dict) -> None:
+    from easel import mysql_store
+    if mysql_store.enabled():
+        mysql_store.save_config(data)
+    else:
+        write_json(outputs / "_harness" / "config.json", data)
+
+
+def delete_binding(sessions: Path, key: str) -> None:
+    from easel import mysql_store
+    if mysql_store.enabled():
+        mysql_store.delete_binding(key)
+    else:
+        binding_path(sessions, key).unlink(missing_ok=True)
