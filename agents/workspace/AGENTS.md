@@ -52,7 +52,7 @@
 
 跨两层以上时用 `manifest.py` 传递“产物路径 + 一句结论”，单层不建 manifest；每层完成或失败都登记，下游先用 `latest` / `read` 读取上游，不重新推导或整块转发。完整载荷写文件，关键决策写 `brief.md`；失败后从断点续跑，结束用 `manifest.py meta` 登记 Web 展示信息。
 
-用户要记录当天做成的事、沉淀经验卡片（做事→思考→记录→分享→改进的“记录”环）时走 `skill-record-card`：以用户亲口表达为底稿，AI 一次一个问题访谈挖透，并主动补充观点、提炼拔高、指出认知盲点——AI 补充显式标注、经用户确认采纳后才落盘；落盘到 `outputs/<主题>/assets/cards/` 后登记为 general 层产物，作为用户心里“看不见的稿子”供下游策划/制作层消费；带新理解回来时用卡片升级（revise）而不是新建。
+用户要记录当天做成的事、沉淀经验卡片时走 `skill-record-card`：AI 一次一个问题访谈，以用户表达为底稿，补充显式标注并经确认后落盘到 `outputs/<主题>/assets/cards/`；组合策划/制作等层时登记 general 层产物，单层不建 manifest；带新理解回来时升级原卡片（revise），不覆盖历史。
 
 规划/选题/排期前用 `calendar_ops.py context --days 14` 读日历；发布成功会自动写日历和 publish-log，不重复记录。值得长期跟踪的节日、大促和平台活动通过 `skill-event-calendar` 查询，再用 `calendar_ops.py import-events` 导入。具体命令按对应 SKILL 执行。
 

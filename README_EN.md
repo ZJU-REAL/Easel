@@ -323,6 +323,7 @@ Easel uses an isolated `easel` OpenClaw profile and does not overwrite an existi
 - [Capability map](docs/skill-function-mapping.md)
 - [SKILL interface specification](docs/SKILL-SPEC.md)
 - [Prompt and architecture layers](docs/prompt-stack.md)
+- [Context budget diagnostics](docs/context-budget-diagnostics.md)
 - [Known issues](docs/known-issues_EN.md)
 - [Full acknowledgments](docs/ACKNOWLEDGMENTS.md)
 

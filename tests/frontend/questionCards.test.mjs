@@ -59,3 +59,32 @@ test('approval card grids can shrink and wrap commands without clipping their co
   assert.match(rule('.question-card__options'), /minmax\(min\(150px,\s*100%\),\s*1fr\)/);
   assert.match(rule('.question-card__custom input'), /min-width:\s*0/);
 });
+
+for (const status of ['expired', 'cancelled', 'not_found', 'closed']) {
+  test(`closed question ${status} remains readable but cannot be answered`, () => {
+    const rendered = renderToStaticMarkup(React.createElement(component.exports.default, {
+      questions: [{ id: 'old-question', status,
+        questions: [{ questionId: 'choice', question: '原来的问题', options: [{ label: '原选项' }] }] }],
+    }));
+    assert.match(rendered, /原来的问题/);
+    assert.match(rendered, /已过期或关闭/);
+    assert.match(rendered, /disabled="">提交<\/button>/);
+    assert.match(rendered, /disabled=""><strong>原选项/);
+  });
+}
+
+test('expired timestamp prevents submission without inventing a hook deadline', () => {
+  const rendered = renderToStaticMarkup(React.createElement(component.exports.default, {
+    questions: [{ id: 'old-question', expiresAtMs: 1,
+      questions: [{ questionId: 'choice', question: '过期问题', options: [{ label: '原选项' }] }] }],
+  }));
+  assert.match(rendered, /已过期或关闭/);
+  assert.match(rendered, /disabled="">提交<\/button>/);
+});
+
+test('answered historical questions do not reappear', () => {
+  const rendered = renderToStaticMarkup(React.createElement(component.exports.default, {
+    questions: [{ id: 'old-question', status: 'answered', questions: [{ question: '已回答问题' }] }],
+  }));
+  assert.equal(rendered, '');
+});

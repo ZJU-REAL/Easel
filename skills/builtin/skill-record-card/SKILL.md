@@ -58,7 +58,7 @@ layer: general
      --ai-note "<本版 AI 补充说明，可多次>"
    ```
    字段较长时可先写 JSON 再用 `--data <文件>` 传入，命令行参数覆盖 JSON 同名字段。
-5. **登记编排**（卡片是下游分享的输入）：
+5. **登记编排**（仅与策划、制作等层组合时执行；单层记录不建 manifest）：
    ```bash
    python skills/shared/scripts/manifest.py record --topic <主题> --layer general \
      --skill record-card --outputs assets/cards/card-NNN.md --summary "<用户确认的核心要点一句话>"
@@ -70,7 +70,8 @@ layer: general
      --card 001 --change "<本次改了什么>" --mechanism "<新机理>" --ai-note "<补充说明>"
    ```
    旧版本完整保留在同一文件中，演进可见。用 `card.py list --topic <主题>` / `card.py show --topic <主题> --card 001` 查看。
-8. **断线续谈**：访谈被打断时，下次说"继续写卡片"可按主题找到最近卡片，从上次未确认的部分继续。
+   用户撤回或纠正旧 AI 观点时，用 `--replace-ai-notes` 配合本次确认的 `--ai-note` 替换新版说明；无新说明则清空。旧版原话和说明仍保留，不把撤回观点继续标成新版采纳内容。
+8. **断线续谈**：访谈被打断时先查当前会话记录和该主题已确认卡片。未确认草稿不落盘；上下文不完整时询问用户上次进度，不假定脚本保存了未确认部分。
 
 ## 不适用情况（主动告知用户）
 

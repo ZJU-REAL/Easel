@@ -25,6 +25,14 @@ Codex / ACP 的每条原生连接最多保留 64 个尚未完成的客户端请�
 完成的请求会释放名额，不累计计入后续批次。此限制不自动重试或重新发送原始提示词。
 它是协议资源保护，不是工具调用预算，也不证明外部工具副作用已经撤销。
 
+私有 stdio JSON-RPC 单行消息上限为 64 MiB（UTF-8 字节，不含换行），允许 ACP
+`session/load` 回放超过旧 4 MiB 上限的合法历史。超过上限时明确报告消息过大并关闭
+连接，不自动截断、重发提示词或改建新会话；更大的历史应由 Agent 分块发送。
+其它读取异常只显示异常类型，不附原始消息、异常正文或子进程 stderr，避免泄露
+对话和凭证。无效 JSON / UTF-8 仍按协议错误终止；客户端请求的 64 并发保护不变。
+原生请求解析、格式或参数错误（含 `INVALID_REQUEST`）使用固定提示，不回显原生
+错误正文或 `data`；其它原生错误仍沿用限长与环境凭证脱敏。
+
 ## OpenClaw 执行侧工具限额（可选）
 
 需要限制每轮实际工具准入次数与执行时限时，可在 Easel 使用的 Gateway 配置中启用
@@ -83,7 +91,7 @@ Linux / macOS 原有 `--api` 参数保留，用于显式设置仅聊天模式的
 在运行 Web 的同一服务器账户下安装所需 CLI，并完成原生认证：
 
 ```bash
-npm install -g opencode-ai
+npm install -g @opencode/cli
 opencode auth login
 npm install -g @openai/codex
 codex login
@@ -95,6 +103,10 @@ CLI 需要在 Web 的 PATH 中。`easel web` 在非交互启动遗漏 PATH 时�
 只补充 Web 子进程缺失的 PATH，不覆盖已有 CLI 的优先级，不修改系统环境或任何 Agent 配置。
 OpenClaw 的 npm 入口优先使用同目录的 Node，避免系统旧 Node 影响恢复的安装；
 Windows 的 npm shim 使用 Node 或原生程序调用，不通过 shell 拼接命令。
+OpenCode Windows npm 入口兼容 V2 `@opencode/cli` 和 V1 `opencode-ai`，按照 PATH
+命中的 `.cmd` / `.bat` 实际引用的包和入口启动，不在两个包之间盲目回退。缺失或
+无法识别的入口需重新安装并检查 PATH；若 V1/V2 共存且出现原生数据库版本错误，
+先核对当前命中的 CLI 版本，不删除或自动迁移用户的数据库。
 安装后必要时重启 Web。执行引擎列表不会隐藏未检测到的底座，仍可选择查看配置及安装提示，
 但未安装的底座不能保存为当前引擎。配置读取失败时可以点击「重新读取」，无需先切换底座。
 自动查找限于运行 Web 的账户及已指定的安装路径，不读取其它用户的登录配置；

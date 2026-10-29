@@ -347,16 +347,18 @@ export interface ChatQuestion {
   id: string;              // gateway question record id (ask_...)
   questions: ChatQuestionItem[];
   expiresAtMs?: number;
+  status?: string;
 }
+export interface ChatQuestionClosed { id: string; status: string; }
 export async function answerQuestion(
   payload: { questionId: string; answers: Record<string, string[]>; resolvedBy?: string },
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; status?: string; expired?: boolean }> {
   const res = await fetch(`${BASE}/api/chat/question/answer`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await res.json().catch(() => ({})) as { ok?: boolean; error?: string };
-  return { ok: data.ok === true, error: data.error };
+  const data = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; status?: string; expired?: boolean };
+  return { ok: data.ok === true, error: data.error, status: data.status, expired: data.expired };
 }
 
 /** 批量查 question 状态：过滤重放中已解决/已过期的旧题。 */
@@ -620,6 +622,7 @@ export function streamChat(
   attachments: UploadedFile[] = [],
   onQuestion?: (q: ChatQuestion) => void,
   onHeartbeat?: (note: string) => void,
+  onQuestionClosed?: (q: ChatQuestionClosed) => void,
 ): AbortController {
   const controller = new AbortController();
   let lastEventId = 0;
@@ -662,6 +665,11 @@ export function streamChat(
             const q = JSON.parse(data) as ChatQuestion;
             if (q && typeof q === 'object' && Array.isArray(q.questions)) onQuestion(q);
           } catch { /* 解析失败忽略 */ }
+        } else if (currentEvent === 'question_closed' && onQuestionClosed) {
+          try {
+            const closed = JSON.parse(data) as ChatQuestionClosed;
+            if (closed && typeof closed.id === 'string' && typeof closed.status === 'string') onQuestionClosed(closed);
+          } catch {}
         } else if (currentEvent === 'heartbeat') {
           // 防呆心跳：独立于 activity/thinking，仅作「未卡住」提示，不覆盖真实状态。
           if (onHeartbeat) { try { onHeartbeat(JSON.parse(data) as string); } catch { onHeartbeat(data); } }

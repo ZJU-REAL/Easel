@@ -34,6 +34,7 @@ layer: produce
 3. **配音**：[tts-voiceover](../tts-voiceover/SKILL.md) 把文案合成口播（同时出 SRT）。**配了 `VOICE_PROVIDER` 默认走闭源好嗓子**（有情感、像真人），没 key 才退 edge（机械）——想要口播不"生硬"务必配闭源 key。不需要配音才跳过。
 
 4. **字幕**：用 TTS 附带的 SRT，或对配音跑 [auto-subtitle](../auto-subtitle/SKILL.md)；也可让 assemble 用各分镜 caption 自动生成。
+   SRT/caption 自动折行保留英文词间空格，避免闭标点落到行首、开标点落到行尾；字体可由 `--sub-font` 选择。有 Fontconfig 和 Pillow 时按所选字体真实度量估宽，否则使用保守估计；不强制两行，也不改变用户提供的 ASS 排版。
 
 5. **BGM**：[ai-music](../ai-music/SKILL.md) 生成，或用用户提供的音乐。可选。
 

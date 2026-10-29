@@ -35,7 +35,9 @@ import subprocess
 import sys
 import tempfile
 from contextlib import ExitStack
+from functools import lru_cache
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared" / "scripts"))
 from artifact_checkpoints import ArtifactCheckpoints, CheckpointError, atomic_output, file_digest, fingerprint
@@ -112,43 +114,78 @@ def _ass_ts(srt_ts: str) -> str:
 
 
 def _char_units(ch: str) -> float:
-    """单字符占的横向宽度单位：CJK/全角 ≈ 1 字号，拉丁/数字/空格/标点 ≈ 0.5。"""
+    """无法读取字体时使用的保守宽度估计。"""
     return 1.0 if ord(ch) > 0x2E80 else 0.5
 
 
-def wrap_caption(text: str, max_units: float) -> list[str]:
-    """按显示宽度把一行字幕**确定性**折成多行（CJK 逐字、拉丁尽量按空格断），每行 ≤ max_units。
+@lru_cache(maxsize=16)
+def _font_width_units(font: str) -> Callable[[str], float] | None:
+    """按所选字体的真实行高归一化字宽，与 libass 的字号语义对应。"""
+    if not shutil.which("fc-match"):
+        return None
+    try:
+        from PIL import ImageFont
 
-    纯函数、可测。保证不超视频宽度、随宽度自适应；不依赖 libass 折行启发式。
-    先并掉原有的软换行（统一按当前视频宽度重排），单个超长 token 也会被强制断开。
+        match = subprocess.run(
+            ["fc-match", "-f", "%{file}\n%{index}\n", font],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        filename, index = match.stdout.strip().splitlines()[:2]
+        face = ImageFont.truetype(filename, size=1000, index=int(index))
+        line_height = sum(face.getmetrics())
+        if line_height <= 0:
+            return None
+        return lambda text: face.getlength(text) / line_height
+    except (ImportError, OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def wrap_caption(text: str, max_units: float,
+                 measure: Callable[[str], float] | None = None) -> list[str]:
+    """按显示宽度折行，保留词间空格，避免闭标点居首、开标点居尾。
+
+    保留多行和超长词拆分；不可拆的标点组宽于整行时优先保留标点归属。
     """
     flat = " ".join(seg.strip() for seg in str(text).replace("\\N", "\n").split("\n") if seg.strip())
     if not flat:
         return []
+    width = measure or (lambda value: sum(_char_units(character) for character in value))
+    closing = "，。！？；：、…,.!?;:)]}）】》〉」』”’%‰°"
+    opening = "([{（【《〈「『“‘"
     out: list[str] = []
-    cur = ""
-    cur_u = 0.0
-    for ch in flat:
-        cu = _char_units(ch)
-        if cur and cur_u + cu > max_units:
-            # 拉丁词内断行优化：尽量回退到最近空格处再断（CJK 无空格则原地断）
-            if ch != " " and " " in cur.rstrip():
-                head, _, tail = cur.rstrip().rpartition(" ")
-                if head:
-                    out.append(head)
-                    cur = tail
-                    cur_u = sum(_char_units(c) for c in tail)
-                else:
-                    out.append(cur); cur = ""; cur_u = 0.0
-            else:
-                out.append(cur); cur = ""; cur_u = 0.0
-        if ch == " " and not cur:
-            continue  # 行首不留空格
-        cur += ch
-        cur_u += cu
-    if cur.strip():
-        out.append(cur.rstrip())
-    return out or [flat]
+    remaining = flat
+    while remaining:
+        if width(remaining) <= max_units:
+            out.append(remaining)
+            break
+        fit = 0
+        for position in range(1, len(remaining) + 1):
+            if width(remaining[:position].rstrip()) > max_units:
+                break
+            fit = position
+        boundary = fit
+        while boundary > 0:
+            left = remaining[:boundary].rstrip()
+            right = remaining[boundary:].lstrip()
+            if left and left[-1] not in opening and (not right or right[0] not in closing):
+                break
+            boundary -= 1
+        if boundary and remaining[boundary - 1].isascii() and remaining[boundary - 1].isalnum() \
+                and remaining[boundary:boundary + 1].isascii() and remaining[boundary:boundary + 1].isalnum():
+            space = remaining.rfind(" ", 0, boundary)
+            if space > 0:
+                left = remaining[:space].rstrip()
+                right = remaining[space:].lstrip()
+                if left[-1] not in opening and right[0] not in closing:
+                    boundary = space
+        if not boundary:
+            boundary = max(1, fit)
+            while boundary < len(remaining) and (remaining[boundary] in closing
+                                                   or remaining[boundary - 1] in opening):
+                boundary += 1
+        out.append(remaining[:boundary].rstrip())
+        remaining = remaining[boundary:].lstrip()
+    return out
 
 
 def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
@@ -156,10 +193,10 @@ def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
                 margin_v: int | None = None) -> Path:
     """把 SRT 转成带完整样式的 ASS，尺寸/位置/折行**确定可控**（治「字幕过大 / 超出边界 / 挤成一行」）。
 
-    关键：显式 PlayResX/Y = 视频尺寸，字号就是像素级别、不再被 libass 按默认 288 放大。
+    关键：显式 PlayResX/Y = 视频尺寸，字号对应字体行高、不再被 libass 按默认 288 放大。
     默认字号 ≈ **短边***0.05（min(w,h)：竖屏 1080×1920→54、横屏 1920×1080→54，横竖屏都合适、
     不再横屏字号翻倍过大），Alignment=2 底部居中，MarginV≈高*0.07，MarginL/R≈宽*0.06。
-    **长行按可用宽度确定性折行**（wrap_caption，CJK 逐字），保证不超边界、自适应视频宽度、可多行。
+    长行按可用宽度和字体度量折行，保留多行；无法读取字体时使用保守宽度估计。
     白字黑描边（Outline=2, Shadow=0）竖/横屏可读。
     """
     fs = int(font_size if font_size else round(min(w, h) * 0.05))
@@ -167,6 +204,7 @@ def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
     mh = int(round(w * 0.06))
     # 每行最大宽度单位 = 可用像素宽 / 字号；留 6% 安全余量防描边/字距溢出。
     max_units = max(6.0, (w - 2 * mh) / fs * 0.94)
+    measure = _font_width_units(font)
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -192,7 +230,7 @@ def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
         start, _, end = ts_line.partition("-->")
         txt_rows = rows[rows.index(ts_line) + 1:]
         raw = " ".join(t.strip() for t in txt_rows) if txt_rows else ""
-        wrapped = wrap_caption(raw, max_units)
+        wrapped = wrap_caption(raw, max_units, measure=measure)
         if not wrapped:
             continue
         text = "\\N".join(wrapped)

@@ -2,10 +2,38 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 
 from .base import HarnessError
+
+
+def _windows_opencode_entry(launcher: Path) -> Path:
+    failure = HarnessError("opencode 的 Windows npm 启动入口无法识别，请用 "
+                           "npm install -g @opencode/cli 重新安装 CLI 并检查 PATH")
+    try:
+        with launcher.open("rb") as stream:
+            content = stream.read(64 * 1024 + 1)
+    except OSError:
+        raise failure from None
+    if len(content) > 64 * 1024:
+        raise failure
+    pattern = re.compile(
+        r'(?:endLocal\s*&\s*goto\s+#_undefined_#\s+2>NUL\s*\|\|\s*'
+        r'title\s+%COMSPEC%\s*&\s*)?@?(?:"%_prog%"\s+)?'
+        r'"%(?:dp0%|~dp0)[\\/]*node_modules[\\/]+'
+        r'(?P<package>@opencode[\\/]+cli|opencode-ai)[\\/]+bin[\\/]+'
+        r'(?P<entry>opencode(?:\.exe)?)"\s+%\*\s*$', re.IGNORECASE)
+    targets = set()
+    for line in content.decode("utf-8-sig", errors="replace").splitlines():
+        match = pattern.fullmatch(line.strip())
+        if match:
+            package = re.sub(r"[\\/]+", "/", match["package"].lower())
+            targets.add(launcher.parent / "node_modules" / package / "bin" / match["entry"].lower())
+    if len(targets) != 1:
+        raise failure
+    return targets.pop()
 
 
 def base_command(name: str) -> list[str]:
@@ -27,10 +55,12 @@ def base_command(name: str) -> list[str]:
     if name == "codex":
         script = package / "@openai" / "codex" / "bin" / "codex.js"
     else:
-        native = package / "opencode-ai" / "bin" / "opencode.exe"
-        if native.is_file():
-            return [str(native)]
-        script = package / "opencode-ai" / "bin" / "opencode"
+        script = _windows_opencode_entry(path)
+        if script.suffix.lower() == ".exe":
+            if script.is_file():
+                return [str(script)]
+            raise HarnessError("opencode 的 Windows npm 启动入口不存在，请用 "
+                               "npm install -g @opencode/cli 重新安装 CLI 并检查 PATH")
     if node and script.is_file():
         return [node, str(script)]
     raise HarnessError(f"{name} 的 Windows npm 启动入口不存在，请重新安装 CLI")

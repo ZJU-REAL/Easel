@@ -117,7 +117,7 @@ class ACPAdapter:
 
 class OpenCodeAdapter(ACPAdapter):
     descriptor = Descriptor("opencode", "OpenCode", "ACP v1",
-                            "npm install -g opencode-ai；opencode auth login")
+                            "npm install -g @opencode/cli；opencode auth login")
 
     async def run(self, request: RunRequest, emit, ask, bind):
         from dataclasses import replace
