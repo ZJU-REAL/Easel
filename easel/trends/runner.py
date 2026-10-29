@@ -64,6 +64,9 @@ def _python(source: Source, options: dict, environment: dict[str, str]) -> dict:
                     raise CollectorError("timeout")
                 time.sleep(TREND_POLL_INTERVAL)
             if proc.returncode:
+                # POSIX RLIMIT_FSIZE may stop the writer exactly at the byte ceiling.
+                if max(os.fstat(stdout.fileno()).st_size, os.fstat(stderr.fileno()).st_size) >= MAX_BYTES:
+                    raise CollectorError("output_too_large")
                 raise CollectorError("process_failed")
             stdout.seek(0)
             return decode_payload(stdout.read(MAX_BYTES + 1))
