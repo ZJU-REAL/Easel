@@ -383,6 +383,7 @@ Easel 使用独立的 `easel` OpenClaw profile，不会覆盖你本机已有的 
 
 ## 📑 文档
 
+- [渠道平台接入指南](docs/channel-platforms.md)
 - [能力地图](docs/skill-function-mapping.md)
 - [SKILL 接口规范](docs/SKILL-SPEC.md)
 - [提示词与架构分层](docs/prompt-stack.md)
