@@ -28,12 +28,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import ExitStack
+from functools import lru_cache
 from pathlib import Path
+from typing import Callable
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared" / "scripts"))
+from artifact_checkpoints import ArtifactCheckpoints, CheckpointError, atomic_output, file_digest, fingerprint
+from output_paths import validate_output_path
 
 
 def fail(msg: str, code: int = 1):
@@ -106,43 +114,78 @@ def _ass_ts(srt_ts: str) -> str:
 
 
 def _char_units(ch: str) -> float:
-    """单字符占的横向宽度单位：CJK/全角 ≈ 1 字号，拉丁/数字/空格/标点 ≈ 0.5。"""
+    """无法读取字体时使用的保守宽度估计。"""
     return 1.0 if ord(ch) > 0x2E80 else 0.5
 
 
-def wrap_caption(text: str, max_units: float) -> list[str]:
-    """按显示宽度把一行字幕**确定性**折成多行（CJK 逐字、拉丁尽量按空格断），每行 ≤ max_units。
+@lru_cache(maxsize=16)
+def _font_width_units(font: str) -> Callable[[str], float] | None:
+    """按所选字体的真实行高归一化字宽，与 libass 的字号语义对应。"""
+    if not shutil.which("fc-match"):
+        return None
+    try:
+        from PIL import ImageFont
 
-    纯函数、可测。保证不超视频宽度、随宽度自适应；不依赖 libass 折行启发式。
-    先并掉原有的软换行（统一按当前视频宽度重排），单个超长 token 也会被强制断开。
+        match = subprocess.run(
+            ["fc-match", "-f", "%{file}\n%{index}\n", font],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        filename, index = match.stdout.strip().splitlines()[:2]
+        face = ImageFont.truetype(filename, size=1000, index=int(index))
+        line_height = sum(face.getmetrics())
+        if line_height <= 0:
+            return None
+        return lambda text: face.getlength(text) / line_height
+    except (ImportError, OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def wrap_caption(text: str, max_units: float,
+                 measure: Callable[[str], float] | None = None) -> list[str]:
+    """按显示宽度折行，保留词间空格，避免闭标点居首、开标点居尾。
+
+    保留多行和超长词拆分；不可拆的标点组宽于整行时优先保留标点归属。
     """
     flat = " ".join(seg.strip() for seg in str(text).replace("\\N", "\n").split("\n") if seg.strip())
     if not flat:
         return []
+    width = measure or (lambda value: sum(_char_units(character) for character in value))
+    closing = "，。！？；：、…,.!?;:)]}）】》〉」』”’%‰°"
+    opening = "([{（【《〈「『“‘"
     out: list[str] = []
-    cur = ""
-    cur_u = 0.0
-    for ch in flat:
-        cu = _char_units(ch)
-        if cur and cur_u + cu > max_units:
-            # 拉丁词内断行优化：尽量回退到最近空格处再断（CJK 无空格则原地断）
-            if ch != " " and " " in cur.rstrip():
-                head, _, tail = cur.rstrip().rpartition(" ")
-                if head:
-                    out.append(head)
-                    cur = tail
-                    cur_u = sum(_char_units(c) for c in tail)
-                else:
-                    out.append(cur); cur = ""; cur_u = 0.0
-            else:
-                out.append(cur); cur = ""; cur_u = 0.0
-        if ch == " " and not cur:
-            continue  # 行首不留空格
-        cur += ch
-        cur_u += cu
-    if cur.strip():
-        out.append(cur.rstrip())
-    return out or [flat]
+    remaining = flat
+    while remaining:
+        if width(remaining) <= max_units:
+            out.append(remaining)
+            break
+        fit = 0
+        for position in range(1, len(remaining) + 1):
+            if width(remaining[:position].rstrip()) > max_units:
+                break
+            fit = position
+        boundary = fit
+        while boundary > 0:
+            left = remaining[:boundary].rstrip()
+            right = remaining[boundary:].lstrip()
+            if left and left[-1] not in opening and (not right or right[0] not in closing):
+                break
+            boundary -= 1
+        if boundary and remaining[boundary - 1].isascii() and remaining[boundary - 1].isalnum() \
+                and remaining[boundary:boundary + 1].isascii() and remaining[boundary:boundary + 1].isalnum():
+            space = remaining.rfind(" ", 0, boundary)
+            if space > 0:
+                left = remaining[:space].rstrip()
+                right = remaining[space:].lstrip()
+                if left[-1] not in opening and right[0] not in closing:
+                    boundary = space
+        if not boundary:
+            boundary = max(1, fit)
+            while boundary < len(remaining) and (remaining[boundary] in closing
+                                                   or remaining[boundary - 1] in opening):
+                boundary += 1
+        out.append(remaining[:boundary].rstrip())
+        remaining = remaining[boundary:].lstrip()
+    return out
 
 
 def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
@@ -150,10 +193,10 @@ def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
                 margin_v: int | None = None) -> Path:
     """把 SRT 转成带完整样式的 ASS，尺寸/位置/折行**确定可控**（治「字幕过大 / 超出边界 / 挤成一行」）。
 
-    关键：显式 PlayResX/Y = 视频尺寸，字号就是像素级别、不再被 libass 按默认 288 放大。
+    关键：显式 PlayResX/Y = 视频尺寸，字号对应字体行高、不再被 libass 按默认 288 放大。
     默认字号 ≈ **短边***0.05（min(w,h)：竖屏 1080×1920→54、横屏 1920×1080→54，横竖屏都合适、
     不再横屏字号翻倍过大），Alignment=2 底部居中，MarginV≈高*0.07，MarginL/R≈宽*0.06。
-    **长行按可用宽度确定性折行**（wrap_caption，CJK 逐字），保证不超边界、自适应视频宽度、可多行。
+    长行按可用宽度和字体度量折行，保留多行；无法读取字体时使用保守宽度估计。
     白字黑描边（Outline=2, Shadow=0）竖/横屏可读。
     """
     fs = int(font_size if font_size else round(min(w, h) * 0.05))
@@ -161,6 +204,7 @@ def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
     mh = int(round(w * 0.06))
     # 每行最大宽度单位 = 可用像素宽 / 字号；留 6% 安全余量防描边/字距溢出。
     max_units = max(6.0, (w - 2 * mh) / fs * 0.94)
+    measure = _font_width_units(font)
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -186,7 +230,7 @@ def _srt_to_ass(srt_path: Path, ass_path: Path, w: int, h: int,
         start, _, end = ts_line.partition("-->")
         txt_rows = rows[rows.index(ts_line) + 1:]
         raw = " ".join(t.strip() for t in txt_rows) if txt_rows else ""
-        wrapped = wrap_caption(raw, max_units)
+        wrapped = wrap_caption(raw, max_units, measure=measure)
         if not wrapped:
             continue
         text = "\\N".join(wrapped)
@@ -245,7 +289,7 @@ def _make_shot_clip(shot: dict, dur: float, w: int, h: int, out: Path, workdir: 
         extra_inputs, audio_out = audio_args(src)
         if src_dur >= dur - 0.05 or src_dur <= 0:
             # 够长（或探测不到）→ 裁到 dur
-            _run(["ffmpeg", "-y", "-i", src, *extra_inputs, "-t", f"{dur:.3f}",
+            _run(["ffmpeg", "-y", "-xerror", "-i", src, *extra_inputs, "-t", f"{dur:.3f}",
                   "-vf", f"{base_vf},fps=30", *audio_out,
                   "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)])
             return
@@ -264,16 +308,16 @@ def _make_shot_clip(shot: dict, dur: float, w: int, h: int, out: Path, workdir: 
             mode = "stretch" if factor <= MAX_STRETCH else "loop"
         if mode == "stretch":
             # 慢放：拉伸 PTS 到 dur，画面持续运动、无跳变、无停顿
-            _run(["ffmpeg", "-y", "-i", src,
+            _run(["ffmpeg", "-y", "-xerror", "-i", src,
                   *extra_inputs, "-vf", f"{base_vf},setpts={factor:.4f}*PTS,fps=30", "-t", f"{dur:.3f}",
                   *audio_out, "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)])
         elif mode == "freeze":
             # 冻结末帧（旧行为，仅当显式要求）
-            _run(["ffmpeg", "-y", "-i", src,
+            _run(["ffmpeg", "-y", "-xerror", "-i", src,
                   *extra_inputs, "-vf", f"{base_vf},fps=30,tpad=stop_mode=clone:stop_duration={dur:.3f}",
                   "-t", f"{dur:.3f}", *audio_out, "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)])
         else:  # loop：循环填满，画面持续运动（循环点有轻微跳变）
-            _run(["ffmpeg", "-y", "-stream_loop", "-1", "-i", src, *extra_inputs, "-t", f"{dur:.3f}",
+            _run(["ffmpeg", "-y", "-xerror", "-stream_loop", "-1", "-i", src, *extra_inputs, "-t", f"{dur:.3f}",
                   "-vf", f"{base_vf},fps=30", *audio_out,
                   "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)])
     else:
@@ -285,8 +329,43 @@ def _make_shot_clip(shot: dict, dur: float, w: int, h: int, out: Path, workdir: 
         motion = str(shot.get("motion") or image_motion)
         # static 用于文字卡/slide/图表；Ken Burns 只用于适合裁切的照片。
         vf = _image_filter(motion, w, h, frames)
-        _run(["ffmpeg", "-y", "-loop", "1", "-i", src, *extra_inputs, "-t", f"{dur:.3f}",
+        # A corrupt looped image can retry forever without producing a frame.
+        _run(["ffmpeg", "-y", "-xerror", "-loop", "1", "-i", src, *extra_inputs, "-t", f"{dur:.3f}",
               "-vf", vf, *audio_out, "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)])
+
+
+def _validate_shot_clip(path: Path, duration: float, width: int, height: int):
+    result = subprocess.run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+        "stream=duration,width,height", "-of", "json", str(path),
+    ], capture_output=True, text=True)
+    try:
+        stream = json.loads(result.stdout)["streams"][0]
+        actual_duration = float(stream["duration"])
+        valid = (result.returncode == 0 and not result.stderr.strip()
+                 and math.isfinite(actual_duration) and actual_duration > 0
+                 and abs(actual_duration - duration) <= 2 / 30 + 0.001
+                 and stream["width"] == width and stream["height"] == height)
+    except (ValueError, KeyError, IndexError, TypeError):
+        valid = False
+    if not valid:
+        raise CheckpointError("Rendered shot is incomplete or has unexpected video properties")
+    decoded = subprocess.run([
+        "ffmpeg", "-v", "error", "-xerror", "-i", str(path), "-map", "0:v:0",
+        "-f", "null", "-",
+    ], capture_output=True, text=True)
+    if decoded.returncode != 0 or decoded.stderr.strip():
+        raise CheckpointError("Rendered shot cannot be decoded completely")
+
+
+def _renderer_identity() -> dict:
+    identity = {"script": file_digest(Path(__file__))}
+    for tool in ("ffmpeg", "ffprobe"):
+        result = subprocess.run([tool, "-version"], capture_output=True, text=True)
+        if result.returncode != 0 or not result.stdout.strip():
+            raise CheckpointError(f"Cannot identify {tool} for checkpoint reuse")
+        identity[tool] = result.stdout
+    return identity
 
 
 def cmd_assemble(args) -> int:
@@ -336,18 +415,48 @@ def cmd_assemble(args) -> int:
     keeps_audio = [_shot_keeps_audio(s) for s in shots]
     native_audio = any(keeps_audio)   # 是否存在「环境音底」（下方 abase 用它拼接，而非全程静音）
 
-    with tempfile.TemporaryDirectory() as td:
+    resume = getattr(args, "resume", False)
+    output = validate_output_path(args.output, create_parent=True) if resume else Path(args.output)
+    with tempfile.TemporaryDirectory() as td, ExitStack() as stack:
         workdir = Path(td)
+        cache = None
+        if resume:
+            cache_dir = validate_output_path(output.parent / f".{output.name}.checkpoints" / "checkpoints.json").parent
+            cache = stack.enter_context(ArtifactCheckpoints(cache_dir))
+            renderer = _renderer_identity()
         # 视频短于所需时长时如何填满：优先命令行，其次 storyboard，默认 auto（慢放/循环，保持画面运动）
         pad_mode = getattr(args, "pad_mode", None) or str(sb.get("pad_mode") or "auto")
         clips = []
         for i, (shot, dur) in enumerate(zip(shots, durations)):
             clip = workdir / f"clip_{i:03d}.mp4"
             print(f"  合成分镜 {i+1}/{len(shots)}（{dur:.1f}s）...", file=sys.stderr)
-            _make_shot_clip(shot, dur, w, h, clip, workdir, pad_mode,
-                            include_audio=native_audio,
-                            preserve_audio=keeps_audio[i],
-                            image_motion=image_motion)
+            render_shot = shot
+            if cache is not None:
+                source_key = "video" if shot.get("video") else "image"
+                source = Path(shot.get(source_key) or "").resolve()
+                render_shot = {**shot, source_key: str(source)}
+            def render(target):
+                _make_shot_clip(render_shot, dur, w, h, target, workdir, pad_mode,
+                                include_audio=native_audio,
+                                preserve_audio=keeps_audio[i],
+                                image_motion=image_motion)
+                if cache is not None:
+                    _validate_shot_clip(target, dur, w, h)
+            if cache is None:
+                render(clip)
+            else:
+                parameters = {"renderer": renderer, "source": str(source),
+                              "kind": "video" if shot.get("video") else "image",
+                              "duration": dur, "width": w, "height": h, "pad_mode": pad_mode,
+                              "include_audio": native_audio, "preserve_audio": keeps_audio[i],
+                              "motion": str(shot.get("motion") or image_motion)}
+                saved, reused = cache.run(f"shot-{i:04d}",
+                                         lambda: fingerprint(parameters, [source]), render)
+                # Keep concat inputs in the existing temporary directory. This
+                # also avoids interpreting project path quotes as concat syntax.
+                shutil.copyfile(saved, clip)
+                if reused:
+                    print(f"  已核验并复用分镜 {i+1}/{len(shots)}", file=sys.stderr)
             clips.append(clip)
 
         # 拼接
@@ -358,8 +467,9 @@ def cmd_assemble(args) -> int:
               "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent)])
 
         video_dur = sum(durations)
-        out = Path(args.output)
+        out = output
         out.parent.mkdir(parents=True, exist_ok=True)
+        delivery = stack.enter_context(atomic_output(out)) if resume else out
 
         # 字幕：优先用户给的 srt，否则用 caption 自动生成
         sub_path = None
@@ -447,9 +557,9 @@ def cmd_assemble(args) -> int:
             escaped = str(ass_path).replace("'", "\\'").replace(":", "\\:")
             _run(["ffmpeg", "-y", "-i", str(stage),
                   "-vf", f"subtitles='{escaped}'",
-                  "-c:a", "copy", str(out)])
+                  "-c:a", "copy", str(delivery)])
         else:
-            shutil.copy(str(stage), str(out))
+            shutil.copy(str(stage), str(delivery))
 
     print(f"✅ 成片已生成：{out}（{video_dur:.1f}s，{w}x{h}）")
     return 0
@@ -624,6 +734,8 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("assemble", help="按 storyboard 合成成片")
     p.add_argument("--storyboard", required=True, help="storyboard JSON 文件路径（- 表示 stdin）")
+    p.add_argument("--resume", action="store_true",
+                   help="保留逐镜头检查点；再次运行时仅复用输入和产物均通过校验的镜头")
     p.add_argument("-o", "--output", required=True,
                    help="成片输出路径；必须位于 outputs/<人类可读主题>/")
     p.add_argument("--sub-font", dest="sub_font", default=None,
@@ -640,7 +752,10 @@ def main() -> int:
     p2 = sub.add_parser("selftest", help="自检（生成测试成片）")
     p2.set_defaults(func=cmd_selftest)
     args = ap.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (CheckpointError, OSError) as error:
+        fail(f"合成未完成：{error}")
 
 
 if __name__ == "__main__":

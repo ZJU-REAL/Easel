@@ -561,6 +561,8 @@ def test_binding_is_hashed_durable_and_cannot_change_owner(tmp_path):
                                        ("opencode", "opencode-ai/bin/opencode")])
 def test_windows_npm_launcher_is_shell_free(tmp_path, monkeypatch, name, script):
     launcher = tmp_path / f"{name}.cmd"
+    target = script.replace("/", "\\")
+    launcher.write_text(f'"%_prog%" "%dp0%\\node_modules\\{target}" %*\n', encoding="utf-8")
     entry = tmp_path / "node_modules" / script
     entry.parent.mkdir(parents=True)
     entry.touch()
@@ -572,6 +574,7 @@ def test_windows_npm_launcher_is_shell_free(tmp_path, monkeypatch, name, script)
 
 def test_windows_opencode_native_executable_launcher(tmp_path, monkeypatch):
     launcher = tmp_path / "opencode.cmd"
+    launcher.write_text('"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe" %*\n', encoding="utf-8")
     native = tmp_path / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
     native.parent.mkdir(parents=True)
     native.touch()
@@ -583,6 +586,8 @@ def test_windows_opencode_native_executable_launcher(tmp_path, monkeypatch):
                                        ("opencode", "opencode-ai/bin/opencode")])
 def test_windows_npm_launcher_prefers_adjacent_node(tmp_path, monkeypatch, name, script):
     launcher = tmp_path / f"{name}.cmd"
+    target = script.replace("/", "\\")
+    launcher.write_text(f'"%_prog%" "%dp0%\\node_modules\\{target}" %*\n', encoding="utf-8")
     entry = tmp_path / "node_modules" / script
     entry.parent.mkdir(parents=True)
     entry.touch()

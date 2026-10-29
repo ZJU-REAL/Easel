@@ -34,6 +34,7 @@ layer: produce
 3. **配音**：[tts-voiceover](../tts-voiceover/SKILL.md) 把文案合成口播（同时出 SRT）。**配了 `VOICE_PROVIDER` 默认走闭源好嗓子**（有情感、像真人），没 key 才退 edge（机械）——想要口播不"生硬"务必配闭源 key。不需要配音才跳过。
 
 4. **字幕**：用 TTS 附带的 SRT，或对配音跑 [auto-subtitle](../auto-subtitle/SKILL.md)；也可让 assemble 用各分镜 caption 自动生成。
+   SRT/caption 自动折行保留英文词间空格，避免闭标点落到行首、开标点落到行尾；字体可由 `--sub-font` 选择。有 Fontconfig 和 Pillow 时按所选字体真实度量估宽，否则使用保守估计；不强制两行，也不改变用户提供的 ASS 排版。
 
 5. **BGM**：[ai-music](../ai-music/SKILL.md) 生成，或用用户提供的音乐。可选。
 
@@ -60,6 +61,17 @@ layer: produce
    `image_motion` 设整条图片默认运动，单镜 `motion` 可覆写：照片用 `ken-burns`，含文字的 slide/图表/界面必须用
    `static`（等比缩放 + 补边，不裁切、不平移）。
    合成器自动做：按 `image_motion` 生成静帧或 Ken Burns、补边到画幅、拼接、配音+BGM 混音（BGM 自动压低）、烧录字幕。
+
+   长流程可在首次合成时加 `--resume`，中断后用同样的参数再次运行：
+   ```bash
+   python skills/builtin/auto-short-video/scripts/assemble.py assemble --resume \
+     --storyboard outputs/成都旅行指南/assets/storyboard.json \
+     -o outputs/成都旅行指南/final.mp4
+   ```
+   已完成镜头在输入参数、素材内容和产物摘要均匹配时复用；修改素材、时长、画幅、运动方式或渲染器会失效。
+   检查点存于成片旁的 `.final.mp4.checkpoints/`，不重复生成图片/视频、不调用付费 API。
+   拼接、混音和字幕每次重新执行；失败时保留上一份成片。未加 `--resume` 时仍使用原有临时目录流程。
+   清单损坏会报错，不自动清空；仅在确认相关进程全部退出后才能人工清理检查点目录。
 
 7. **交付**：产出 final.mp4，附一句制作说明（用了哪些环节、哪些降级了）。
 

@@ -52,6 +52,8 @@
 
 跨两层以上时用 `manifest.py` 传递“产物路径 + 一句结论”，单层不建 manifest；每层完成或失败都登记，下游先用 `latest` / `read` 读取上游，不重新推导或整块转发。完整载荷写文件，关键决策写 `brief.md`；失败后从断点续跑，结束用 `manifest.py meta` 登记 Web 展示信息。
 
+用户要记录当天做成的事、沉淀经验卡片时走 `skill-record-card`：AI 一次一个问题访谈，以用户表达为底稿，补充显式标注并经确认后落盘到 `outputs/<主题>/assets/cards/`；组合策划/制作等层时登记 general 层产物，单层不建 manifest；带新理解回来时升级原卡片（revise），不覆盖历史。
+
 规划/选题/排期前用 `calendar_ops.py context --days 14` 读日历；发布成功会自动写日历和 publish-log，不重复记录。值得长期跟踪的节日、大促和平台活动通过 `skill-event-calendar` 查询，再用 `calendar_ops.py import-events` 导入。具体命令按对应 SKILL 执行。
 
 ## 媒体模型选择

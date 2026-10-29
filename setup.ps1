@@ -186,6 +186,35 @@ function Set-OpenClawConfig([string]$Key, $Value, [switch]$Json, [string]$Label,
 }
 
 # 静默尝试，只返回成败。用于探测哪套 schema 被接受。
+function Set-OpenClawSkillsBudget {
+    $code = @'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from easel.commands.doctor import _openclaw_config_path, _skills_budget_updates
+from easel.direct_api import read_settings
+try:
+    path = _openclaw_config_path()
+    config = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+    environment = read_settings(Path(sys.argv[1]) / ".env")
+    updates = _skills_budget_updates(config, environment)
+except (OSError, ValueError):
+    sys.exit(1)
+for key, value in updates.items():
+    print(f"skills.limits.{key}={value}")
+'@
+    $plan = $code | & $Python - $Root
+    if ($LASTEXITCODE -ne 0) {
+        Add-Warning '技能目录预算' '配置或环境覆盖不可解析；保留现状，不盲写' 'easel doctor'
+        return
+    }
+    foreach ($line in $plan) {
+        if ($line -match '^(skills\.limits\.(?:maxSkillsInPrompt|maxSkillsPromptChars))=([0-9]+)$') {
+            Set-OpenClawConfig $matches[1] $matches[2] -Json -Label '技能目录预算'
+        }
+    }
+}
+
 function Set-OpenClawConfigQuiet([string]$Key, $Value, [switch]$Json) {
     $arguments = @('--profile','easel','config','set',$Key,$Value)
     if ($Json) { $arguments += '--strict-json' }
@@ -435,6 +464,7 @@ if (Test-Path $outputs) {
     if ($outputsItem.LinkType -ne 'Junction') { Fail "$outputs 已存在但不是项目 outputs Junction，请移走后重试。" }
 } else { New-Item -ItemType Junction -Path $outputs -Target (Join-Path $Root 'outputs') | Out-Null }
 
+Set-OpenClawSkillsBudget
 $envValues = Read-EnvFile $envPath
 if (-not $NonInteractive -and -not [Console]::IsInputRedirected -and
     -not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_API_KEY']) -and -not (Test-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and -not (Test-UsableKey $envValues['EASEL_LLM_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_MAAS_API_KEY'])) {

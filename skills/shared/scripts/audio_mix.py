@@ -23,6 +23,7 @@ BGM 自动循环补足并可"闪避"（ducking：旁白说话时自动压低 BGM
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -71,6 +72,18 @@ def _dur(path: Path) -> float:
         return 0.0
 
 
+def _channel_layout(path: Path) -> str | None:
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+         "stream=channel_layout,channels", "-of", "json", str(path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        stream = json.loads(proc.stdout)["streams"][0]
+        return stream.get("channel_layout") or {1: "mono", 2: "stereo"}.get(stream.get("channels"))
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
 def _done(out: Path, extra: str = "") -> None:
     kb = out.stat().st_size / 1024 if out.is_file() else 0
     print(f"✅ {out} ({kb:.0f} KB){(' ' + extra) if extra else ''}")
@@ -100,6 +113,8 @@ def cmd_mix(a) -> int:
     target = a.duration if a.duration else (max(ends) if ends else 0.0)
     if target <= 0:
         _die("无法确定输出时长，请用 --duration 指定。", 2)
+    fade = min(1.5, target / 4)
+    background_fade = f"afade=t=out:st={max(0.0, target - fade):.3f}:d={fade:.3f}"
 
     inputs: list[str] = []
     filt: list[str] = []
@@ -108,25 +123,34 @@ def cmd_mix(a) -> int:
 
     voice_label = None
     if a.voice:
-        inputs += ["-i", str(_require(a.voice))]
-        filt.append(f"[{idx}:a]volume={a.voice_volume},aresample=44100[voice]")
+        voice = _require(a.voice)
+        inputs += ["-i", str(voice)]
+        layout = _channel_layout(voice)
+        audio_format = f",aformat=channel_layouts={layout}" if layout else ""
+        filt.append(f"[{idx}:a]volume={a.voice_volume},aresample=44100{audio_format}[voice]")
         voice_label = "[voice]"
         idx += 1
 
     if a.bgm:
         # 循环补足 + 音量；如需 ducking，用旁白做 sidechain 压 BGM
         loop_args = [] if a.bgm_loop_off else ["-stream_loop", "-1"]
-        inputs += [*loop_args, "-i", str(_require(a.bgm))]
-        filt.append(f"[{idx}:a]volume={a.bgm_volume},aresample=44100[bgm0]")
+        bgm = _require(a.bgm)
+        inputs += [*loop_args, "-i", str(bgm)]
+        layout = _channel_layout(bgm)
+        audio_format = f",aformat=channel_layouts={layout}" if layout else ""
+        filt.append(f"[{idx}:a]volume={a.bgm_volume},aresample=44100{audio_format}[bgm0]")
         idx += 1
         if voice_label and not a.no_duck:
             # 复制旁白作 sidechain 控制信号
-            filt.append(f"{voice_label}asplit=2[voice_m][voice_sc]")
+            filt.append(f"{voice_label}asplit=2[voice_m][voice_sc_raw]")
+            filt.append(f"[voice_sc_raw]apad=whole_dur={target:.3f},"
+                        f"atrim=duration={target:.3f}[voice_sc]")
             voice_label = "[voice_m]"
             filt.append("[bgm0][voice_sc]sidechaincompress="
-                        "threshold=0.03:ratio=8:attack=20:release=300[bgm]")
+                        "threshold=0.03:ratio=8:attack=20:release=300[bgmduck]")
+            filt.append(f"[bgmduck]{background_fade}[bgm]")
         else:
-            filt.append("[bgm0]anull[bgm]")
+            filt.append(f"[bgm0]{background_fade}[bgm]")
         mix_labels.append("[bgm]")
 
     if voice_label:
@@ -137,7 +161,7 @@ def cmd_mix(a) -> int:
         ms = int(at * 1000)
         inputs += ["-i", str(_require(s))]
         filt.append(f"[{idx}:a]volume={a.sfx_volume},adelay={ms}|{ms},"
-                    f"aresample=44100[sfx{i}]")
+                    f"aresample=44100,{background_fade}[sfx{i}]")
         mix_labels.append(f"[sfx{i}]")
         idx += 1
 
@@ -148,15 +172,13 @@ def cmd_mix(a) -> int:
     else:
         filt.append(f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:"
                     f"duration=longest:normalize=0:dropout_transition=0[mixout]")
-    # 末尾淡出，避免 BGM 硬切
-    fade = min(1.5, target / 4)
-    filt.append(f"[mixout]afade=t=out:st={max(0.0, target - fade):.3f}:d={fade:.3f}[out]")
+    filt.append("[mixout]anull[out]")
 
     out = _prep_out(a.output)
     _run(["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(filt),
           "-map", "[out]", "-t", f"{target:.3f}", str(out)])
     duck = "闪避" if (a.voice and a.bgm and not a.no_duck) else "无闪避"
-    _done(out, f"({len(mix_labels)} 轨 / {target:.1f}s / {duck})")
+    _done(out, f"({len(mix_labels)} 轨 / {_dur(out):.1f}s / {duck})")
     return 0
 
 
@@ -198,7 +220,24 @@ def cmd_selftest(_a) -> int:
                                    duration=None, output=str(out3)))
         assert 9.0 < _dur(out3) < 11.0, "仅 BGM 时长应≈10s"
 
-    print("✅ selftest 全部通过（旁白+BGM闪避 / 定时音效 / 仅BGM）")
+        import wave
+        out4 = d / "voiceonly.wav"
+        cmd_mix(argparse.Namespace(voice=str(voice), voice_volume=1.0, bgm=None,
+                                   bgm_volume=0.25, bgm_loop_off=False, no_duck=False,
+                                   sfx=None, sfx_at=None, sfx_volume=0.8,
+                                   duration=None, output=str(out4)))
+        with wave.open(str(voice), "rb") as source, wave.open(str(out4), "rb") as mixed:
+            assert source.readframes(source.getnframes()) == mixed.readframes(mixed.getnframes()), \
+                "只有旁白时，结尾不应淡出"
+
+        out5 = d / "extended.wav"
+        cmd_mix(argparse.Namespace(voice=str(voice), voice_volume=1.0, bgm=str(bgm),
+                                   bgm_volume=0.25, bgm_loop_off=False, no_duck=False,
+                                   sfx=None, sfx_at=None, sfx_volume=0.8,
+                                   duration=6.0, output=str(out5)))
+        assert abs(_dur(out5) - 6.0) < 0.01, "闪避控制信号不能截断指定的混音时长"
+
+    print("✅ selftest 全部通过（旁白+BGM闪避 / 定时音效 / 仅BGM / 旁白结尾 / 延长时长）")
     return 0
 
 

@@ -257,6 +257,36 @@ run_step() {   # $1 label  其余为命令
     "$@"
 }
 
+oc_configure_skills_budget() {
+    local plan key value
+    if ! plan="$(python3 - "$PROJECT_ROOT" <<'PY'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from easel.commands.doctor import _openclaw_config_path, _skills_budget_updates
+from easel.direct_api import read_settings
+try:
+    path = _openclaw_config_path()
+    config = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+    environment = read_settings(Path(sys.argv[1]) / ".env")
+    updates = _skills_budget_updates(config, environment)
+except (OSError, ValueError):
+    sys.exit(1)
+for key, value in updates.items():
+    print(f"skills.limits.{key}={value}")
+PY
+)"; then
+        warn_collect '技能目录预算' '配置或环境覆盖不可解析；保留现状，不盲写' 'easel doctor'
+        return 0
+    fi
+    while IFS='=' read -r key value; do
+        [ -n "$key" ] || continue
+        if ! oc_try "$key" "$value" --json; then
+            warn_collect '技能目录预算' "当前 OpenClaw 不接受 $key；保留该项现状（可能版本不支持）" 'easel doctor'
+        fi
+    done <<< "$plan"
+}
+
 # ---- 安装报告 ----
 # 把本次安装的遗留问题落盘，供 `easel doctor` 复述。这样「装完还差什么」不依赖用户
 # 记住十几分钟前滚过去的终端输出。
@@ -712,6 +742,7 @@ if [ "$SYNC_RC" -ne 0 ]; then
     warn_collect '技能同步' "agents/sync.sh 退出码 $SYNC_RC；技能可能没进 agent 实际读取的 workspace" \
         'bash agents/sync.sh' high
 fi
+oc_configure_skills_budget
 
 # ---- 9. 认证信息写入 Easel 专属 OpenClaw config ----
 info "同步认证到 OpenClaw profile..."
@@ -956,12 +987,36 @@ PY
 elif [ "$STANDARD_LLM_CONFIGURED" = false ] && usable_key "${GEMINI_MAAS_API_KEY:-}"; then
     GEMINI_PROVIDER="rednote-gemini"
     GEMINI_MODEL="${GEMINI_MAAS_MODEL:-gemini-3.1-pro-preview}"
+    GEMINI_CONTEXT_WINDOW="${GEMINI_CONTEXT_WINDOW:-1048576}"
+    GEMINI_MAX_TOKENS="${GEMINI_MAX_TOKENS:-65535}"
+    if ! GEMINI_MODELS_CONFIG=$(GEMINI_MODEL="$GEMINI_MODEL" \
+        GEMINI_CONTEXT_WINDOW="$GEMINI_CONTEXT_WINDOW" GEMINI_MAX_TOKENS="$GEMINI_MAX_TOKENS" \
+        python3 - <<'PYGEMINI'
+import json
+import os
+import re
+import sys
+
+values = [os.environ[key] for key in ("GEMINI_CONTEXT_WINDOW", "GEMINI_MAX_TOKENS")]
+if any(not re.fullmatch(r"[0-9]{1,16}", value) for value in values):
+    sys.exit(1)
+window, tokens = map(int, values)
+if not 0 < tokens <= window <= 9007199254740991:
+    sys.exit(1)
+print(json.dumps([{"id": os.environ["GEMINI_MODEL"], "name": "Gemini-compatible model",
+                   "reasoning": True, "input": ["text", "image"],
+                   "contextWindow": window, "maxTokens": tokens}], separators=(",", ":")))
+PYGEMINI
+    ); then
+        echo "GEMINI_CONTEXT_WINDOW / GEMINI_MAX_TOKENS 必须为正整数，且输出上限不能超过上下文窗口。" >&2
+        exit 1
+    fi
     oc_set 'Gemini 本地适配器' models.providers."$GEMINI_PROVIDER".baseUrl \
         "http://127.0.0.1:${GEMINI_ADAPTER_PORT:-18790}/v1"
     oc_set 'Gemini 本地适配器' models.providers."$GEMINI_PROVIDER".api "openai-completions"
     oc_set 'Gemini 本地适配器' models.providers."$GEMINI_PROVIDER".apiKey "local-adapter"
     oc_set 'Gemini 本地适配器' models.providers."$GEMINI_PROVIDER".models \
-        "[{\"id\":\"$GEMINI_MODEL\",\"name\":\"Gemini-compatible model\",\"reasoning\":true,\"input\":[\"text\",\"image\"],\"contextWindow\":1048576,\"maxTokens\":65535}]" \
+        "$GEMINI_MODELS_CONFIG" \
         --json
     oc_set 'Gemini 本地适配器' models.providers."$GEMINI_PROVIDER".timeoutSeconds 600 --json
     oc_set 'Gemini 本地适配器' models.providers."$GEMINI_PROVIDER".request.allowPrivateNetwork true --json

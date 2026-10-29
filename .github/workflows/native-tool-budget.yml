@@ -1,0 +1,41 @@
+name: Native tool budget acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'agents/tool-budget/**'
+      - 'tests/frontend/toolBudget*.test.mjs'
+      - 'scripts/verify_native_tool_budget.mjs'
+      - '.github/workflows/native-tool-budget.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-budget:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.19.0'
+      - name: Install isolated pinned native runtime
+        shell: bash
+        run: npm install --prefix "$RUNNER_TEMP/budget-runtime" --ignore-scripts --no-audit --no-fund openclaw@2026.10.2
+      - name: Verify admission ledger and hook adapter
+        run: node --test tests/frontend/toolBudget*.test.mjs
+      - name: Verify native direct tools, concurrent stop isolation, and thinking deadline
+        shell: bash
+        run: node scripts/verify_native_tool_budget.mjs "$RUNNER_TEMP/budget-runtime/node_modules/openclaw"
+      - name: Verify native Tool Search uses the same budget
+        shell: bash
+        run: node scripts/verify_native_tool_budget.mjs "$RUNNER_TEMP/budget-runtime/node_modules/openclaw" --tool-search
+      - name: Verify unconfigured plugin leaves calls and runtime unrestricted
+        shell: bash
+        run: node scripts/verify_native_tool_budget.mjs "$RUNNER_TEMP/budget-runtime/node_modules/openclaw" --unlimited
