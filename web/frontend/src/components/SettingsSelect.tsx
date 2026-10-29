@@ -146,6 +146,6 @@ export function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pul
         </div>
       ))}
     </div>,
-    document.body,
+    anchor?.closest('dialog[open]') || document.body,
   );
 }

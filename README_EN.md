@@ -95,6 +95,8 @@ Easel follows five connected workflows: **Discover** relevant trends and opportu
 
 ## 🧰 Implemented Capabilities
 
+The trend radar accepts user-defined Python collectors, HTTP services, and RSS/Atom feeds through a versioned data contract. Its existing six platforms use the same pipeline; adding your own source does not require changing the frontend.
+
 | Layer | Capabilities |
 |---|---|
 | **Discover** | Cross-platform trends, vertical research, content-gap analysis, event calendars, algorithm updates, competitor research, industry news, platform differences, RSS aggregation, and UGC discovery |
@@ -320,6 +322,7 @@ Easel uses an isolated `easel` OpenClaw profile and does not overwrite an existi
 
 ## 📑 Documentation
 
+- [Trend collectors: Python scripts / HTTP services / RSS feeds (Chinese)](docs/trend-collectors.md)
 - [Capability map](docs/skill-function-mapping.md)
 - [SKILL interface specification](docs/SKILL-SPEC.md)
 - [Prompt and architecture layers](docs/prompt-stack.md)
