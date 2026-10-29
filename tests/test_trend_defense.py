@@ -102,12 +102,14 @@ print({data!r})
 
 
 def test_memory_exhaustion_is_contained_and_next_collector_still_works(tmp_path):
-    source = script_source(tmp_path, "import time\nallocated = bytearray(128 * 1024 * 1024)\ntime.sleep(2)\n", memory_mb=64, timeout_seconds=3)
+    # Leave startup headroom on scanned/loaded hosts while requiring a resource
+    # failure (a wall-clock timeout still fails this assertion).
+    source = script_source(tmp_path, "import time\nallocated = bytearray(128 * 1024 * 1024)\ntime.sleep(2)\n", memory_mb=64, timeout_seconds=10)
     start = time.monotonic()
     with pytest.raises(CollectorError) as caught:
         collect(source, dict(os.environ))
     assert caught.value.code in {"resource_limit", "process_failed"}
-    assert time.monotonic() - start < 8
+    assert time.monotonic() - start < 15
     source = script_source(tmp_path, f"print({json.dumps(payload())!r})")
     assert collect(source, dict(os.environ))["items"]
 

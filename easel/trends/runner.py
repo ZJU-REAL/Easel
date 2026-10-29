@@ -31,11 +31,8 @@ def _stop(proc: subprocess.Popen) -> None:
                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=TIMEOUT_TREND_STARTUP)
         except (OSError, subprocess.TimeoutExpired):
             proc.kill()
-    else:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+    # The worker's Python child is not a process-group leader. The outer parent
+    # owns group cleanup; addressing this child's PID as a PGID can fail on macOS.
     if proc.poll() is None:
         proc.kill()
     proc.wait(timeout=TIMEOUT_TREND_STARTUP)
@@ -218,5 +215,11 @@ def collect(source: Source, environment: dict[str, str]) -> dict:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+                except PermissionError:
+                    # Darwin may report EPERM for a group that has just vanished.
+                    # A live worker with denied cleanup is an isolation failure.
+                    if process.poll() is None:
+                        _stop(process)
+                        raise CollectorError("isolation_failed") from None
             if process is not None and process.poll() is None:
                 _stop(process)

@@ -9,10 +9,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from easel.trends import environment, process_limits
+from easel.trends import environment, process_limits, runner
 from easel.trends.protocol import CollectorError, utc_now
 from easel.trends.runner import collect
 from easel.trends.sources import load_sources
+
+
+def test_child_cleanup_does_not_treat_child_pid_as_group_id(monkeypatch):
+    calls = []
+    child = SimpleNamespace(pid=123, poll=lambda: None,
+                            kill=lambda: calls.append('kill'),
+                            wait=lambda **kwargs: calls.append('wait'))
+    def wrong_group(*args):
+        pytest.fail('Python child cleanup must not address an unrelated process group')
+    monkeypatch.setattr(runner, 'os', SimpleNamespace(name='posix', killpg=wrong_group))
+    runner._stop(child)
+    assert calls == ['kill', 'wait']
 
 
 def test_unix_proxy_aliases_respect_explicit_empty_values(monkeypatch):
