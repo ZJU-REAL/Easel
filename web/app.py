@@ -5352,116 +5352,88 @@ async def api_delete_session(session_key: str):
     return {'deleted': False, 'reason': 'session not found'}
 
 
-TREND_SOURCES: dict[str, tuple[str, str | None]] = {
-    "weibo": ("https://v2.xxapi.cn/api/weibohot", "https://60s.viki.moe/v2/weibo"),
-    "douyin": ("https://v2.xxapi.cn/api/douyinhot", "https://60s.viki.moe/v2/douyin"),
-    "zhihu": ("https://api.zhihu.com/topstory/hot-list?limit=50", "https://60s.viki.moe/v2/zhihu"),
-    "bilibili": ("https://v2.xxapi.cn/api/bilibilihot", "https://60s.viki.moe/v2/bili"),
-    "baidu": ("https://v2.xxapi.cn/api/baiduhot", "https://60s.viki.moe/v2/baidu/hot"),
-    "toutiao": ("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
-                "https://60s.viki.moe/v2/toutiao"),
-}
-TREND_LABELS = {
-    "weibo": "微博",
-    "douyin": "抖音",
-    "zhihu": "知乎",
-    "bilibili": "B站",
-    "baidu": "百度",
-    "toutiao": "头条",
-}
-_TREND_CACHE: dict[str, tuple[float, list]] = {}
-_HOT_TITLE_KEYS = ("title", "Title", "word", "name", "keyword")
-_HOT_HOT_KEYS = ("hot", "hot_value", "HotValue", "hotValue", "num", "detail_text")
-_HOT_URL_KEYS = ("url", "Url", "link", "mobil_url")
+# Source commands/URLs are loaded exclusively from a trusted local configuration file.
+# The browser only selects registered IDs; it cannot supply executable commands.
+from easel.trends.service import TrendService, failure_group as trend_failure_group
+from easel.trends.sources import ConfigError as TrendConfigError, load_sources as load_trend_sources
+from easel.trends import management as trend_management
+from easel.trends.protocol import CollectorError as TrendCollectorError, safe_json as trend_safe_json
+from easel.trends.protocol import MAX_MANAGEMENT_BYTES
+
+_TREND_SERVICE = TrendService()
 
 
-def _http_get_json(url: str, timeout: int = 8):
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-    })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+def _trend_registry():
+    warnings = []
+    try:
+        environment = read_settings(ENV_FILE)
+        sources = load_trend_sources(PROJECT_ROOT, environment, warnings=warnings)
+        return sources, environment, warnings
+    except Exception:
+        return [], {}, ["热点配置暂时无法读取，请检查本地配置；其他工作台功能不受影响。"]
 
 
-def _pick_str(data: object, keys: tuple[str, ...]) -> str:
-    if not isinstance(data, dict):
-        return ""
-    for key in keys:
-        value = data.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return str(value)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+@app.get("/api/trends/sources")
+async def api_trend_sources():
+    sources, _, warnings = _trend_registry()
+    return {"version": 1, "sources": [source.public() for source in sources], "warnings": warnings}
 
 
-def _trend_web_url(url: str) -> str:
-    match = re.fullmatch(r'https?://api\.zhihu\.com/questions/(\d+)', url)
-    return f'https://www.zhihu.com/question/{match.group(1)}' if match else url
+def _trend_manager_guard(request: Request):
+    # Check the real transport peer even when Origin/Host have been forged by a remote client.
+    if not _loopback_peer(request) or (request.headers.get("origin") and request.headers["origin"] not in _LOCAL_ORIGINS):
+        raise HTTPException(403, "数据源管理仅允许本机操作")
 
 
-def _parse_hot(obj: object) -> list[dict]:
-    data = obj.get("data") if isinstance(obj, dict) else None
-    if isinstance(data, dict):
-        data = data.get("data") or data.get("list") or []
-    out: list[dict] = []
-    if not isinstance(data, list):
-        return out
-    for item in data:
-        if isinstance(item, str):
-            if item.strip():
-                out.append({"title": item.strip(), "hot": "", "url": ""})
-            continue
-        if not isinstance(item, dict):
-            continue
-        target = item.get("target") if isinstance(item.get("target"), dict) else {}
-        title = _pick_str(item, _HOT_TITLE_KEYS) or _pick_str(target, _HOT_TITLE_KEYS)
-        if not title:
-            continue
-        hot = _pick_str(item, _HOT_HOT_KEYS) or _pick_str(target.get("metrics_area"), ("text",))
-        url = _pick_str(item, _HOT_URL_KEYS) or _pick_str(target, _HOT_URL_KEYS)
-        out.append({"title": title, "hot": hot, "url": _trend_web_url(url)})
-    return out
+@app.get("/api/trends/manage")
+async def api_trend_manage(request: Request):
+    _trend_manager_guard(request)
+    try:
+        return await asyncio.to_thread(trend_management.describe, PROJECT_ROOT, read_settings(ENV_FILE))
+    except Exception:
+        raise HTTPException(409, "无法读取数据源管理配置，请修复本地配置文件后重试") from None
 
 
-def _fetch_platform(pf: str) -> list[dict]:
-    primary, backup = TREND_SOURCES.get(pf, (None, None))
-    for url in (primary, backup):
-        if not url:
-            continue
-        try:
-            items = _parse_hot(_http_get_json(url))
-            if items:
-                return items
-        except Exception:
-            continue
-    return []
+@app.post("/api/trends/manage")
+async def api_trend_manage_write(request: Request):
+    _trend_manager_guard(request)
+    length = request.headers.get("content-length", "")
+    if length and (not length.isascii() or not length.isdigit() or len(length) > 10):
+        raise HTTPException(400, "无效的请求长度")
+    if length.isdigit() and int(length) > MAX_MANAGEMENT_BYTES:
+        raise HTTPException(413, "数据源操作最多 256 KiB")
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_MANAGEMENT_BYTES:
+            raise HTTPException(413, "数据源操作最多 256 KiB")
+        raw.extend(chunk)
+    try:
+        value = trend_safe_json(bytes(raw), MAX_MANAGEMENT_BYTES)
+        if not isinstance(value, dict):
+            raise TrendConfigError("数据源操作必须是对象")
+        return await asyncio.to_thread(trend_management.update, PROJECT_ROOT, read_settings(ENV_FILE), value)
+    except TrendConfigError as error:
+        raise HTTPException(400, str(error)) from None
+    except TrendCollectorError:
+        raise HTTPException(400, "数据源操作不是有效 JSON 或字段过深") from None
+    except Exception:
+        raise HTTPException(409, "配置保存失败，原配置已保留，请检查文件权限或修复配置") from None
 
 
 @app.get("/api/trends")
-async def api_trends(platforms: str = "weibo,douyin,zhihu", limit: int = 12):
-    pfs = [p.strip() for p in platforms.split(",") if p.strip() in TREND_SOURCES]
-    now = time.time()
-    loop = asyncio.get_event_loop()
-    result = []
-    for pf in pfs:
-        c = _TREND_CACHE.get(pf)
-        if c and now - c[0] < 300:
-            items = c[1]
-        else:
-            items = await loop.run_in_executor(None, _fetch_platform, pf)
-            if items:
-                _TREND_CACHE[pf] = (now, items)
-            elif c:
-                items = c[1]
-        result.append({
-            "platform": pf,
-            "label": TREND_LABELS.get(pf, pf),
-            "items": items[:max(1, min(limit, 30))],
-            "ok": bool(items),
-        })
-    return {"trends": result, "updated": int(now)}
+async def api_trends(platforms: str | None = None, limit: int = 12):
+    if platforms is not None and len(platforms) > 8192:
+        raise HTTPException(400, "数据源查询过长")
+    sources, environment, warnings = _trend_registry()
+    registry = {source.id: source for source in sources}
+    selected = ([source.id for source in sources if source.default] if platforms is None else
+                list(dict.fromkeys(p.strip() for p in platforms.split(",") if p.strip() in registry)))
+    results = await asyncio.gather(*(
+        asyncio.to_thread(_TREND_SERVICE.get, registry[identifier], environment, max(1, min(limit, 30)))
+        for identifier in selected), return_exceptions=True)
+    groups = [result if isinstance(result, dict) else trend_failure_group(registry[identifier])
+              for identifier, result in zip(selected, results)]
+    return {"version": 1, "trends": groups, "updated": int(time.time()), "warnings": warnings}
 
 
 SCHEDULE_FILE = OUTPUTS_DIR / "_schedule.json"

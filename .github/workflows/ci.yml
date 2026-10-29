@@ -9,12 +9,18 @@ on:
     # 排队时间明显更长。
     - cron: '17 3 * * *'
   workflow_dispatch:
+    inputs:
+      source_validation_only:
+        description: '仅运行自定义数据源跨平台验证，不触发完整安装'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   validate-skills:
+    if: github.event_name != 'workflow_dispatch' || !inputs.source_validation_only
     name: Skill contracts
     runs-on: ubuntu-latest
     steps:
@@ -30,6 +36,7 @@ jobs:
         run: python scripts/validate_document_paths.py
 
   test:
+    if: github.event_name != 'workflow_dispatch' || !inputs.source_validation_only
     name: pytest (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -52,7 +59,26 @@ jobs:
         timeout-minutes: 10
         run: python -m pytest -v -o faulthandler_timeout=90
 
+  trend-portability:
+    name: Custom sources (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install source test dependencies
+        run: python -m pip install pytest fastapi httpx uvicorn sse-starlette python-multipart requests websocket-client cryptography
+      - name: Verify source protocol, file selection and process boundaries
+        run: python -m pytest -q tests/test_trends.py tests/test_trend_collectors.py tests/test_trend_rss.py tests/test_trend_defense.py tests/test_trend_uploads.py tests/test_trend_portability.py
+
   harness-portability:
+    if: github.event_name != 'workflow_dispatch' || !inputs.source_validation_only
     name: Agent settings (${{ matrix.os }}, Python ${{ matrix.python }})
     strategy:
       fail-fast: false
@@ -74,6 +100,7 @@ jobs:
   # 遍却没人发现，根因就在这里。这个 job 全程在 ubuntu 上跑（shellcheck 与 PSScriptAnalyzer
   # 都是跨平台的），~90s，不下载任何东西，适合挂在每个 PR 上。
   lint-installers:
+    if: github.event_name != 'workflow_dispatch' || !inputs.source_validation_only
     name: Installer lint
     runs-on: ubuntu-latest
     steps:
@@ -131,6 +158,7 @@ jobs:
   # （ErrorActionPreference=Continue）去掉，pwsh 7 上测试照样通过 —— 所以这个
   # job 是该缺陷类唯一真正的把关点。5.1 是 Windows 自带版本，必须先跑它。
   powershell-tolerance:
+    if: github.event_name != 'workflow_dispatch' || !inputs.source_validation_only
     name: PowerShell tolerance (${{ matrix.shell }})
     runs-on: windows-latest
     strategy:
@@ -151,6 +179,7 @@ jobs:
   # 现有 test job 从不构建前端，而 doctor.py 把 web/frontend/dist/index.html 当作安装成功的
   # 判据之一 —— TypeScript 一旦编译不过，CI 全绿而用户装完打开是空白页。
   frontend:
+    if: github.event_name != 'workflow_dispatch' || !inputs.source_validation_only
     name: Frontend build
     runs-on: ubuntu-latest
     defaults:
@@ -176,8 +205,8 @@ jobs:
   install-real:
     name: Real install (${{ matrix.os }})
     if: >-
-      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-      || contains(github.event.pull_request.labels.*.name, 'ci:full-install')
+      !inputs.source_validation_only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      || contains(github.event.pull_request.labels.*.name, 'ci:full-install'))
     strategy:
       fail-fast: false
       matrix:
