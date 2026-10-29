@@ -39,11 +39,15 @@ PROFILE = "easel"
 
 
 def _proxy_env() -> dict[str, str]:
-    """返回带外网代理的环境变量（保护内网直连）。"""
+    """返回带外网代理的环境变量（保护内网直连）。
+    EASEL_PROXY 进程环境优先，其次 .env（设置页「网络代理」持久化，read_settings 已含此序）。"""
     env = os.environ.copy()
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
-    env.setdefault("http_proxy", os.environ.get("EASEL_PROXY", ""))
-    env.setdefault("https_proxy", os.environ.get("EASEL_PROXY", ""))
+    proxy = read_settings().get("EASEL_PROXY", "").strip()
+    if proxy:
+        env["EASEL_PROXY"] = proxy   # 显式回写：.env 来源的代理对子进程同样可见
+    env.setdefault("http_proxy", proxy)
+    env.setdefault("https_proxy", proxy)
     env.setdefault("no_proxy", "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*")
     return env
 
@@ -236,12 +240,33 @@ def _warn_stale_frontend() -> None:
               file=sys.stderr)
 
 
+def _warn_unwritable_profiles_dir(profiles_dir: Path | None = None) -> None:
+    """浏览器登录态目录不可写时启动前警告。
+
+    从受限沙箱/代理工具里启动 easel web 时，工作区外写入会被拒（EPERM），
+    所有登录 runner 在 profile.mkdir 处崩溃（退出码 1），扫码/窗口登录全挂。
+    探针：真实建删一个临时文件，等价于登录 runner 要做的最小写操作。
+    """
+    d = profiles_dir or (Path.home() / ".easel-browser-profiles")
+    probe = d / ".write-probe"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError:
+        print(f"{RED}⚠ 浏览器登录态目录不可写：{d}{NC}\n"
+              f"{RED}  各平台扫码/窗口登录会全部失败（子进程 EPERM）。请在终端里直接运行"
+              f" easel web，不要从受限沙箱或文件权限受限的工具里启动。{NC}",
+              file=sys.stderr)
+
+
 def cmd_web(args) -> int:
     """启动 Web 工作台（FastAPI + React），默认 http://localhost:7860。"""
     from easel.runtime_env import web_environment
 
     port = getattr(args, "port", 7860)
     _warn_stale_frontend()
+    _warn_unwritable_profiles_dir()
     env = web_environment(_proxy_env())
     env["EASEL_PORT"] = str(port)
     script = PROJECT_ROOT / "web" / "app.py"

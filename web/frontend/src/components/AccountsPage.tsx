@@ -22,6 +22,7 @@ const STATE_LABEL: Record<string, string> = {
   scanned: '扫码成功',
   sms_required: '需短信验证',
   verifying: '验证中…',
+  window_login: '请在浏览器窗口登录',
   success: '登录成功 ✅',
   expired: '二维码已过期',
   error: '登录出错',
@@ -465,7 +466,9 @@ export default function AccountsPage() {
             <div style={{ fontSize: 13, marginBottom: 14,
               color: qr.state === 'success' ? 'var(--green)'
                 : ['error', 'expired'].includes(qr.state) ? 'var(--red)' : 'var(--text-secondary)' }}>
-              {STATE_LABEL[qr.state] || qr.state}{qr.message ? ` — ${qr.message}` : ''}
+              {/* 窗口登录（X）没有二维码，expired 表示「窗口登录超时」而非「二维码过期」 */}
+              {(qr.state === 'expired' && !qr.qr ? '登录超时/未完成' : STATE_LABEL[qr.state]) || qr.state}
+              {qr.message ? ` — ${qr.message}` : ''}
             </div>
             {qr.state === 'sms_required' ? (
               <div style={{ padding: '6px 4px 2px' }}>
@@ -496,6 +499,10 @@ export default function AccountsPage() {
               </div>
             ) : qr.state === 'verifying' ? (
               <div className="loading" style={{ padding: 40 }}><div className="spinner" />正在验证验证码，登录中…</div>
+            ) : qr.state === 'window_login' ? (
+              // 无扫码平台（X）：本机弹有头浏览器窗口，用户在窗口里手动登录
+              <div className="loading" style={{ padding: 40 }}><div className="spinner" />
+                {qr.message || '请在弹出的浏览器窗口中完成登录'}</div>
             ) : qr.state === 'success' ? (
               <div style={{ fontSize: 48, padding: 40 }}>✅</div>
             ) : ['error', 'expired'].includes(qr.state) ? (

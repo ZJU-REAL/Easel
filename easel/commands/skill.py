@@ -87,11 +87,17 @@ def _check_profile_exists(name: str) -> bool:
 
 
 def _proxy_env() -> dict[str, str]:
-    """返回带外网代理的环境变量（保护内网直连）。"""
+    """返回带外网代理的环境变量（保护内网直连）。
+    EASEL_PROXY 进程环境优先，其次 .env（设置页「网络代理」持久化）。"""
+    from easel.direct_api import read_settings
+
     env = os.environ.copy()
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
-    env.setdefault("http_proxy", os.environ.get("EASEL_PROXY", ""))
-    env.setdefault("https_proxy", os.environ.get("EASEL_PROXY", ""))
+    proxy = read_settings().get("EASEL_PROXY", "").strip()
+    if proxy:
+        env["EASEL_PROXY"] = proxy   # 显式回写：.env 来源的代理对子进程同样可见
+    env.setdefault("http_proxy", proxy)
+    env.setdefault("https_proxy", proxy)
     env.setdefault("no_proxy", "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*")
     return env
 

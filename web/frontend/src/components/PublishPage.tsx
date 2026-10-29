@@ -19,14 +19,16 @@ const PLATFORMS: { key: string; label: string; titleLimit?: number; bodyLimit: n
   { key: 'kuaishou', label: '快手', titleLimit: 30, bodyLimit: 1000, hint: '视频或图片(图文)，标题≤30，需附媒体' },
   { key: 'weixin-channels', label: '视频号', bodyLimit: 1000, hint: '需附视频，短描述+话题标签，微信扫码登录' },
   { key: 'zhihu', label: '知乎', bodyLimit: 5000, hint: '长文/回答，讲清逻辑' },
+  { key: 'juejin', label: '掘金', titleLimit: 100, bodyLimit: 20000, hint: '技术文章（Markdown），标题≤100；发布默认分类，标签需掘金已有标签' },
   { key: 'bilibili', label: 'B站', titleLimit: 80, bodyLimit: 2000, hint: '需附视频，标题≤80、简介≤2000，默认投「知识」分区' },
   { key: 'wechat-oa', label: '公众号', titleLimit: 64, bodyLimit: 20000, hint: '图文文章，正文用 Markdown，首图作封面，发到草稿箱；需先在账号页「登录公众号后台」扫码' },
+  { key: 'twitter-x', label: '推特 X', bodyLimit: 280, hint: '推文=标题+正文合并≤280 字符（超限按钮置灰）；可附 1 图或 1 视频；登录走弹出窗口，需外网代理' },
 ];
 const LABEL2KEY = Object.fromEntries(PLATFORMS.map((p) => [p.label, p.key]));
 
 // 能一键发布的平台（有后端 publisher）
-const PUBLISHABLE = new Set(['xiaohongshu', 'douyin', 'kuaishou', 'weixin-channels', 'zhihu', 'bilibili', 'wechat-oa']);
-// 必须附带媒体的平台（无媒体发不了）——公众号需要一张封面图，也计入
+const PUBLISHABLE = new Set(['xiaohongshu', 'douyin', 'kuaishou', 'weixin-channels', 'zhihu', 'juejin', 'bilibili', 'wechat-oa', 'twitter-x']);
+// 必须附带媒体的平台（无媒体发不了）——公众号需要一张封面图，也计入；X 纯文字推文合法，不计入
 const MEDIA_REQUIRED = new Set(['xiaohongshu', 'douyin', 'kuaishou', 'weixin-channels', 'bilibili', 'wechat-oa']);
 // 只能发视频的平台（抖音/视频号/B站：图文不走此链路，必须视频）
 const VIDEO_ONLY = new Set(['douyin', 'weixin-channels', 'bilibili']);

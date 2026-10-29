@@ -8,8 +8,9 @@ import {
   fetchEnvTools, startEnvInstall, fetchEnvJob,
   fetchModelChannels, runChannelSelftest, saveModelConfig,
   fetchLocalAgents, enableLocalAgent, fetchAvailableModels,
+  fetchProxySettings, saveProxySettings,
 } from '../lib/api';
-import type { EnvTool, ModelRow, SelftestResult, LocalAgentInfo } from '../lib/api';
+import type { EnvTool, ModelRow, SelftestResult, LocalAgentInfo, ProxySettings } from '../lib/api';
 import { IconSlidersHorizontal, IconPackage, IconEllipsis } from './settingsIcons';
 
 interface Props {
@@ -90,6 +91,37 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   useEffect(() => {
     if (sec === 'env') void refreshEnv();
   }, [sec, refreshEnv]);
+
+  // ── 更多设置：网络代理（EASEL_PROXY，落 .env，保存即生效） ──────────────
+  const [proxyCfg, setProxyCfg] = useState<ProxySettings | null>(null);
+  const [proxyInput, setProxyInput] = useState('');
+  const [proxyBusy, setProxyBusy] = useState(false);
+  const [proxyMsg, setProxyMsg] = useState('');
+  const [proxyErr, setProxyErr] = useState('');
+
+  useEffect(() => {
+    if (sec !== 'more') return;
+    fetchProxySettings()
+      .then((d) => { setProxyCfg(d); setProxyInput(d.proxy); setProxyErr(''); setProxyMsg(''); })
+      .catch(() => setProxyErr('读取代理配置失败'));
+  }, [sec]);
+
+  const saveProxy = useCallback(async (value?: string) => {
+    const proxy = (value ?? proxyInput).trim();
+    setProxyBusy(true); setProxyErr(''); setProxyMsg('');
+    try {
+      const r = await saveProxySettings(proxy);
+      setProxyCfg({ proxy: r.proxy, source: (r.source as ProxySettings['source']) || 'none' });
+      setProxyInput(r.proxy);
+      setProxyMsg(r.proxy ? `已保存：${r.proxy} —— 立即生效，无需重启` : '已清除代理配置');
+    } catch (e) {
+      setProxyErr(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setProxyBusy(false);
+    }
+  }, [proxyInput]);
+
+  const clearProxy = useCallback(() => { setProxyInput(''); void saveProxy(''); }, [saveProxy]);
 
   const batchMode = useRef(false);
 
@@ -891,14 +923,52 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
             {sec === 'more' && (
               <section className="st-sec active">
                 <div className="panel-top">
-                  <span className="pill off"><span className="dot" />可扩展位</span>
-                  <span className="desc">同一个面板，以后放更多设置</span>
+                  <span className={`pill ${proxyCfg?.proxy ? 'ok' : 'off'}`}><span className="dot" />
+                    {proxyCfg?.proxy ? '代理已配置' : '代理未配置'}</span>
+                  <span className="desc">外网代理：X / YouTube 登录发布、热点拉取等外网访问使用；国内平台始终直连</span>
+                  <span className="spacer" />
                 </div>
                 <div className="board">
-                  <div className="stub-row"><span className="tag2">预留</span>网关参数（端口 / 绑定 / 会话）<span className="future">就挂在这页旁边</span></div>
+                  <div style={{ padding: 14 }}>
+                    <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>
+                      网络代理（EASEL_PROXY）
+                    </label>
+                    <input
+                      className="field"
+                      style={{ width: '100%', boxSizing: 'border-box' }}
+                      value={proxyInput}
+                      disabled={proxyCfg?.source === 'env' || proxyBusy}
+                      onChange={(e) => { setProxyInput(e.target.value); setProxyErr(''); setProxyMsg(''); }}
+                      placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080"
+                    />
+                    {proxyCfg?.source === 'env' && (
+                      <div className="foot-note" style={{ marginTop: 8 }}>
+                        启动环境已固定 EASEL_PROXY 环境变量，此处只读；要修改请调整启动环境后重启。
+                      </div>
+                    )}
+                    {proxyErr && <div className="env-error" style={{ marginTop: 8 }}>{proxyErr}</div>}
+                    {proxyMsg && <div className="foot-note" style={{ marginTop: 8 }}>{proxyMsg}</div>}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={proxyBusy || proxyCfg?.source === 'env'}
+                        onClick={() => void saveProxy()}
+                      >
+                        {proxyBusy ? '保存中…' : '保存'}
+                      </button>
+                      {proxyCfg?.proxy && proxyCfg.source === 'envfile' && (
+                        <button className="btn btn-sm btn-ghost" disabled={proxyBusy} onClick={clearProxy}>
+                          清除代理
+                        </button>
+                      )}
+                    </div>
+                    <div className="foot-note" style={{ marginTop: 10 }}>
+                      保存后立即生效（登录/发布等子进程每次启动都重新读取），无需重启服务。
+                      当前生效：{proxyCfg?.proxy || '（未配置，回退系统代理）'}
+                    </div>
+                  </div>
                   <div className="stub-row"><span className="tag2">预留</span>通用设置（语言 / 更新 / 数据目录）<span className="future">按需加</span></div>
                 </div>
-                <div className="foot-note">扩展方式：在这个面板里加标签即可——模型、环境已各就位，其余按需加。</div>
               </section>
             )}
           </div>

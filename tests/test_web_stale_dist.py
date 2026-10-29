@@ -69,5 +69,26 @@ def test_cmd_web_still_starts_with_stale_dist(monkeypatch, tmp_path):
     assert cli.cmd_web(types.SimpleNamespace(port=7860)) == 0
 
 
+# ---------- 浏览器登录态目录可写性守卫（_warn_unwritable_profiles_dir） ----------
+
+def test_warns_when_profiles_dir_unwritable(tmp_path, capsys):
+    """登录态目录只读（如沙箱 EPERM）→ 明确警告；登录 runner 会在这里 mkdir 崩溃。"""
+    ro = tmp_path / "ro-profiles"
+    ro.mkdir()
+    ro.chmod(0o555)
+    try:
+        cli._warn_unwritable_profiles_dir(ro)
+        err = capsys.readouterr().err
+        assert "不可写" in err and "easel web" in err
+    finally:
+        ro.chmod(0o755)  # 恢复权限，保证 tmp_path 清理不报错
+
+
+def test_silent_when_profiles_dir_writable(tmp_path, capsys):
+    cli._warn_unwritable_profiles_dir(tmp_path / "profiles")
+    assert capsys.readouterr().err == ""
+    assert (tmp_path / "profiles").is_dir(), "可写时目录被创建（供后续登录 runner 使用）"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
