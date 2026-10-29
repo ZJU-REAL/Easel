@@ -1,0 +1,20 @@
+.model-dd {
+  z-index: 100; min-width: 0; max-width: 380px;
+  max-height: 240px; overflow: auto; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 10px 28px -8px rgba(23,25,28,.25);
+}
+.model-dd .dd-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 9px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; color: var(--text);
+}
+.model-dd .dd-item:hover, .model-dd .dd-item:focus-visible, .model-dd .dd-item.active { background: var(--accent-soft); }
+.model-dd .dd-item small { color: var(--text-tertiary); font-size: 11px; }
+.model-dd .dd-empty { padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 12px; }
+.model-dd .dd-pull {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 4px 12px;
+  border: 1px solid var(--accent-end); border-radius: var(--radius-sm); background: var(--accent-soft);
+  color: var(--accent-end); cursor: pointer; font-weight: 500;
+}
+.model-dd .dd-pull:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-end) 16%, var(--surface)); }
+.model-dd .dd-pull:disabled { opacity: .6; cursor: default; }
