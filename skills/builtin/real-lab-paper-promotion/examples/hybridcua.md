@@ -1,0 +1,3 @@
+# 点屏幕还是敲代码？让Agent自己选
+
+📢 分享我们实验室关于计算机使用智能体（CUA）的新工作： HybridCUA: Learning to Orchestrate GUI and CLI for Computer-Use Agents 	 🖱️ 该点鼠标，还是该敲命令？纯 GUI 操作通用但慢，步骤一长易累积错误；接入专属 API 又需逐个应用开发。命令行（CLI）是系统自带的通用接口，一条命令常能替代一长串点击。 💡 但直接开放 Shell 并不管用：4 个代表性智能体接入 CLI 后，OSWorld 准确率反降 2.5–11.5 个百分点。关键在于知道何时用、怎么用。 📚 我们构建了 HybridCUA-8K：5K 条纯 GUI、纯 CLI 与交错轨迹，以及 3K 个标注 CLI 优势的可验证 RL 任务。 🛠️ 两阶段训练：SFT 学习双界面执行与切换；在线 RL 引入任务级奖励（何时用 CLI）和步骤级奖励（命令能否可靠执行）。 📊 HybridCUA-9B 在 OSWorld 达 53.6%，较基座提升 14.8 个百分点，平均步数 31.6→14.0，超过 ToolCUA-8B 及 4 倍参数的 UltraCUA-32B；在 OSWorld-MCP 和 WindowsAgentArena 上分别提升 9.1 和 4.0 个百分点，仅用 Linux 训练也能调用 PowerShell。 🌱 让 CUA 该看屏幕时看屏幕，该写命令时写命令。 	 数据已开放，欢迎交流、提 Issue/PR，也欢迎点 Star 和 Upvote！🌟 📄 arXiv：2609.38008 💻 Code：ZJU-REAL/HybridCUA

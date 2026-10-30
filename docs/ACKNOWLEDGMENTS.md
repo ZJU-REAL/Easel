@@ -29,6 +29,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 
 | 项目 | 用于 SKILL | 借鉴点 |
 |------|-----------|--------|
+| 用户提供的 `real-lab-paper-promotion.zip` | real-lab-paper-promotion | 本地接入论文宣传稿、原始 PDF 截图、案例与审核工具；来源哈希及适配见 [EASEL-META.md](../skills/builtin/real-lab-paper-promotion/EASEL-META.md)。原包未附明确许可声明。 |
 | [langgptai/LangGPT](https://github.com/langgptai/LangGPT) | post-formatter | 结构化提示词框架 |
 | [kangarooking/system-prompt-skills](https://github.com/kangarooking/system-prompt-skills) | post-formatter | 中文销售型文案框架 |
 | [MrGeDiao/shuorenhua（说人话）](https://github.com/MrGeDiao/shuorenhua) | post-formatter / text-polisher | 中文去 AI 味改写规则 |
