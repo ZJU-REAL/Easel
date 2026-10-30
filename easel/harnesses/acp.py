@@ -79,15 +79,7 @@ class ACPAdapter:
             rpc.native_id = session_id
             rpc.session_info = result
             if request.model:
-                config_options = result.get("configOptions") or []
-                model_option = next((option for option in config_options if option.get("category") == "model"), None)
-                if model_option:
-                    await rpc.call("session/set_config_option", {
-                        "sessionId": session_id, "configId": model_option["id"], "value": request.model})
-                elif result.get("models"):
-                    await rpc.call("session/set_model", {"sessionId": session_id, "modelId": request.model})
-                else:
-                    raise HarnessError("此 ACP Agent 未提供模型切换能力，请清空覆盖值使用原生配置")
+                await self.set_model(rpc, result, session_id, request.model)
             active = True
             prompt = harness_instructions(request) + "\n\n" + request.prompt
             pending = asyncio.create_task(rpc.call("session/prompt", {
@@ -113,6 +105,17 @@ class ACPAdapter:
                 if not pending.done():
                     pending.cancel()
                 await asyncio.gather(pending, return_exceptions=True)
+
+    async def set_model(self, rpc, result, session_id: str, model: str) -> None:
+        config_options = result.get("configOptions") or []
+        model_option = next((option for option in config_options if option.get("category") == "model"), None)
+        if model_option:
+            await rpc.call("session/set_config_option", {
+                "sessionId": session_id, "configId": model_option["id"], "value": model})
+        elif result.get("models"):
+            await rpc.call("session/set_model", {"sessionId": session_id, "modelId": model})
+        else:
+            raise HarnessError("此 ACP Agent 未提供模型切换能力，请清空覆盖值使用原生配置")
 
 
 class OpenCodeAdapter(ACPAdapter):

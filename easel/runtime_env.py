@@ -75,7 +75,7 @@ def web_environment(environment: dict[str, str]) -> dict[str, str]:
     result = dict(environment)
     path_key = next((key for key in result if key.upper() == "PATH"), "PATH") if WINDOWS else "PATH"
     current_path = result.get(path_key, os.defpath)
-    missing = {command for command in ("openclaw", "opencode", "codex", "node")
+    missing = {command for command in ("openclaw", "opencode", "codex", "hermes", "node")
                if shutil.which(command, path=current_path) is None}
     if not missing:
         return result
