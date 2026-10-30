@@ -1,0 +1,4 @@
+interface:
+  display_name: "REAL Lab Paper2Video v1"
+  short_description: "论文讲解视频：完整原图、精准框选、平滑转场与逐帧验收流程"
+  default_prompt: "请使用 $real-lab-paper2video-v1 将这篇论文制作成约三分钟的中文讲解视频。"

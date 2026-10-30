@@ -1,0 +1,60 @@
+{
+  "name": "paper2assets",
+  "source": "Locally installed paper2assets snapshot",
+  "snapshot_date": "2026-10-30",
+  "version": "upstream version not declared",
+  "scope": "All upstream Python scripts and utility modules; usage adapted in references/paper-assets.md",
+  "upstream_scripts_modified": false,
+  "files": [
+    {
+      "path": "scripts/build_package.py",
+      "bytes": 16672,
+      "sha256": "d49925af9cecd47ca3785a40813ff45fad9300da708bbec06e71ed820e24f16a"
+    },
+    {
+      "path": "scripts/crop_figure.py",
+      "bytes": 40175,
+      "sha256": "d09344be964c5cf4098ed8457b3ad8ba79ab1cbb976e34ec8f4bfd638f82c7f3"
+    },
+    {
+      "path": "scripts/extract_pdf.py",
+      "bytes": 38850,
+      "sha256": "574a39a07dc706b47172ed92f5248f18007670606cf7cca6a073aa4582775d61"
+    },
+    {
+      "path": "scripts/fetch_conf_logo.py",
+      "bytes": 10170,
+      "sha256": "e4e9c21f8ce12bedb987c420b8235e73c7e58e6662d44a3927cb18c3afedf4cb"
+    },
+    {
+      "path": "scripts/fetch_logos.py",
+      "bytes": 40162,
+      "sha256": "60893f2ed08d63f0ea68b8ecf38fdba25c429585df545e2c1c9d09f870ed63a9"
+    },
+    {
+      "path": "scripts/make_qr.py",
+      "bytes": 12107,
+      "sha256": "b93fba8630be1d92a8f2d6b53ffc3d92847e1607f5ffdfe80bd6a38019ec0283"
+    },
+    {
+      "path": "scripts/source_figures.py",
+      "bytes": 13528,
+      "sha256": "6abd08318dee51cc60de1fd4d4a93c2e4573d99afedaac29ab4d551a34431e5e"
+    },
+    {
+      "path": "scripts/utils/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "scripts/utils/layout.py",
+      "bytes": 3549,
+      "sha256": "63a640de802df6ddcc6c8b595aa114f3e4a0088c7fde7e0dcd68d9a7f4e0ab55"
+    },
+    {
+      "path": "scripts/utils/logo_trim.py",
+      "bytes": 5116,
+      "sha256": "7cbf81b08de35840a6fdefe96948494459c8c6e83170a66d280847a2901b80ae"
+    }
+  ]
+}

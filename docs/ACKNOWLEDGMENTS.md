@@ -55,6 +55,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 
 | 项目 | 用于 SKILL | 借鉴点 |
 |------|-----------|--------|
+| 用户提供的 `real-lab-paper2video-v1.zip` | real-lab-paper2video-v1 | 本地接入原图动画、可编辑视频工程和 paper2assets 快照；来源哈希及适配见 [EASEL-META.md](../skills/builtin/real-lab-paper2video-v1/EASEL-META.md)。原包及内置 paper2assets 快照未附明确许可声明。 |
 | [xiph/rnnoise](https://github.com/xiph/rnnoise) | audio-denoise | RNNoise 降噪算法 |
 | [GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models) | audio-denoise | RNNoise 预训练模型 |
 | [timsainb/noisereduce](https://github.com/timsainb/noisereduce) | audio-denoise | 频谱降噪 |
