@@ -6,8 +6,11 @@ import time
 
 
 runtime = sys.argv[1]
-mode = os.environ.get("FAKE_HARNESS_MODE", "normal")
-audit = os.environ["FAKE_HARNESS_AUDIT"]
+arguments = sys.argv[2:]
+mode = next((arg.split("=", 1)[1] for arg in arguments if arg.startswith("--fake-mode=")),
+            os.environ.get("FAKE_HARNESS_MODE", "normal"))
+audit = next((arg.split("=", 1)[1] for arg in arguments if arg.startswith("--fake-audit=")),
+             os.environ.get("FAKE_HARNESS_AUDIT", os.path.join(os.getcwd(), "audit.jsonl")))
 thread_id = "native-thread"
 turn_id = "native-turn"
 session_id = "native-session"
@@ -15,7 +18,7 @@ pending_prompt = None
 
 
 def send(message):
-    if runtime == "acp":
+    if runtime in ("acp", "hermes"):
         message = {"jsonrpc": "2.0", **message}
     print(json.dumps(message), flush=True)
 
@@ -73,9 +76,14 @@ while True:
     elif method in ("session/new", "session/load"):
         if method == "session/load":
             session_id = "replacement" if mode == "wrong-resume" else message["params"]["sessionId"]
-        reply(message, {"sessionId": session_id,
-                        "configOptions": [{"category": "model", "id": "model", "type": "select"}]})
-    elif method == "session/set_config_option":
+        result = {"sessionId": session_id,
+                  "configOptions": [{"category": "model", "id": "model", "type": "select"}]}
+        if runtime == "hermes" and method == "session/new":
+            result["models"] = {"availableModels": [
+                {"modelId": "provider/alpha", "name": "Alpha"},
+                {"modelId": "provider/beta"}], "currentModelId": "provider/alpha"}
+        reply(message, result)
+    elif method in ("session/set_config_option", "session/set_model"):
         reply(message, {})
     elif method in ("turn/interrupt", "session/cancel"):
         if method == "session/cancel" and pending_prompt is not None and mode != "ignore-cancel":

@@ -6,6 +6,7 @@ All notable changes to Easel are documented in this file.
 
 ### Added
 
+- Added Hermes Agent as a selectable ACP v1 runtime. It uses the isolated Hermes `easel` profile, lists native models from ACP, and leaves credentials under Hermes management; setup scripts are unchanged.
 - Added selectable execution engines in Web settings: OpenClaw, Codex, OpenCode, a locally configured ACP agent, and chat-only mode. Engine selection is independent of model providers; Codex and OpenCode expose native model catalogs without copying their credentials.
 - Added optional OpenClaw installation: interactive setup defaults to OpenClaw but allows skipping it; use `bash setup.sh --skip-openclaw` or `.\setup.ps1 -SkipOpenClaw` to install the Web workspace first and select an already installed harness later.
 - Added a responsive creative-artifact gallery with previous/next controls, keyboard navigation, and support for multiple outputs.
