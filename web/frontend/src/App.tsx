@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import Sidebar from './components/Sidebar';
+import Sidebar from './components/ResponsiveSidebar';
 import type { Page } from './components/Sidebar';
 import ChatPage from './components/ChatPage';
 import SkillPage from './components/SkillPage';

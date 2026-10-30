@@ -82,6 +82,59 @@ body {
 /* ============ Layout ============ */
 .app-layout { display: flex; height: 100%; width: 100%; }
 
+.sidebar-panel { flex-shrink: 0; height: 100%; }
+.mobile-nav-bar, .sidebar-mobile-header, .sidebar-backdrop { display: none; }
+
+@media (max-width: 760px) {
+  .mobile-nav-bar {
+    position: fixed; inset: 0 0 auto; z-index: 30;
+    min-height: calc(56px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 12px 0;
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg-elev); border-bottom: 1px solid var(--border);
+    color: var(--text); font-weight: 600;
+  }
+  .sidebar-toggle, .sidebar-close {
+    width: 44px; height: 44px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); color: var(--text); cursor: pointer;
+  }
+  .sidebar-toggle:focus-visible, .sidebar-close:focus-visible {
+    outline: 2px solid var(--accent-start); outline-offset: 2px;
+  }
+  .sidebar-panel {
+    position: fixed; inset: 0 auto 0 0; z-index: 50;
+    display: flex; flex-direction: column;
+    width: min(var(--sidebar-width), calc(100vw - 48px));
+    height: 100%; height: 100dvh;
+    background: var(--bg-elev);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform var(--t);
+  }
+  .sidebar-panel.is-open { transform: translateX(0); visibility: visible; }
+  .sidebar-panel > .sidebar {
+    width: 100%; min-width: 0; height: auto; flex: 1; min-height: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sidebar-mobile-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 13px;
+  }
+  .sidebar-backdrop {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(0, 0, 0, 0.38); touch-action: none;
+  }
+  .sidebar-backdrop.is-open { display: block; }
+  .app-layout > .main-content { min-width: 0; padding-top: calc(56px + env(safe-area-inset-top)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-panel { transition: none; }
+}
+
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
