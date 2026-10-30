@@ -196,7 +196,26 @@ OPENCLAW_SESSIONS_DIR = _oc_state_dir() / "agents" / "main" / "sessions"
 # 内容取决于网关——支持 extended-thinking 的网关会按档位回传思考流；不支持的（如内网 codewiz，
 # 实测 transcript 里 assistant 只有 text 块、thinking 恒为 0）面板留空，调高档位也不会有内容。
 # 默认 medium：让支持思考的部署直接显示较完整思考；EASEL_THINKING_LEVEL 可覆盖（low 提速 / high 更详尽）。
-THINKING_LEVEL = (os.environ.get("EASEL_THINKING_LEVEL", "").strip() or "medium")
+def _thinking_level_setting() -> str:
+    """思考档位：进程环境优先，其次项目根 .env（模块导入时 .env 尚未注入 environ，
+    而部分模型只支持特定档位，如 glm-5.3 仅 off/ultra，故必须支持 .env 覆盖）。"""
+    env_val = os.environ.get("EASEL_THINKING_LEVEL", "").strip()
+    if env_val:
+        return env_val
+    try:
+        env_file = Path(__file__).resolve().parent.parent / ".env"
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            s = line.strip()
+            if s and not s.startswith("#") and "=" in s:
+                k, _, v = s.partition("=")
+                if k.strip() == "EASEL_THINKING_LEVEL":
+                    return v.strip().strip("\"'") or "medium"
+    except OSError:
+        pass
+    return "medium"
+
+
+THINKING_LEVEL = _thinking_level_setting()
 
 # gateway 进程把原始事件流（token/thinking/收尾）写到的**单个共享文件**。
 # 关键：`openclaw agent` 只是瘦客户端，没有 --raw-stream 标志——只有常驻 gateway 按它自己
@@ -299,6 +318,8 @@ if str(SHARED_SCRIPTS) not in sys.path:
 from model_registry import model_group
 
 BROWSER_PROFILES = Path.home() / ".easel-browser-profiles"
+
+
 LOGIN_DIR = OUTPUTS_DIR / "_login"
 PUBLISH_DIR = OUTPUTS_DIR / "_publish"   # 异步发布的状态/验证码文件（抖音发布可能触发短信墙）
 PROFILE_BUILD_DIR = OUTPUTS_DIR / "_profile_build"   # 异步画像构建的状态文件（避免长请求被代理超时）
@@ -321,6 +342,12 @@ LOGIN_RUNNERS: dict[str, dict] = {
     "kuaishou": {"name": "快手", "backend": "web", "wp": "kuaishou", "profile": "KuaishouProfile"},
     "weixin-channels": {"name": "微信视频号", "backend": "web", "wp": "weixin-channels", "profile": "ChannelsProfile"},
     "zhihu": {"name": "知乎", "backend": "web", "wp": "zhihu", "profile": "ZhihuProfile"},
+    "juejin": {"name": "掘金", "backend": "web", "wp": "juejin", "profile": "JuejinProfile"},
+    # X 无扫码登录 → login_window：登录时弹有头浏览器窗口由用户手动完成
+    # （web_publisher login-qr --headed 窗口模式，状态走 window_login）；国际站需外网代理
+    # （web_publisher 按 needs_proxy 读 EASEL_PROXY/https_proxy，未配则回退系统代理）。
+    "twitter-x": {"name": "推特 X", "backend": "web", "wp": "twitter-x",
+                  "profile": "TwitterXProfile", "login_window": True},
     "bilibili": {"name": "B站", "backend": "biliup"},
     "douyin": {"name": "抖音", "backend": "douyin", "profile": "DouyinProfile"},
     # 微信公众号：扫码登录后台会话（发布+数据都走它），backend=='wechat-oa' 在各处单独分支处理。
@@ -504,6 +531,7 @@ SKILL_API_REQUIREMENTS: dict[str, dict] = {
 
 _ENV_ALLOWLIST: set[str] = {
     "EASEL_DIRECT_API_BASE_URL", "EASEL_DIRECT_API_KEY", "EASEL_DIRECT_API_MODEL",
+    "EASEL_PROXY",   # 设置页「网络代理」持久化（_write_env 支持空串删行=清除）
 }
 for _spec in SKILL_API_REQUIREMENTS.values():
     for _key in _spec.get("settings", []):
@@ -733,12 +761,29 @@ def clean_agent_output(raw: str) -> str:
     return '\n'.join(lines).strip()
 
 
+def _easel_proxy() -> str:
+    """EASEL_PROXY 解析链：进程环境变量优先，其次 .env（设置页「网络代理」持久化项）。
+    返回 '' 表示未配置。设置页保存后无需重启——每次起子进程都重新解析。"""
+    env_val = os.environ.get('EASEL_PROXY', '').strip()
+    if env_val:
+        return env_val
+    try:
+        return _read_env().get('EASEL_PROXY', '').strip()
+    except Exception:
+        return ''
+
+
 def _proxy_env() -> dict[str, str]:
-    """返回带外网代理的环境变量（保护内网直连）。"""
+    """返回带外网代理的环境变量（保护内网直连）。
+    代理取 _easel_proxy()（环境变量 → .env）；解析到就显式写回 EASEL_PROXY，
+    让登录/发布 runner 子进程直接可见（web_publisher 的 needs_proxy 平台靠它走代理）。"""
     env = os.environ.copy()
     env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
-    env.setdefault('http_proxy', os.environ.get('EASEL_PROXY', ''))
-    env.setdefault('https_proxy', os.environ.get('EASEL_PROXY', ''))
+    proxy = _easel_proxy()
+    if proxy:
+        env['EASEL_PROXY'] = proxy
+    env.setdefault('http_proxy', proxy)
+    env.setdefault('https_proxy', proxy)
     env.setdefault('no_proxy', 'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com')
     return env
 
@@ -1875,6 +1920,37 @@ async def api_chat_transport_save(req: ChatTransportRequest):
     from easel.harnesses.rpc import close_sessions
     await close_sessions()
     return _model_channels()
+
+
+class ProxyRequest(BaseModel):
+    proxy: str = ''
+
+
+@app.get("/api/settings/proxy")
+async def api_settings_proxy_get():
+    """读取网络代理配置：source=env（启动环境固定，设置页只读）/ envfile（.env 持久化）/ none。"""
+    proxy = _easel_proxy()
+    source = 'env' if 'EASEL_PROXY' in os.environ else ('envfile' if proxy else 'none')
+    return {'proxy': proxy, 'source': source}
+
+
+@app.post("/api/settings/proxy")
+async def api_settings_proxy_save(req: ProxyRequest):
+    """保存/清除网络代理（写 .env 的 EASEL_PROXY，空串=清除）。
+    立即生效：登录/发布/热点等子进程每次启动都经 _proxy_env 重新解析，无需重启服务。"""
+    if 'EASEL_PROXY' in os.environ:
+        raise HTTPException(409, '启动环境已指定 EASEL_PROXY，设置页无法覆盖；请改启动环境后重启')
+    proxy = (req.proxy or '').strip()
+    if proxy:
+        try:
+            u = urllib.parse.urlsplit(proxy)
+        except ValueError:
+            u = None
+        if (u is None or u.scheme not in ('http', 'https', 'socks5', 'socks5h')
+                or not u.hostname or u.username or u.password):
+            raise HTTPException(400, '代理地址需形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080（不含用户名密码）')
+    _write_env({'EASEL_PROXY': proxy})   # 空串 → 删除该行（清除代理）
+    return {'ok': True, 'proxy': proxy, 'source': 'envfile' if proxy else 'none'}
 
 
 @app.get("/api/settings/models")
@@ -4441,6 +4517,9 @@ async def _start_login(platform: str, restart: bool = False):
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'login-qr',
                '--platform', cfg['wp'], '--qr-out', str(qr), '--status-file', str(status),
                '--timeout', str(LOGIN_TIMEOUT)]
+        if cfg.get('login_window'):
+            # 无扫码平台（X）：弹有头窗口手动登录，前端按 window_login 状态展示提示
+            cmd.append('--headed')
     # 新登录开始 → 清掉旧的 whoami 缓存（登录前可能缓存了「未登录」），避免登录成功后仍读到旧结果
     with _WHOAMI_LOCK:
         _WHOAMI_CACHE.pop(platform, None)
@@ -4810,7 +4889,7 @@ async def api_logout(platform: str):
 
 # 归因层：可抓创作数据的平台（多数走 Playwright 登录态；bilibili 用 biliup cookies 不起浏览器、
 # wechat-oa 走 mp 后台会话 Playwright 拦截数据 XHR）
-ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa"}
+ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa", "juejin", "twitter-x"}
 _analytics_inflight: dict[str, asyncio.Task] = {}
 
 
@@ -4878,6 +4957,13 @@ async def _fetch_analytics(platform: str):
     if platform == "bilibili":
         cmd = [sys.executable, str(SHARED_SCRIPTS / "bili_login.py"), "stats",
                "--cookie", str(PROJECT_ROOT / "cookies.json")]
+    elif platform == "twitter-x":
+        # X 官方 API 免费层已取消（followers_count 也不再开放）→ 读个人主页 DOM（x_stats.py）。
+        cmd = [sys.executable, str(SHARED_SCRIPTS / "x_stats.py"), "fetch"]
+    elif platform == "juejin":
+        # 掘金走公开 JSON 接口（juejin_stats.py：账号概览需登录 cookie、文章列表免登录），
+        # 比 Playwright 解析 DOM 快且稳；cookie 由脚本自己从 JuejinProfile 读取。
+        cmd = [sys.executable, str(SHARED_SCRIPTS / "juejin_stats.py"), "fetch"]
     elif platform == "wechat-oa":
         # 公众号数据走「后台网页端」(mp.weixin.qq.com 管理员会话 + Playwright 拦截数据 XHR)：
         # 开发者 datacube 接口需认证+群发+接口权限，多数号取不到；后台端有登录态即可看到发表记录/数据。

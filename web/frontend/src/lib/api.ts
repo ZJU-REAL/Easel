@@ -899,6 +899,24 @@ export function saveChatTransport(transport: 'api' | 'openclaw'): Promise<ModelC
   });
 }
 
+// ── 网络代理设置（EASEL_PROXY；更多设置页） ─────────────────────────
+
+export interface ProxySettings {
+  proxy: string;                       // 生效中的代理地址，空串=未配置
+  source: 'env' | 'envfile' | 'none';  // env=启动环境固定（只读）；envfile=.env 持久化
+}
+
+export function fetchProxySettings(): Promise<ProxySettings> {
+  return request('/api/settings/proxy');
+}
+
+export function saveProxySettings(proxy: string): Promise<{ ok: boolean; proxy: string; source: string }> {
+  return request('/api/settings/proxy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proxy }),
+  });
+}
+
 // （保存接口见上方 saveModelConfig）
 
 export interface SelftestResult { baseUrl: string; ok: boolean; ms: number; detail?: string }
