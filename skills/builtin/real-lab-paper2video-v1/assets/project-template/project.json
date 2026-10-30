@@ -1,0 +1,10 @@
+{
+  "name": "paper-video-starter",
+  "demo": true,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 8,
+  "entry": "index.html",
+  "language": "zh-CN"
+}
