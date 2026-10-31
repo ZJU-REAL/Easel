@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import subprocess
 
 from easel import __version__
 
@@ -18,6 +19,37 @@ def _valid_id(value):
 
 
 async def available_models(runtime: str, request: RunRequest) -> list[dict]:
+    if runtime == "antigravity":
+        models = []
+        try:
+            cmd = base_command("antigravity")
+            res = await asyncio.to_thread(
+                subprocess.run, cmd + ["models"], capture_output=True, text=True, timeout=12,
+                encoding="utf-8", errors="replace"
+            )
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    if "\t" in line and not line.startswith("Fetching"):
+                        parts = line.split("\t", 1)
+                        mid = parts[0].strip()
+                        label = parts[1].strip() if len(parts) > 1 else mid
+                        if mid and _valid_id(mid):
+                            models.append({
+                                "id": mid,
+                                "label": label,
+                                "default": "flash" in mid.lower() and "high" in mid.lower(),
+                            })
+        except Exception:
+            pass
+        if not models:
+            models = [
+                {"id": "gemini-3.8-flash-high", "label": "Gemini 3.8 Flash (High)", "default": True},
+                {"id": "gemini-4-argon-high", "label": "Gemini 4 Argon (High)", "default": False},
+                {"id": "claude-sonnet-5-5-high", "label": "Claude Sonnet 5.5 (High)", "default": False},
+                {"id": "claude-opus-5-5-high", "label": "Claude Opus 5.5 (High)", "default": False},
+                {"id": "gpt-oss-120b-medium", "label": "GPT-OSS 120B (Medium)", "default": False},
+            ]
+        return models
     if runtime == "codex":
         async def reject(method, params):
             raise HarnessError("读取模型列表时不允许执行工具")

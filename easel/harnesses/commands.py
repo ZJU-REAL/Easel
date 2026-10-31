@@ -37,6 +37,18 @@ def _windows_opencode_entry(launcher: Path) -> Path:
 
 
 def base_command(name: str) -> list[str]:
+    if name == "antigravity":
+        for cand in [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "agy" / "bin" / "agy.exe",
+            Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe",
+            shutil.which("agy.exe"),
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "antigravity" / "Antigravity.exe",
+            Path(os.environ.get("APPDATA", "")) / "Antigravity" / "bin" / "agy-node.cmd",
+            shutil.which("antigravity"),
+        ]:
+            if cand and Path(cand).exists():
+                return [str(cand)]
+        raise HarnessError("未检测到本地 Antigravity 安装")
     executable = shutil.which(name)
     if not executable:
         raise HarnessError(f"{name} CLI 未安装或不在 PATH，请先安装并在终端登录")

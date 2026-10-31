@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .base import HarnessError
 
-IDS = ("api", "openclaw", "opencode", "codex", "acp")
+IDS = ("api", "openclaw", "opencode", "codex", "acp", "antigravity")
 
 
 def read_json(path: Path) -> dict:

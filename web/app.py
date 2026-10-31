@@ -1889,7 +1889,7 @@ async def api_settings_models(runtime: str | None = None):
 
 @app.post("/api/settings/harness/models/{runtime}")
 async def api_harness_models(runtime: str):
-    if runtime not in ("codex", "opencode"):
+    if runtime not in ("codex", "opencode", "antigravity"):
         raise HTTPException(400, "此底座不支持原生模型列表")
     from easel.harnesses.base import RunRequest
     from easel.harnesses.models import available_models
