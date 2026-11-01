@@ -139,6 +139,9 @@ def _skills_synced() -> tuple[bool, str]:
     这里的目标目录**不能**硬编码：OpenClaw 的默认布局在 2026.6.x / 2026.9.x 之间变过
     （见 easel/openclaw_workspace.py）。以前这里写死了旧布局，而 sync.sh 写的是新布局，
     于是同步脚本报 "synced"、doctor 报绿，agent 却读不到任何技能（issue #19）。
+
+    这一项只管**存在性**（issue #19 的保护）；内容是否过期由 _skills_fresh() 单独查——
+    两种失效（读不到 / 读到旧的）症状不同，混在一项里会互相掩盖。
     """
     from easel.openclaw_workspace import workspace_dir
 
@@ -149,6 +152,17 @@ def _skills_synced() -> tuple[bool, str]:
     except OSError:
         ok = False
     return ok, f"agent 实际读取的 workspace 是 {ws}，其中 skills/ 为空或不存在"
+
+
+def _skills_fresh() -> tuple[bool, str]:
+    """检查 workspace 里的 skill 内容是不是仓库的最新版本。
+
+    存在性合格 ≠ 内容最新：改了仓库里的 skill 而没重新同步时，agent 读到的还是旧快照，
+    而各处都报「正常」——症状是「我明明改了规则，agent 就是不听」，比读不到更难查。
+    """
+    from easel.skills_sync import skills_sync_state
+
+    return skills_sync_state()
 
 
 def _env_key_valid() -> bool:
@@ -636,10 +650,13 @@ def cmd_doctor(_args) -> int:
         all_ok &= _check(f"OpenClaw gateway (localhost:{resolve_gateway_port()})", gw_ok,
                           f"运行 python -m easel gateway start（端口来自 {port_source()}）")
 
-        # 5. Skills synced
+        # 5. Skills synced（存在性） + Skills up-to-date（内容新鲜度）
         synced, synced_detail = _skills_synced()
         all_ok &= _check("Skills synced", synced,
                           f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash agents/sync.sh（Linux/macOS）")
+        fresh, fresh_detail = _skills_fresh()
+        all_ok &= _check("Skills up-to-date", fresh,
+                          f"{fresh_detail}；跑 python scripts/sync_if_stale.py 同步后重启 agent")
 
     # 6. Key project files
     gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"
