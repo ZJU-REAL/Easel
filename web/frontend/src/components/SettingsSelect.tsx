@@ -90,6 +90,10 @@ export function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pul
         event.stopPropagation();
         onClose();
         anchor?.focus();
+      } else if (event.key === 'Tab') {
+        // Close like a native select, then let Tab move past its trigger.
+        onClose();
+        anchor?.focus();
       }
     };
     document.addEventListener('mousedown', onDown);

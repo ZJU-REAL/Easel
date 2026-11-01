@@ -17,6 +17,13 @@
   var s = document.createElement('script');
   s.src = base + '/static/marked.umd.js';
   document.head.appendChild(s);
+  var menuStyle = document.createElement('link');
+  menuStyle.rel = 'stylesheet';
+  menuStyle.href = base + '/static/dropdown.css';
+  document.head.appendChild(menuStyle);
+  var menuScript = document.createElement('script');
+  menuScript.src = base + '/static/dropdown.js';
+  document.head.appendChild(menuScript);
 })();
 </script>
 <style>
@@ -229,8 +236,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .fade-in{animation:fadeIn .2s ease-out}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 </style>
-<link rel="stylesheet" href="/static/dropdown.css">
-<script defer src="/static/dropdown.js"></script>
 </head>
 <body>
 <div class="app">

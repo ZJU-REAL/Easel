@@ -61,6 +61,24 @@ def test_uploaded_file_is_removed_when_atomic_config_save_fails(tmp_path, monkey
     assert not list((tmp_path / "config/trend-collectors").glob("*.py"))
 
 
+def test_uploaded_file_is_removed_when_registration_fails_after_syntax_check(tmp_path, monkeypatch):
+    config = setup(tmp_path)
+    before = config.read_bytes()
+    original = management._source
+
+    def register(row, base):
+        if row.get("uploaded_script") and "timeout_seconds" not in row:
+            raise OSError("registration failed")
+        return original(row, base)
+
+    monkeypatch.setattr(management, "_source", register)
+    with pytest.raises(OSError, match="registration failed"):
+        management.update(tmp_path, dict(os.environ), {"action": "add", "type": "python", "label": "test",
+            "script_code": "pass"})
+    assert config.read_bytes() == before
+    assert not list((tmp_path / "config/trend-collectors").glob("*.py"))
+
+
 def test_deleting_legacy_source_never_deletes_its_original_file(tmp_path):
     config = setup(tmp_path)
     original = tmp_path / "original.py"

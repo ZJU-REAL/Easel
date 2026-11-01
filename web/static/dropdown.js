@@ -1,4 +1,5 @@
 // Adapt the fallback page's existing select data/events to the shared menu skin.
+function attachDropdowns() {
 document.querySelectorAll('select').forEach(select => {
   const trigger = document.createElement('button');
   trigger.type = 'button';
@@ -57,7 +58,8 @@ document.querySelectorAll('select').forEach(select => {
       const index = items.indexOf(document.activeElement);
       if (event.key === 'Escape' || event.key === 'Tab') {
         close();
-        if (event.key === 'Escape') { event.preventDefault(); trigger.focus(); }
+        trigger.focus();
+        if (event.key === 'Escape') event.preventDefault();
       } else if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault(); document.activeElement.click();
       } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -87,3 +89,11 @@ document.querySelectorAll('select').forEach(select => {
   });
   sync();
 });
+}
+
+// This script is loaded with the page's proxy prefix and may arrive before its body.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', attachDropdowns, { once: true });
+} else {
+  attachDropdowns();
+}

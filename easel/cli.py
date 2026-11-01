@@ -213,20 +213,24 @@ def _warn_stale_frontend() -> None:
     frontend = PROJECT_ROOT / "web" / "frontend"
     dist = frontend / "dist"
     try:
-        dist_mtime = max((f.stat().st_mtime for f in dist.rglob("*") if f.is_file()),
-                         default=None)
+        # The server uses this entry; touching a copied public asset is not a rebuild.
+        dist_mtime = (dist / "index.html").stat().st_mtime if (dist / "index.html").is_file() else None
     except OSError:
         dist_mtime = None
     if dist_mtime is None:
-        print(f"{YELLOW}⚠ 前端尚未构建（web/frontend/dist 为空）：页面会是回退版。"
+        print(f"{YELLOW}⚠ 前端尚未构建（web/frontend/dist 缺少 index.html）：页面会是回退版。"
               f"请执行：cd web/frontend && npm run build{NC}", file=sys.stderr)
         return
-    watched = [frontend / "index.html"]
-    for sub in ("src", "public"):
-        d = frontend / sub
-        if d.is_dir():
-            watched.extend(f for f in d.rglob("*") if f.is_file())
     try:
+        watched = [frontend / name for name in ("index.html", "package.json", "package-lock.json", "vite.config.ts")]
+        watched.extend(frontend.glob("tsconfig*.json"))
+        # The React entry imports this shared stylesheet outside src/.
+        watched.append(PROJECT_ROOT / "web" / "static" / "dropdown.css")
+        for sub in ("src", "public"):
+            d = frontend / sub
+            if d.is_dir():
+                watched.extend(f for f in d.rglob("*") if f.is_file())
+        watched = [f for f in watched if f.is_file()]
         newest_src = max((f.stat().st_mtime for f in watched), default=0)
     except OSError:
         return

@@ -17,14 +17,29 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "web" / "app.py"
 
 
-def _load_fn():
+def _load_fn(env_file=None):
     """从 web/app.py 中抽出 _thinking_level_setting，独立求值（避免导入整个 app）。"""
     src = APP.read_text(encoding="utf-8")
     i = src.index("def _thinking_level_setting")
     j = src.index('    return "medium"', i) + len('    return "medium"')
     ns = {"os": os, "Path": Path}
+    if env_file is not None:
+        ns["__file__"] = str(env_file.parent / "web" / "app.py")
     exec(compile(src[i:j], str(APP), "exec"), ns)
     return ns["_thinking_level_setting"]
+
+
+@pytest.mark.parametrize("contents,expected", [
+    (b"EASEL_THINKING_LEVEL=low\nEASEL_THINKING_LEVEL=ultra\n", "ultra"),
+    (b"EASEL_THINKING_LEVEL=low\nEASEL_THINKING_LEVEL=\n", "medium"),
+    (b"\xef\xbb\xbfEASEL_THINKING_LEVEL=ultra\n", "ultra"),
+    (b"\xff\xfeinvalid", "medium"),
+])
+def test_env_file_overrides_and_encoding(monkeypatch, tmp_path, contents, expected):
+    monkeypatch.delenv("EASEL_THINKING_LEVEL", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_bytes(contents)
+    assert _load_fn(env_file)() == expected
 
 
 def test_module_does_not_reference_env_only():

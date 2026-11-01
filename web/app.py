@@ -208,13 +208,16 @@ def _thinking_level_setting() -> str:
         return env_val
     try:
         env_file = Path(__file__).resolve().parent.parent / ".env"
-        for line in env_file.read_text(encoding="utf-8").splitlines():
+        file_value = ""
+        for line in env_file.read_text(encoding="utf-8-sig").splitlines():
             s = line.strip()
             if s and not s.startswith("#") and "=" in s:
                 k, _, v = s.partition("=")
                 if k.strip() == "EASEL_THINKING_LEVEL":
-                    return v.strip().strip("\"'") or "medium"
-    except OSError:
+                    file_value = v.strip().strip("\"'")
+        if file_value:
+            return file_value
+    except (OSError, UnicodeError):
         pass
     return "medium"
 

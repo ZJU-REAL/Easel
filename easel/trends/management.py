@@ -211,7 +211,12 @@ def update(root: Path, environment: dict[str, str], value: dict) -> dict:
                 row["headers"] = value.get("headers", {})
             else:
                 raise ConfigError("请选择 RSS / Atom、HTTP 或本地脚本")
-            _source(row, path.parent)
+            try:
+                _source(row, path.parent)
+            except Exception:
+                if created is not None:
+                    created.unlink(missing_ok=True)
+                raise
             rows.append(row)
             identifier = row["id"]
         elif action in ("toggle", "delete") and isinstance(identifier, str):
