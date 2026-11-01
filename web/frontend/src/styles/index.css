@@ -901,6 +901,33 @@ textarea.field { resize: vertical; min-height: 90px; }
 .trend-col { padding: 14px 6px 10px; }
 .trend-col-head { font-weight: 650; font-size: 14px; padding: 0 12px 8px; display: flex; align-items: center; gap: 8px; }
 .trend-count { color: var(--text-tertiary); font-size: 12px; font-weight: 500; }
+.trend-source-status { padding: 0 12px 8px; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.trend-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.trend-manager { margin: auto; width: 720px; max-width: calc(100vw - 64px); max-height: 86vh; padding: 24px; overflow-y: auto; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.trend-manager::backdrop { background: rgba(23, 25, 28, .35); }
+.trend-manager-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.trend-manager-head h2 { font-size: 20px; }
+.trend-manager-head p, .trend-manager-hint, .trend-manager-footer span { font-size: 13px; color: var(--text-secondary); }
+.trend-manager-error { padding: 10px 12px; margin: 10px 0; color: var(--red); background: var(--red-soft); border-radius: var(--radius); overflow-wrap: anywhere; font-size: 13px; }
+.trend-manager-notice { padding: 10px 12px; margin: 10px 0; color: var(--green); background: var(--green-soft); border-radius: var(--radius); font-size: 13px; }
+.trend-manager-list { max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.trend-manager-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.trend-manager-row:last-child { border-bottom: none; }
+.trend-manager-row > div { flex: 1; min-width: 0; }
+.trend-manager-row strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.trend-manager-row span { font-size: 12px; color: var(--text-secondary); }
+.trend-manager-form { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 16px; }
+.trend-manager-form h3 { font-size: 15px; margin-bottom: 12px; }
+.trend-manager-form label { display: block; font-size: 13px; margin-bottom: 12px; }
+.trend-manager-form .field { display: block; width: 100%; margin-top: 5px; }
+.trend-manager-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trend-manager-form summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); margin: 12px 0; }
+.trend-manager-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+.trend-manager-form .settings-select-wrap { display: block; margin-top: 5px; margin-bottom: 12px; }
+.trend-manager-form .settings-select { width: 100%; }
+.trend-script-toolbar { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; }
+.trend-script-toolbar > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text-secondary); }
+.trend-code-editor { font-family: Consolas, 'SFMono-Regular', monospace; font-size: 12px; line-height: 1.65; tab-size: 4; }
 .trend-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 8px; transition: background var(--t-fast); }
 .trend-item:hover { background: var(--surface-hover); }
 .trend-rank { width: 20px; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-tertiary); flex-shrink: 0; }

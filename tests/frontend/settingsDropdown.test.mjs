@@ -62,3 +62,19 @@ test('Escape is captured by the dropdown, not the surrounding settings dialog', 
   assert.ok(removed.some(([name, callback, capture]) =>
     name === 'keydown' && callback === registration[1] && capture === true));
 });
+
+test('a dropdown in a native dialog stays inside its top layer', () => {
+  const body = { name: 'body' };
+  const dialog = { name: 'dialog' };
+  const component = runInNewContext(outputText, {
+    useRef: () => ({ current: null }),
+    useState: () => [{ top: 100, left: 20, width: 240 }, () => {}],
+    useEffect: () => {},
+    React: { createElement: (...args) => ({ args }) },
+    createPortal: (element, parent) => ({ element, parent }),
+    document: { body },
+  });
+  const props = { items: [], current: '', onPick: () => {}, onClose: () => {} };
+  assert.equal(component({ ...props, anchor: { closest: () => dialog } }).parent, dialog);
+  assert.equal(component({ ...props, anchor: { closest: () => null } }).parent, body);
+});

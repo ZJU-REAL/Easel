@@ -99,7 +99,7 @@ Easel 围绕五个连续工作流展开：**发现**适合账号的热点与机�
     </td>
     <td width="50%" valign="top">
       <strong>🔥 热点雷达</strong><br>
-      <sub>聚合微博、抖音、知乎、B 站、百度和头条等平台热榜，帮助 Agent 从实时趋势中筛选适合当前账号的选题。</sub><br><br>
+      <sub>聚合现有平台热榜，并通过标准协议接入你自己的 Python 采集脚本、HTTP 服务或 RSS/Atom 订阅，从更多来源寻找适合账号的选题。</sub><br><br>
       <img src="assets/readme/features/discover.png" width="100%" alt="Easel 多平台热点雷达">
     </td>
   </tr>
@@ -383,6 +383,7 @@ Easel 使用独立的 `easel` OpenClaw profile，不会覆盖你本机已有的 
 
 ## 📑 文档
 
+- [热点数据源接入：Python 脚本 / HTTP 服务 / RSS 订阅](docs/trend-collectors.md)
 - [能力地图](docs/skill-function-mapping.md)
 - [SKILL 接口规范](docs/SKILL-SPEC.md)
 - [提示词与架构分层](docs/prompt-stack.md)
