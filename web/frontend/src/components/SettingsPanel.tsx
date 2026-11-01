@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import EnvBoard from './EnvBoard';
 import HarnessSettings from './HarnessSettings';
-import { OptionsDropdown } from './SettingsSelect';
+import SettingsSelect, { OptionsDropdown } from './SettingsSelect';
 import type { JobView } from './EnvBoard';
 import {
   fetchEnvTools, startEnvInstall, fetchEnvJob,
@@ -570,20 +570,13 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                         该模型会思考
                       </label>
                       {r.thinking && r.protocol !== 'anthropic' ? (
-                        <select
-                          aria-label={`${r.name || '自定义供应商'}思考格式`}
+                        <SettingsSelect label={`${r.name || '自定义供应商'}思考格式`}
                           value={r.thinkingFormat || ''}
-                          onChange={(e) => ops?.onRow?.(i, { thinkingFormat: e.target.value })}
-                        >
-                          <option value="">保留现有 / 自动</option>
-                          <option value="openai">OpenAI</option>
-                          <option value="deepseek">DeepSeek</option>
-                          <option value="openrouter">OpenRouter</option>
-                          <option value="together">Together</option>
-                          <option value="qwen">Qwen</option>
-                          <option value="qwen-chat-template">Qwen chat template</option>
-                          <option value="zai">ZAI</option>
-                        </select>
+                          options={[{ value: '', label: '保留现有 / 自动' },
+                            ...['OpenAI', 'DeepSeek', 'OpenRouter', 'Together', 'Qwen', 'Qwen chat template', 'ZAI'].map((label, i) => ({
+                              label, value: ['openai', 'deepseek', 'openrouter', 'together', 'qwen', 'qwen-chat-template', 'zai'][i],
+                            }))]}
+                          onChange={(value) => ops?.onRow?.(i, { thinkingFormat: value })} />
                       ) : null}
                     </span>
                   ) : null}
@@ -775,17 +768,11 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                               </span>
                               <span className="la-act">
                                 {a.supported && (a.models?.length ?? 0) > 0 && (
-                                  <select
-                                    className="la-model"
+                                  <SettingsSelect className="la-model" label={`${a.label}模型`}
                                     value={laModels[a.id] ?? ''}
-                                    title="选择该 agent 使用的模型"
-                                    onChange={(e) => setLaModels((m) => ({ ...m, [a.id]: e.target.value }))}
-                                  >
-                                    <option value="">默认模型</option>
-                                    {(a.models ?? []).map((m) => (
-                                      <option key={m.id} value={m.id}>{m.name}</option>
-                                    ))}
-                                  </select>
+                                    options={[{ value: '', label: '默认模型' },
+                                      ...(a.models ?? []).map(m => ({ value: m.id, label: m.name }))]}
+                                    onChange={(value) => setLaModels(m => ({ ...m, [a.id]: value }))} />
                                 )}
                                 {a.supported && (
                                   <button

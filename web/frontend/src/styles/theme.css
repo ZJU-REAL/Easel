@@ -2,6 +2,9 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+  --primary-bg: #edf0f5;
+  --primary-hover-bg: #cdd6e3;
+  --primary-text: #14171e;
   --bg: #14171e;
   --bg-elev: #1b2029;
   --surface: #1e242e;
@@ -63,7 +66,7 @@
 :root[data-theme='dark'] .composer { background: var(--bg-elev); border-color: var(--border); }
 :root[data-theme='dark'] .composer:focus-within { border-color: var(--accent-start); }
 :root[data-theme='dark'] .suggestion-card { background: var(--surface); }
-:root[data-theme='dark'] :is(.btn-primary, .send-btn, .brush-tab.on) { color: var(--bg); }
+:root[data-theme='dark'] :is(.send-btn, .brush-tab.on) { color: var(--bg); }
 :root[data-theme='dark'] :is(.brush-chip-pipe, .brush-item-pipe) { background: var(--accent-gradient-soft); border-color: var(--border-strong); }
 :root[data-theme='dark'] .message-bubble.user { color: var(--text); border-color: var(--border); }
 :root[data-theme='dark'] .thinking-block { background: var(--accent-soft); }
@@ -83,7 +86,7 @@
 :root[data-theme='dark'] .settings-overlay :is(.prog .bar, .env-meter) { background: var(--surface-hover); }
 :root[data-theme='dark'] .settings-overlay .btn-fill { color: var(--bg); }
 :root[data-theme='dark'] .settings-overlay .btn-fill:hover:not(:disabled) { background: #b7c6ff; border-color: #b7c6ff; }
-:root[data-theme='dark'] .settings-overlay .btn-primary { color: #fff; }
+
 
 @media (prefers-reduced-motion: reduce) {
   .theme-toggle { transition: none; }
