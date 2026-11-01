@@ -263,6 +263,13 @@ body {
 .chip:hover { border-color: var(--border-strong); }
 .chip.active { background: var(--accent-gradient); color: #fff; border-color: transparent; }
 
+/* 发布页「存草稿」开关（仅今日头条等声明 draft 能力的平台出现） */
+.draft-toggle {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 10px;
+  font-size: 12.5px; color: var(--text-secondary); cursor: pointer; user-select: none;
+}
+.draft-toggle input { accent-color: var(--accent-start); width: 15px; height: 15px; margin: 1px 0 0; cursor: pointer; }
+
 .field {
   width: 100%; padding: 10px 13px;
   background: var(--bg-elev); border: 1px solid var(--border);

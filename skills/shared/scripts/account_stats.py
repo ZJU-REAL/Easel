@@ -85,6 +85,25 @@ PLATFORMS: dict[str, dict] = {
         "metrics": ["净增关注", "新增播放", "新增评论"],
         "note_url_re": r"channels\.weixin\.qq\.com/platform/post|/finder/",
     },
+    "toutiao": {
+        # 真机 2026-10 校准（mp.toutiao.com）：概览与指标分属两页——
+        #   首页 profile_v4/index：「粉丝数 / 总阅读(播放)量 / 累计收益」
+        #   数据→作品数据 analysis/works-overall/all：「昨日展现量 / 昨日阅读(播放)量 / 昨日点赞量 / 昨日评论量」
+        # 因此 url 指向作品数据页取指标，粉丝数走 followers_url 回首页取。
+        "name": "今日头条", "profile": "ToutiaoProfile",
+        "url": "https://mp.toutiao.com/profile_v4/analysis/works-overall/all",
+        "default_proxy": False,
+        "overview_dir": "after",
+        # 头条没有「获赞/关注」概览位——留空，别用别的标签硬凑（凑出来的数比空更坏）
+        "overview": {"followers": ["粉丝数"], "likes": [], "following": []},
+        "metrics": ["昨日展现量", "昨日阅读(播放)量", "昨日点赞量", "昨日评论量"],
+        "followers_url": "https://mp.toutiao.com/profile_v4/index",
+        "followers_labels": ["粉丝数"],
+        "posts_labels": ["作品数", "内容数", "文章数"],
+        "nickname_selector": ".auth-avator-name",   # 左侧栏账号昵称（文本锚点会被导航词干扰）
+        "notes_url": "https://mp.toutiao.com/profile_v4/manage/content/all",
+        "note_url_re": r"toutiao\.com/(article|w|a)\d+|toutiao\.com/c/user/",
+    },
 }
 
 LAUNCH_ARGS = [
@@ -1034,6 +1053,11 @@ def _scrape_notes(platform: str, page, cfg: dict) -> list[dict]:
     notes: list[dict] = []
     if note_re:
         try:
+            # 作品列表在别的页时先跳过去（如头条：概览/指标页里没有作品链接）
+            nurl = cfg.get("notes_url")
+            if nurl:
+                page.goto(nurl, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(1500)
             links = page.eval_on_selector_all(
                 "a[href]", "els => els.map(e => ({t:(e.innerText||'').trim().slice(0,60), h:e.href}))")
             seen = set()

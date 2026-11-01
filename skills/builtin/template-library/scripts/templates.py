@@ -27,7 +27,7 @@ import tempfile
 from datetime import datetime
 
 VAR_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_一-鿿]+)\s*\}\}")
-CATEGORIES = ["xiaohongshu", "weibo", "douyin", "zhihu", "wechat", "x", "general"]
+CATEGORIES = ["xiaohongshu", "weibo", "douyin", "zhihu", "wechat", "x", "toutiao", "general"]
 
 
 def eprint(*a):

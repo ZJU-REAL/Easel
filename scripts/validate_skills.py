@@ -34,6 +34,9 @@ PUBLISH_SCRIPT_CONTRACTS = {
     "skills/builtin/skill-wechat-publisher/scripts/multi_publish.py": (
         "content_guard.guard_or_die", '"--exec"',
     ),
+    "skills/builtin/skill-toutiao-publisher/scripts/toutiao_publish.py": (
+        "content_guard.guard_or_die", '"--exec"',
+    ),
     "skills/shared/scripts/xhs_publish.py": (
         "content_guard.guard_or_die", 'add_argument("--exec"',
     ),

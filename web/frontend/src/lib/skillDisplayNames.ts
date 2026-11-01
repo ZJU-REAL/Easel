@@ -95,6 +95,7 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'skill-xhs-analyzer': '小红书分析',
   'skill-xhs-comment-reply': '小红书评论',
   'skill-xhs-publisher': '小红书',
+  'skill-toutiao-publisher': '今日头条',
   'skill-zhihu-answer': '知乎回答',
   'skill-zhihu-publisher': '知乎专栏',
   'slideshow-video': '相册视频',
