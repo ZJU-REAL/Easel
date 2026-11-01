@@ -8,6 +8,38 @@ from pathlib import Path
 WINDOWS = os.name == "nt"
 
 
+def proxy_environment(environment: dict[str, str], default_no_proxy: str) -> dict[str, str]:
+    """Preserve inherited proxies without Windows case-colliding empty keys."""
+    result = dict(environment)
+
+    def keys_for(name: str) -> list[str]:
+        keys = sorted((key for key in environment if key.lower() == name),
+                      key=lambda key: (key != name, key != name.upper(), key))
+        return keys
+
+    fallback = next((environment[key] for key in keys_for("easel_proxy")
+                     if environment[key].strip()), "")
+    for name in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
+        keys = keys_for(name)
+        if keys:
+            if not WINDOWS:
+                # Unix permits distinct aliases and explicit empty overrides.
+                if name == "no_proxy" and name not in result:
+                    result[name] = environment[keys[0]]
+                continue
+            value = next((environment[key] for key in keys if environment[key].strip()),
+                         environment[keys[0]])
+            for key in keys:
+                del result[key]
+            # Keep lower-case keys for in-process consumers such as _wechat_env.
+            result[name] = value
+        elif name == "no_proxy":
+            result[name] = default_no_proxy
+        elif name != "all_proxy" and fallback:
+            result[name] = fallback
+    return result
+
+
 def _version_directories(root: Path, pattern: str) -> list[Path]:
     versions = []
     try:
