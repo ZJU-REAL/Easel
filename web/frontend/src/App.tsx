@@ -152,6 +152,11 @@ export default function App() {
     return () => { ch?.removeEventListener('message', onMsg); ch?.close(); };
   }, []);
 
+  // 挂载时加载已有画像列表（修复：打开/刷新网页后，已存在的画像在侧栏下拉里不可见）。
+  useEffect(() => {
+    fetchPersonas().then((list) => setPersonas(list)).catch(() => {});
+  }, []);
+
   // 持久化当前活跃会话 id，重开网页据此续接上次对话（修复"今天再问就忘了"）。
   // 仅在非空时写：避免挂载首刷 activeSessionId 尚为 null 时误清掉已存的 id。
   // 同时更新本标签的 sessionStorage 标记：手动切会话/新建后刷新本标签仍续在正确会话上。
