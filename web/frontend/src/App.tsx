@@ -17,6 +17,7 @@ import OnboardingWizard from './components/OnboardingWizard';
 import SettingsPanel from './components/SettingsPanel';
 import { fetchStatus, fetchPersonas, streamChat, fetchLastTurn, stopChat } from './lib/api';
 import type { PersonaItem, UploadedFile, ChatQuestion } from './lib/api';
+import { availablePersona, parsePersonas } from './lib/personas';
 import { questionStatus } from './lib/api';
 import { deleteSession as deleteRemoteSession } from './lib/api';
 import {
@@ -47,15 +48,18 @@ function onboardingSeen(): boolean {
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [personas, setPersonas] = useState<PersonaItem[]>([]);
+  const [personasLoaded, setPersonasLoaded] = useState(false);
   const personaRequestId = useRef(0);
   const refreshPersonas = useCallback(async () => {
     const id = ++personaRequestId.current;
     const list = await fetchPersonas();
     if (personaRequestId.current !== id) return null;
     setPersonas(list);
+    setPersonasLoaded(true);
     return list;
   }, []);
-  const [selectedPersona, setSelectedPersona] = useState('');
+  const [requestedPersona, setSelectedPersona] = useState('');
+  const selectedPersona = availablePersona(requestedPersona, personasLoaded ? personas : null);
   const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [gatewayStatus, setGatewayStatus] = useState('connecting');
@@ -193,7 +197,12 @@ export default function App() {
       .then(([data, boot, list]) => {
         if (!active) return;
         const current = personaRequestId.current === initialPersonaRequest;
-        if (list === null && current) setPersonas(data.personas || []);
+        if (list === null && current) {
+          try {
+            setPersonas(parsePersonas(data.personas));
+            setPersonasLoaded(true);
+          } catch { /* 未验证的响应不能作为空画像列表。 */ }
+        }
         setGatewayStatus(data.gateway ? 'connected' : 'disconnected');
         setApiDirect(data.transport === 'api');
         setAgentRuntime(data.runtime || 'openclaw');
@@ -525,7 +534,7 @@ export default function App() {
     const agentMessage = (legacyAgentText || displayText).trim();
     if ((!agentMessage && attachments.length === 0) || streamCtl.current[sessionId] || streamAcc.current[sessionId]) return;
     const cur = sessionsRef.current.find((s) => s.id === sessionId);
-    const persona = cur?.persona || selectedPersona || undefined;
+    const persona = availablePersona(cur?.persona || selectedPersona, personasLoaded ? personas : null) || undefined;
     setSessions((prev) => {
       const next = prev.map((s) => {
         if (s.id !== sessionId) return s;
@@ -546,7 +555,7 @@ export default function App() {
       return next;
     });
     startStream(sessionId, agentMessage, persona, attachments);
-  }, [selectedPersona, startStream]);
+  }, [selectedPersona, startStream, personas, personasLoaded]);
 
   const handleSendMessage = useCallback((sessionId: string, displayText: string, attachments?: UploadedFile[]) => {
     sendUserAndStream(sessionId, displayText, attachments);
@@ -720,10 +729,9 @@ export default function App() {
 
   // 画像删除完成：刷新列表 + 若删的是当前选中的则清空选择
   const handleProfileDeleted = useCallback((name: string) => {
-    refreshPersonas().then((list) => {
-      if (list === null) return;
-      setSelectedPersona((cur) => (cur === name ? '' : cur));
-    }).catch(() => {});
+    setPersonas((list) => list.filter((p) => p.name !== name));
+    setSelectedPersona((cur) => (cur === name ? '' : cur));
+    void refreshPersonas().catch(() => {});
   }, [refreshPersonas]);
 
   // 流式生命周期在 App，页面切换随意——ChatPage 可自由卸载/重挂，回来从 props 读流式态即可。
@@ -790,7 +798,7 @@ export default function App() {
       case 'accounts':
         return <AccountsPage />;
       case 'profile':
-        return <ProfilePage persona={selectedPersona} onUsePersona={handlePersonaChange} onNewProfile={() => setShowWizard(true)} onDeleted={handleProfileDeleted} />;
+        return <ProfilePage persona={selectedPersona} onUsePersona={handlePersonaChange} onNewProfile={() => setShowWizard(true)} onDeleted={handleProfileDeleted} loadPersonas={refreshPersonas} />;
       default:
         return null;
     }
