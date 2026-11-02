@@ -12,30 +12,36 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
-from easel.skills_sync import ensure_workspace_links, skills_sync_state, synchronize_skills
+from easel.skills_sync import agent_workspace, ensure_workspace_links, skills_sync_state, synchronize_skills
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Report only; do not write files or links')
     args = parser.parse_args(argv)
-    ok, detail = skills_sync_state()
+    try:
+        # 一次操作固定一个解析结果，检查、复制和复查不能落到不同目录。
+        ws = agent_workspace()
+        ok, detail = skills_sync_state(ws)
+    except (OSError, ValueError, RuntimeError):
+        print('[easel] 无法解析 workspace，未确认同步', file=sys.stderr)
+        return 1
     if args.check:
-        print(f'[easel] {detail}')
+        print(f'[easel] {"已是最新" if ok else "未确认同步"}：{detail}')
         return 0 if ok else 1
     try:
-        copied = 0 if ok else synchronize_skills()
-        problems = ensure_workspace_links()
+        copied = 0 if ok else synchronize_skills(ws)
+        problems = ensure_workspace_links(ws)
         for problem in problems:
             print(f'[easel] {problem}', file=sys.stderr)
-        ok_after, detail_after = skills_sync_state()
+        ok_after, detail_after = skills_sync_state(ws)
     except (OSError, ValueError, RuntimeError):
         print('[easel] 同步失败，请检查目录权限和目标链接；未删除任何目录', file=sys.stderr)
         return 1
     if problems or not ok_after:
         print(f'[easel] 未完成全部同步检查：{detail_after}', file=sys.stderr)
         return 1
-    print(f'[easel] 同步完成（更新 {copied} 个文件）；额外本机文件、画像和记忆保留；不自动重启已有会话')
+    print(f'[easel] {"已是最新" if ok else "同步完成"}（更新 {copied} 个文件）；{detail_after}')
     return 0
 
 

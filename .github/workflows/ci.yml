@@ -67,8 +67,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install settings test dependencies
         run: python -m pip install pytest fastapi httpx uvicorn sse-starlette python-multipart requests websocket-client cryptography
-      - name: Verify user installations and settings
-        run: python -m pytest -q tests/test_runtime_env.py tests/test_openclaw_cmd_resolution.py tests/test_openclaw_cmd_shim.py tests/test_agent_harnesses.py tests/test_pr1.py tests/test_installation.py tests/test_setup_optional_harness.py
+      - name: Verify user installations, settings and skill workspace synchronization
+        run: python -m pytest -q tests/test_runtime_env.py tests/test_openclaw_cmd_resolution.py tests/test_openclaw_cmd_shim.py tests/test_agent_harnesses.py tests/test_pr1.py tests/test_installation.py tests/test_setup_optional_harness.py tests/test_skills_sync.py tests/test_workspace_resolution.py tests/test_doctor_config_path.py
 
   # 两个安装脚本此前在 CI 里零覆盖 —— setup.ps1 把 setup.sh 的版本假设 bug 原样复刻了一
   # 遍却没人发现，根因就在这里。这个 job 全程在 ubuntu 上跑（shellcheck 与 PSScriptAnalyzer

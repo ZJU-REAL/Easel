@@ -32,16 +32,18 @@ DOCTOR_PY = PROJECT_ROOT / "easel" / "commands" / "doctor.py"
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    """workspace_dir 带 lru_cache，不清会把上一个用例的答案漏给下一个。"""
-    ws.workspace_dir.cache_clear()
+    """运行时探针有缓存，不能把上一个用例的答案漏给下一个。"""
+    ws._fallback_workspace.cache_clear()
     yield
-    ws.workspace_dir.cache_clear()
+    ws._fallback_workspace.cache_clear()
 
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
     """把 HOME 和 state dir 都挪进 tmp，别碰真机配置。"""
     monkeypatch.setenv("EASEL_OPENCLAW_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     monkeypatch.delenv("EASEL_OPENCLAW_WORKSPACE", raising=False)
     # 默认让"问 openclaw"这一级失败，各用例再按需打开
@@ -53,7 +55,76 @@ def test_env_override_wins(isolated, monkeypatch):
     """显式覆盖优先级最高，连 openclaw 的话都盖掉 —— 用户拿它救场。"""
     monkeypatch.setattr(ws, "_ask_openclaw", lambda: Path("/from/openclaw"))
     monkeypatch.setenv("EASEL_OPENCLAW_WORKSPACE", "/my/ws")
-    assert ws.workspace_dir() == Path("/my/ws")
+    assert ws.workspace_dir() == Path("/my/ws").resolve()
+
+
+def test_env_override_is_expanded_and_not_cached(isolated, monkeypatch):
+    monkeypatch.setattr(ws, "_ask_openclaw", lambda: isolated / "runtime")
+    assert ws.workspace_dir() == isolated / "runtime"
+    monkeypatch.setenv("EASEL_OPENCLAW_WORKSPACE", "~/创作空间")
+    assert ws.workspace_dir() == isolated / "home" / "创作空间"
+    monkeypatch.setenv("EASEL_OPENCLAW_WORKSPACE", str(isolated / "other"))
+    assert ws.workspace_dir() == isolated / "other"
+
+
+def test_refresh_reloads_runtime_workspace(isolated, monkeypatch):
+    monkeypatch.setattr(ws, "_ask_openclaw", lambda: isolated / "before")
+    assert ws.workspace_dir() == isolated / "before"
+    monkeypatch.setattr(ws, "_ask_openclaw", lambda: isolated / "after")
+    assert ws.workspace_dir(refresh=True) == isolated / "after"
+
+
+def test_normal_calls_cache_the_runtime_probe(isolated, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ws, "_ask_openclaw", lambda: calls.append(True) or isolated / "runtime")
+    assert ws.workspace_dir() == ws.workspace_dir() == isolated / "runtime"
+    assert len(calls) == 1
+
+
+def test_refresh_reloads_changed_state_config(isolated, monkeypatch):
+    first, second = isolated / "state", isolated / "other-state"
+    for state, target in ((first, "before"), (second, "after")):
+        state.mkdir(exist_ok=True)
+        (state / "openclaw.json").write_text(json.dumps({
+            "agents": {"defaults": {"workspace": str(isolated / target)}}}), encoding="utf-8")
+    assert ws.workspace_dir() == isolated / "before"
+    monkeypatch.setenv("EASEL_OPENCLAW_STATE_DIR", str(second))
+    assert ws.workspace_dir(refresh=True) == isolated / "after"
+
+
+@pytest.mark.parametrize("agents,expected", [
+    ({"list": [{"id": "main", "workspace": "~/main"},
+                {"id": "writer", "default": True, "workspace": "~/writer"}]}, "writer"),
+    ({"list": [{"id": "writer", "workspace": "~/writer"},
+                {"id": "main", "workspace": "~/main"}]}, "writer"),
+    ({"list": [{"id": "writer", "default": True}],
+      "defaults": {"workspace": "~/defaults"}}, "defaults"),
+    ({"entries": {"main": {"workspace": "~/main"}}}, "main"),
+])
+def test_config_selects_default_agent(isolated, agents, expected):
+    cfg = isolated / "state" / "openclaw.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"agents": agents}), encoding="utf-8")
+    assert ws.workspace_dir() == isolated / "home" / expected
+
+
+@pytest.mark.parametrize("payload", [[], None, {"agents": []}, {"agents": "bad"},
+                                          {"agents": {"defaults": []}}])
+def test_malformed_config_can_fall_back(isolated, payload, monkeypatch):
+    cfg = isolated / "state" / "openclaw.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(ws, "_version_default", lambda: isolated / "fallback")
+    assert ws.workspace_dir() == isolated / "fallback"
+
+
+@pytest.mark.parametrize("payload", [[], None, {"agents": []}, {"agents": "bad"}])
+def test_malformed_status_can_fall_back(monkeypatch, payload):
+    from types import SimpleNamespace
+    monkeypatch.setattr(ws.subprocess, "run", lambda *a, **k:
+                        SimpleNamespace(returncode=0, stdout=json.dumps(payload)))
+    monkeypatch.setattr("easel.openclaw_cmd.openclaw_base_cmd", lambda: ["openclaw"])
+    assert ws._ask_openclaw() is None
 
 
 def test_asks_openclaw_first(isolated, monkeypatch):
@@ -63,7 +134,7 @@ def test_asks_openclaw_first(isolated, monkeypatch):
     skills = isolated / "home" / ".openclaw" / "workspace-easel" / "skills"
     skills.mkdir(parents=True)
     (skills / "x").mkdir()
-    assert ws.workspace_dir() == Path("/runtime/ws")
+    assert ws.workspace_dir() == Path("/runtime/ws").resolve()
 
 
 def test_falls_back_to_config(isolated):
@@ -71,7 +142,7 @@ def test_falls_back_to_config(isolated):
     cfg = isolated / "state" / "openclaw.json"
     cfg.parent.mkdir(parents=True)
     cfg.write_text(json.dumps({"agents": {"defaults": {"workspace": "/cfg/ws"}}}), encoding="utf-8")
-    assert ws.workspace_dir() == Path("/cfg/ws")
+    assert ws.workspace_dir() == Path("/cfg/ws").resolve()
 
 
 def test_prefers_existing_dir_with_content(isolated):
@@ -120,6 +191,27 @@ def test_ask_openclaw_picks_default_agent(monkeypatch):
     assert ws._ask_openclaw() == Path("/ws/main")
 
 
+@pytest.mark.parametrize("entries", [
+    [{"id": "other", "workspaceDir": "/ws/other"}],
+    [{"id": "other", "workspaceDir": "/ws/other"}, {"id": "main"}],
+])
+def test_status_never_substitutes_another_agent_workspace(monkeypatch, entries):
+    from types import SimpleNamespace
+    monkeypatch.setattr(ws.subprocess, "run", lambda *a, **k: SimpleNamespace(
+        returncode=0, stdout=json.dumps({"agents": {"defaultId": "main", "agents": entries}})))
+    monkeypatch.setattr("easel.openclaw_cmd.openclaw_base_cmd", lambda: ["openclaw"])
+    assert ws._ask_openclaw() is None
+
+
+def test_legacy_status_without_default_id_is_supported(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(ws.subprocess, "run", lambda *a, **k: SimpleNamespace(
+        returncode=0, stdout=json.dumps({"agents": {"agents": [None,
+            {"id": "writer", "workspaceDir": "/ws/writer"}]}})))
+    monkeypatch.setattr("easel.openclaw_cmd.openclaw_base_cmd", lambda: ["openclaw"])
+    assert ws._ask_openclaw() == Path("/ws/writer")
+
+
 def test_ask_openclaw_survives_garbage(monkeypatch):
     """openclaw 吐了非 JSON / 非零退出时必须返回 None 走退化，不能抛。"""
     class _Bad:
@@ -139,7 +231,7 @@ def test_doctor_uses_resolver(isolated, monkeypatch):
     ok, detail = doctor._skills_synced()
     assert ok, detail
 
-    ws.workspace_dir.cache_clear()
+    ws._fallback_workspace.cache_clear()
     empty = isolated / "empty-ws"
     empty.mkdir()
     monkeypatch.setattr(ws, "_ask_openclaw", lambda: empty)
