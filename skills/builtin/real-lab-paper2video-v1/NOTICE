@@ -1,0 +1,14 @@
+real-lab-paper2video-v1
+Copyright 2026 hongxingli319
+
+The original code, documentation, project templates, and Easel integration are
+licensed under the Apache License, Version 2.0. See LICENSE.
+
+This product includes paper2assets from Microsoft ResearchStudio:
+https://github.com/microsoft/ResearchStudio
+Copyright (c) 2026 Happy
+
+paper2assets is distributed under the MIT License. Its original copyright
+and permission notice are reproduced in vendor/paper2assets/LICENSE.
+The exact source revision and file inventory are recorded in
+vendor/paper2assets/UPSTREAM.json. The vendored code retains its MIT license.
