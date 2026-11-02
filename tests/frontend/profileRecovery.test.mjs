@@ -49,6 +49,57 @@ test('sending from a historical missing profile uses general mode and preserves 
   assert.equal(saved[0].messages[1].content, '继续对话');
 });
 
+for (const scenario of [
+  { name: 'valid profile', persona: '有效画像', catalog: [{ name: '有效画像', description: '' }], loaded: true, expected: '有效画像' },
+  { name: 'unverified catalog', persona: '有效画像', catalog: [], loaded: false, expected: '有效画像' },
+  { name: 'general mode', persona: undefined, catalog: [], loaded: true, expected: undefined },
+]) {
+  test(`sending with ${scenario.name} preserves the existing conversation contract`, () => {
+    const history = [{ role: 'assistant', content: '原有对话' }];
+    const old = { id: 'current', persona: scenario.persona, messages: history, sessionKey: 'remote-session' };
+    const other = { id: 'other', persona: '另一画像', messages: [] };
+    let saved, sent;
+    const send = runInNewContext(callback('sendUserAndStream'), {
+      useCallback: fn => fn, selectedPersona: scenario.persona || '',
+      personas: scenario.catalog, personasLoaded: scenario.loaded, availablePersona: personaExports.availablePersona,
+      sessionsRef: { current: [old, other] }, streamCtl: { current: {} }, streamAcc: { current: {} },
+      setSessions: update => { saved = update([old, other]); }, saveSessions() {}, updateSessionTitle() {},
+      startStream: (...args) => { sent = args; },
+    });
+    send(old.id, '继续');
+    assert.equal(sent[2], scenario.expected);
+    assert.equal(saved[0].persona, old.persona);
+    assert.equal(saved[0].sessionKey, old.sessionKey);
+    assert.equal(saved[0].messages[0], history[0]);
+    assert.equal(saved[1], other);
+  });
+}
+
+for (const status of [400, 403, 404, 500]) {
+  test(`shared HTTP ${status} errors remain compatible with existing Error consumers`, async () => {
+    const api = {};
+    runInNewContext(compile(read('lib/api.ts')), {
+      exports: api, require: name => name === './personas' ? personaExports : {},
+      window: { location: { pathname: '/' } }, Error,
+      fetch: async () => ({ ok: false, status, json: async () => ({ detail: '请求错误' }) }),
+    });
+    for (const invoke of [() => api.deletePersona('有效画像'), () => api.buildProfile('新画像', {})]) {
+      await assert.rejects(invoke(), error => error instanceof Error && error instanceof api.ApiError
+        && error.status === status && error.message === '请求错误');
+    }
+  });
+}
+
+test('network errors are not reclassified as missing profiles by the shared API client', async () => {
+  const api = {}, failure = new TypeError('Failed to fetch');
+  runInNewContext(compile(read('lib/api.ts')), {
+    exports: api, require: name => name === './personas' ? personaExports : {},
+    window: { location: { pathname: '/' } }, Error,
+    fetch: async () => { throw failure; },
+  });
+  await assert.rejects(api.deletePersona('有效画像'), error => error === failure);
+});
+
 test('API errors retain HTTP status so missing profiles differ from network failures', async () => {
   await assert.rejects(apiExports.deletePersona('AI 博主'), error =>
     error instanceof ApiError && error.status === 404 && error.message === '画像不存在');
@@ -150,6 +201,44 @@ test('a valid profile opens after validation; a list request failure cannot eras
   failed(failedProps);
   await drain();
   assert.ok(nodes(failed(failedProps)).some(node => node.props?.role === 'alert'));
+});
+
+for (const original of ['', '原有画像']) {
+  test(`creating a profile from the profile page refreshes its catalog (${original || 'general mode'})`, async () => {
+    let catalog = original ? [{ name: original, description: '' }] : [];
+    let requests = 0;
+    const loadPersonas = async () => { requests++; return catalog; };
+    const render = mount('default');
+    const before = { ...props, persona: original, loadPersonas };
+    render(before);
+    await drain();
+    render(before);
+    catalog = [...catalog, { name: '新建画像', description: '' }];
+    const after = { ...before, persona: '新建画像' };
+    render(after);
+    await drain();
+    const detail = render(after);
+    assert.equal(detail.type.name, 'ProfileDetail');
+    assert.equal(detail.props.persona, '新建画像');
+    assert.equal(requests, 2);
+  });
+}
+
+test('a late catalog from the previous selected identity cannot override the new identity', async () => {
+  const pending = [];
+  const loadPersonas = () => new Promise(resolve => pending.push(resolve));
+  const render = mount('default');
+  render({ ...props, persona: '旧画像', loadPersonas });
+  const latest = { ...props, persona: '新画像', loadPersonas };
+  render(latest);
+  pending[1]([{ name: '新画像', description: '' }]);
+  await drain();
+  assert.equal(render(latest).props.persona, '新画像');
+  pending[0]([{ name: '旧画像', description: '' }]);
+  await drain();
+  const detail = render(latest);
+  assert.equal(detail.type.name, 'ProfileDetail');
+  assert.equal(detail.props.persona, '新画像');
 });
 
 test('a superseded catalog request prompts retry instead of displaying an empty catalog', async () => {

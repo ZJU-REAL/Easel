@@ -101,7 +101,7 @@ export default function ProfilePage(props: ProfilePageProps) {
       if (!ignore) setError('加载画像列表失败，请重试。');
     }).finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [revision, loadPersonas]);
+  }, [revision, loadPersonas, props.persona]);
 
   if (!loading && !error && viewedPersona && personas.some((p) => p.name === viewedPersona)) {
     return <ProfileDetail key={viewedPersona} {...props} persona={viewedPersona}
