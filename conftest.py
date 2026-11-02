@@ -8,6 +8,9 @@ import pytest
 def isolate_web_outputs(request, tmp_path_factory, monkeypatch):
     if not request.node.path.is_relative_to(Path(__file__).parent / "tests"):
         return
+    # Existing tests exercise the file backend and must never touch a configured
+    # production database when run from a deployed checkout.
+    monkeypatch.setenv("EASEL_MYSQL_DSN", "")
     outputs = tmp_path_factory.mktemp("isolated-web-outputs")
     for name in ("app", "web.app"):
         module = sys.modules.get(name)
