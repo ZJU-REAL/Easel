@@ -5,6 +5,7 @@ import asyncio
 from pathlib import Path
 
 from .acp import ACPAdapter, OpenCodeAdapter
+from .antigravity import AntigravityAdapter
 from .base import Descriptor, HarnessError, RunRequest
 from .codex import CodexAdapter
 from .commands import acp_command, base_command
@@ -12,7 +13,7 @@ from .store import settings
 
 OPENCLAW = Descriptor("openclaw", "OpenClaw", "gateway / CLI", "运行原有安装流程")
 CHAT_ONLY = Descriptor("api", "仅聊天模式", "模型 API 直连", "在模型配置中填写地址、模型与 Key")
-ADAPTERS = {adapter.descriptor.id: adapter for adapter in (OpenCodeAdapter(), CodexAdapter(), ACPAdapter())}
+ADAPTERS = {adapter.descriptor.id: adapter for adapter in (OpenCodeAdapter(), CodexAdapter(), ACPAdapter(), AntigravityAdapter())}
 
 
 def adapter(runtime: str):
