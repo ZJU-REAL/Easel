@@ -6,6 +6,7 @@ bundle，曾导致「登录成功仍显示未登录」。启动时检测 src/pub
 """
 import os
 import types
+import tempfile
 
 import pytest
 
@@ -102,17 +103,16 @@ def test_cmd_web_still_starts_with_stale_dist(monkeypatch, tmp_path):
 
 # ---------- 浏览器登录态目录可写性守卫（_warn_unwritable_profiles_dir） ----------
 
-def test_warns_when_profiles_dir_unwritable(tmp_path, capsys):
+def test_warns_when_profiles_dir_unwritable(tmp_path, capsys, monkeypatch):
     """登录态目录只读（如沙箱 EPERM）→ 明确警告；登录 runner 会在这里 mkdir 崩溃。"""
     ro = tmp_path / "ro-profiles"
     ro.mkdir()
-    ro.chmod(0o555)
-    try:
-        cli._warn_unwritable_profiles_dir(ro)
-        err = capsys.readouterr().err
-        assert "不可写" in err and "easel web" in err
-    finally:
-        ro.chmod(0o755)  # 恢复权限，保证 tmp_path 清理不报错
+    def denied(*args, **kwargs):
+        raise PermissionError('denied')
+    monkeypatch.setattr(tempfile, 'TemporaryFile', denied)
+    cli._warn_unwritable_profiles_dir(ro)
+    err = capsys.readouterr().err
+    assert "不可写" in err and "easel web" in err
 
 
 def test_silent_when_profiles_dir_writable(tmp_path, capsys):

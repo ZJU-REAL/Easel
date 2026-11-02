@@ -912,7 +912,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 <div className="panel-top">
                   <span className={`pill ${proxyCfg?.proxy ? 'ok' : 'off'}`}><span className="dot" />
                     {proxyCfg?.proxy ? '代理已配置' : '代理未配置'}</span>
-                  <span className="desc">外网代理：X / YouTube 登录发布、热点拉取等外网访问使用；国内平台始终直连</span>
+                  <span className="desc">用于 X 等外网访问；各入口保留已有代理与直连配置，微信固定出口独立生效</span>
                   <span className="spacer" />
                 </div>
                 <div className="board">

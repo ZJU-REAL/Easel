@@ -12,7 +12,7 @@ layer: produce
 
 - 从项目根运行，Python 使用 `.venv/bin/python`。Easel 中统一经 `scripts/easel_video.py` 调用工具，它校验产物路径并复用 Python Playwright 自带的 Node 模块；原始工具随工程复制后仍可独立使用。
 - 一个论文项目使用 `outputs/<论文简称>/`。可编辑工程放 `outputs/<论文简称>/assets/paper-video/`，事实表、素材、音轨、QA 和预览均在工程内；最终 `final.mp4`、`subtitles.srt`、`script.md`、`cover.png` 放主题根目录。
-- 环境检查：`.venv/bin/python skills/builtin/real-lab-paper2video-v1/scripts/easel_video.py assets check`。PDF 依赖见 `requirements.txt`；Poppler 提供 `pdftotext` / `pdftoppm`，渲染还需 Node.js、Playwright、Chrome 与 FFmpeg。
+- 环境检查：`.venv/bin/python skills/builtin/real-lab-paper2video-v1/scripts/easel_video.py assets check`。PDF 依赖见 `requirements.txt`；Poppler 提供 `pdftotext` / `pdftoppm`，渲染复用 Node.js、Playwright Chromium 与 FFmpeg。
 - 配音与配乐可复用 [tts-voiceover](../tts-voiceover/SKILL.md)、[audio-mix](../audio-mix/SKILL.md)，沿用用户在 Easel 配置的声音服务；未配置时按对应技能的本地方案处理。此技能制作视频，不自动发布。
 
 ## 制作顺序

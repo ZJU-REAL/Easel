@@ -152,6 +152,33 @@ class PromotionTests(unittest.TestCase):
         self.post.write_text(self.post.read_text(encoding='utf-8')+'新增一句。', encoding='utf-8')
         with self.assertRaises(ValueError): p.validate(self.args)
 
+    def test_evidence_must_match_the_pdf_page(self):
+        p.render(self.args)
+        p.save(self.work/'evidence.json', [{'post_quote':'方法对应测试图。','page':2,'source_excerpt':'invented evidence'}])
+        self.reviewed()
+        with self.assertRaisesRegex(ValueError, 'excerpt not found'):
+            p.validate(self.args)
+
+    def test_prepare_does_not_replace_an_existing_paper(self):
+        work=self.root/'existing'
+        work.mkdir()
+        existing=work/'paper.pdf'
+        existing.write_bytes(b'keep my file')
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            p.prepare(SimpleNamespace(source=str(self.pdf),work=str(work)))
+        self.assertEqual(existing.read_bytes(),b'keep my file')
+
+    def test_render_refuses_an_image_directory_outside_output(self):
+        outside=self.root/'outside'
+        outside.mkdir()
+        try:
+            (self.out/'images').symlink_to(outside,target_is_directory=True)
+        except OSError:
+            self.skipTest('symlink creation unavailable')
+        with self.assertRaisesRegex(ValueError, 'escapes'):
+            p.render(self.args)
+        self.assertEqual(list(outside.iterdir()),[])
+
     def test_rotated_pdf(self):
         doc = fitz.open(self.pdf)
         doc[0].set_rotation(90)

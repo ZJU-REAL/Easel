@@ -91,7 +91,8 @@ def _proxy_env() -> dict[str, str]:
     from easel.runtime_env import proxy_environment
 
     env = proxy_environment(dict(os.environ),
-                            "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*")
+                            "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*",
+                            env_file=PROJECT_ROOT / ".env")
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
     return env
 

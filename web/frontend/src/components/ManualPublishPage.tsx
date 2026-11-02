@@ -11,6 +11,8 @@ const PLATFORMS = [
   { key: 'kuaishou', label: '快手', titleLimit: 30, bodyLimit: 1000, url: 'https://cp.kuaishou.com/article/publish/video', hint: '在官方发布页核对描述、封面与素材。' },
   { key: 'weixin-channels', label: '视频号', titleLimit: 0, bodyLimit: 1000, url: 'https://channels.weixin.qq.com/platform/post/create', hint: '在视频号助手登录，上传视频并检查预览。' },
   { key: 'zhihu', label: '知乎', titleLimit: 0, bodyLimit: 5000, url: 'https://zhuanlan.zhihu.com/write', hint: '打开官方文章编辑器，粘贴正文后检查排版。' },
+  { key: 'juejin', label: '掘金', titleLimit: 100, bodyLimit: 20000, url: 'https://juejin.cn/editor/drafts/new?v=2', hint: '在官方编辑器粘贴 Markdown，选择分类与标签，检查摘要后发布。' },
+  { key: 'twitter-x', label: '推特 X', titleLimit: 0, bodyLimit: 280, url: 'https://x.com/compose/post', hint: '将标题与正文合并到官方发帖框，按平台计数检查长度后亲自发布。' },
   { key: 'bilibili', label: 'B站', titleLimit: 80, bodyLimit: 2000, url: 'https://member.bilibili.com/', hint: '进入官方创作中心投稿，核对分区、简介和封面。' },
   { key: 'wechat-oa', label: '公众号', titleLimit: 64, bodyLimit: 20000, url: 'https://mp.weixin.qq.com/', hint: '在官方后台新建草稿，上传图片并检查手机版预览。' },
 ];

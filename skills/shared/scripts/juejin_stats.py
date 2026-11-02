@@ -125,7 +125,7 @@ def _fetch_with(user_id: str, limit: int, jar) -> dict:
     return {
         "platform": "juejin", "name": "掘金",
         "nickname": user.get("user_name") or "",
-        "loggedIn": bool(user),
+        "loggedIn": jar is not None and bool(user) and not user_id,
         "userId": uid,
         # 掘金 user/get 里的 follower_count 即粉丝数（实测字段名易被误认为 fan*，勿漏）
         "followers": user.get("follower_count"),

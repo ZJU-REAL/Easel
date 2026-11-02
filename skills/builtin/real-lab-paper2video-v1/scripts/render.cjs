@@ -29,7 +29,7 @@ async function main(){
  let pw;try{pw=require(process.env.PLAYWRIGHT_MODULE||'playwright');}catch{throw Error('Playwright unavailable. Install locally or set PLAYWRIGHT_MODULE to the available module path.');}
  let browser,ff,stderr='',pageErrors=[];
  try{
-  browser=await pw.chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||'chrome',args:['--disable-gpu','--disable-lcd-text','--font-render-hinting=none','--force-color-profile=srgb']});
+  browser=await pw.chromium.launch({headless:true,...(process.env.BROWSER_CHANNEL?{channel:process.env.BROWSER_CHANNEL}:{}),args:['--disable-gpu','--disable-lcd-text','--font-render-hinting=none','--force-color-profile=srgb']});
   const page=await browser.newPage({viewport:{width:w,height:h},deviceScaleFactor:1});
   page.on('pageerror',e=>pageErrors.push(String(e)));
   const entry=path.join(root,cfg.entry||'index.html');

@@ -40,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             command = [sys.executable, str(SCRIPTS / "init_project.py"), str(output_dir(args.destination))]
         elif args.command == "render":
             dest = validate_output_path(args.output)
+            validate_output_path(str(dest) + ".render.json")
             # Reuse the Node package shipped with Python Playwright; no npm install needed.
             spec = importlib.util.find_spec("playwright")
             if spec and spec.origin:
@@ -59,14 +60,21 @@ def main(argv: list[str] | None = None) -> int:
                 options = argparse.ArgumentParser(add_help=False)
                 options.add_argument("--outdir", required=True)
                 parsed, _ = options.parse_known_args(forwarded[1:])
-                output_dir(parsed.outdir)
+                bundle = output_dir(parsed.outdir)
+                for relative in ("assets/figures", "assets/meta", "assets/logos", "assets/qr"):
+                    output_dir(bundle / relative)
             elif forwarded[0] == "crop":
                 if len(forwarded) < 3:
                     parser.error("crop requires an operation and image")
                 readonly = forwarded[1] in {"inspect", "blocks"} or (
                     forwarded[1] in {"top-check", "decaption"} and "--apply" not in forwarded)
                 if not readonly:
-                    validate_output_path(forwarded[2])
+                    image = validate_output_path(forwarded[2])
+                    output_dir(image.parent / "_debug")
+                    for candidate in (image.parent / "figures.json", image.parent.parent / "figures.json",
+                                      image.parent.parent / "meta" / "figures.json"):
+                        if candidate.exists() or candidate.is_symlink():
+                            validate_output_path(candidate)
             command = [sys.executable, str(SCRIPTS / "paper_assets.py"), *forwarded]
         return subprocess.run(command, cwd=PROJECT_ROOT, env=env).returncode
     except (ValueError, OSError) as exc:

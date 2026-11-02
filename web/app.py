@@ -771,13 +771,8 @@ def clean_agent_output(raw: str) -> str:
 def _easel_proxy() -> str:
     """EASEL_PROXY 解析链：进程环境变量优先，其次 .env（设置页「网络代理」持久化项）。
     返回 '' 表示未配置。设置页保存后无需重启——每次起子进程都重新解析。"""
-    env_val = os.environ.get('EASEL_PROXY', '').strip()
-    if env_val:
-        return env_val
-    try:
-        return _read_env().get('EASEL_PROXY', '').strip()
-    except Exception:
-        return ''
+    from easel.runtime_env import proxy_environment
+    return proxy_environment(dict(os.environ), '', env_file=ENV_FILE).get('EASEL_PROXY', '').strip()
 
 
 def _proxy_env() -> dict[str, str]:
@@ -785,7 +780,8 @@ def _proxy_env() -> dict[str, str]:
     from easel.runtime_env import proxy_environment
 
     env = proxy_environment(dict(os.environ),
-                            'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com')
+                            'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com',
+                            env_file=ENV_FILE)
     env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
     return env
 
@@ -1948,8 +1944,14 @@ async def api_settings_proxy_save(req: ProxyRequest):
             u = urllib.parse.urlsplit(proxy)
         except ValueError:
             u = None
-        if (u is None or u.scheme not in ('http', 'https', 'socks5', 'socks5h')
-                or not u.hostname or u.username or u.password):
+        try:
+            valid = (u is not None and u.scheme in ('http', 'https', 'socks5', 'socks5h')
+                     and bool(u.hostname) and u.port != 0 and u.username is None and u.password is None
+                     and not u.query and not u.fragment and u.path in ('', '/')
+                     and not any(c.isspace() or ord(c) < 32 for c in proxy) and '\\' not in proxy)
+        except ValueError:
+            valid = False
+        if not valid:
             raise HTTPException(400, '代理地址需形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080（不含用户名密码）')
     _write_env({'EASEL_PROXY': proxy})   # 空串 → 删除该行（清除代理）
     return {'ok': True, 'proxy': proxy, 'source': 'envfile' if proxy else 'none'}

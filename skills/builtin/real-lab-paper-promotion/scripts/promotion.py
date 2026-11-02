@@ -14,7 +14,20 @@ import urllib.request
 
 
 def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    result = hashlib.sha256()
+    with Path(path).open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def child(directory, *parts):
+    root = Path(directory).resolve()
+    target = root.joinpath(*parts)
+    resolved = target.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError('Working or output file escapes its directory: '+str(target))
+    return target
 
 
 def save(path, data):
@@ -53,11 +66,13 @@ def prepare(a):
     fitz = fitz_module()
     work = Path(a.work).resolve()
     work.mkdir(parents=True, exist_ok=True)
-    pdf = work/'paper.pdf'
+    pdf = child(work, 'paper.pdf')
     # Do not replace an existing run silently.
-    if (work/'source.json').exists():
+    if any(child(work, name).exists() for name in ('source.json', 'pages.json', 'text.txt', 'pages', 'download.part')):
         raise ValueError('WORK already contains a run; choose a fresh WORK directory')
     local = Path(a.source).expanduser()
+    if pdf.exists() and (not local.is_file() or local.resolve() != pdf):
+        raise ValueError('paper.pdf already exists; choose a fresh WORK directory')
     origin = a.source
     if local.is_file():
         if local.resolve() != pdf:
@@ -66,7 +81,7 @@ def prepare(a):
     else:
         url = source_url(a.source)
         req = urllib.request.Request(url, headers={'User-Agent': 'REAL-Lab-Paper-Promotion/1.0'})
-        tmp = work/'download.part'
+        tmp = child(work, 'download.part')
         try:
             with urllib.request.urlopen(req, timeout=60) as response, tmp.open('wb') as out:
                 resolved = response.geturl()
@@ -79,7 +94,9 @@ def prepare(a):
                     if total > 200*1024*1024:
                         raise ValueError('PDF exceeds 200 MiB download limit')
                     out.write(chunk)
-            if b'%PDF-' not in tmp.read_bytes()[:1024]:
+            with tmp.open('rb') as downloaded:
+                header = downloaded.read(1024)
+            if b'%PDF-' not in header:
                 raise ValueError('URL did not return a PDF (possibly login/HTML page)')
             tmp.replace(pdf)
         finally:
@@ -87,11 +104,11 @@ def prepare(a):
     with fitz.open(pdf) as doc:
         if not doc.is_pdf or doc.needs_pass:
             raise ValueError('Input must be an unlocked PDF')
-        previews = work/'pages'
+        previews = child(work, 'pages')
         previews.mkdir(exist_ok=True)
         pages = []
         for i, page in enumerate(doc):
-            page.get_pixmap(dpi=110, alpha=False).save(previews/f'{i+1:03d}.png')
+            page.get_pixmap(dpi=110, alpha=False).save(child(previews, f'{i+1:03d}.png'))
             pages.append({'page': i+1, 'rect': list(page.rect), 'rotation': page.rotation,
                           'text': page.get_text(sort=True),
                           'blocks': page.get_text('blocks')})
@@ -194,14 +211,14 @@ def pixels(doc, item):
 
 def render(a):
     work, out, doc, figures, _, _ = load_plan(a)
-    folder = out/'images'
+    folder = child(out, 'images')
     folder.mkdir(exist_ok=True)
     expected = {f['file'] for f in figures}
     extras = {p.name for p in folder.iterdir()}-expected
     if extras:
         raise ValueError('Remove stale files from images before rendering: '+str(sorted(extras)))
     for item in figures:
-        pixels(doc, item).save(folder/item['file'])
+        pixels(doc, item).save(child(folder, item['file']))
     doc.close()
     print(f'Rendered {len(figures)} faithful PDF screenshots; visual review still required')
 
@@ -215,17 +232,18 @@ def binding(work, out):
 def validate(a):
     fitz = fitz_module()
     work, out, doc, figures, title, body = load_plan(a)
-    folder = out/'images'
+    folder = child(out, 'images')
     if {p.name for p in folder.iterdir()} != {f['file'] for f in figures}:
         raise ValueError('Missing or extra screenshot files')
     entries = {p.name for p in out.iterdir()}
     if not {'post.md', 'images'} <= entries or entries - {'post.md', 'images', 'assets', '.easel.json'}:
         raise ValueError('OUT allows post.md, images/, assets/ and .easel.json only')
     for item in figures:
-        actual = fitz.Pixmap(str(folder/item['file']))
+        actual = fitz.Pixmap(str(child(folder, item['file'])))
         expected = pixels(doc, item)
         if (actual.width, actual.height, actual.n, actual.samples) != (expected.width, expected.height, expected.n, expected.samples):
             raise ValueError('Screenshot does not match source PDF render: '+item['file'])
+    source_text = [re.sub(r'\s+', ' ', page.get_text(sort=True)).strip() for page in doc]
     doc.close()
     evidence = read(work/'evidence.json')
     if not isinstance(evidence, list) or not evidence:
@@ -233,8 +251,10 @@ def validate(a):
     for claim in evidence:
         if not claim.get('post_quote') or claim['post_quote'] not in body:
             raise ValueError('Evidence quote missing from final body')
-        if not claim.get('source_excerpt') or type(claim.get('page')) is not int or not 1 <= claim['page'] <= read(work/'source.json')['pages']:
+        if not isinstance(claim.get('source_excerpt'), str) or not claim['source_excerpt'].strip() or type(claim.get('page')) is not int or not 1 <= claim['page'] <= len(source_text):
             raise ValueError('Evidence lacks source excerpt or page')
+        if re.sub(r'\s+', ' ', claim['source_excerpt']).strip() not in source_text[claim['page']-1]:
+            raise ValueError('Evidence excerpt not found on the specified PDF page')
     review = read(work/'review.json')
     if review['hashes'] != binding(work, out):
         raise ValueError('Semantic review is stale: file hashes changed')
@@ -245,7 +265,7 @@ def validate(a):
     result = {'machine_passed': True, 'semantic_review_recorded': True,
               'title': counts(title), 'body': counts(body), 'images': len(figures),
               'note': 'Machine checks do not independently prove semantic or factual accuracy.'}
-    save(work/'validation.json', result)
+    save(child(work, 'validation.json'), result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

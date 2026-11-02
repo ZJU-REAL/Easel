@@ -39,6 +39,30 @@ def test_no_proxy_configuration_does_not_inject_empty_proxy_values():
     assert not any(key.lower() in ("http_proxy", "https_proxy", "all_proxy") for key in result)
 
 
+def test_file_proxy_is_last_value_and_does_not_replace_inherited_routes(tmp_path):
+    path=tmp_path/'.env'
+    path.write_bytes(b'\xef\xbb\xbfEASEL_PROXY=http://first.invalid:80\nEASEL_PROXY="http://last.invalid:80"\n')
+    result=runtime_env.proxy_environment({'HTTP_PROXY':'http://explicit.invalid:80','NO_PROXY':'internal'},'unused',env_file=path)
+    assert result['EASEL_PROXY']=='http://last.invalid:80'
+    assert result.get('http_proxy',result.get('HTTP_PROXY'))=='http://explicit.invalid:80'
+    assert result['https_proxy']=='http://last.invalid:80'
+    assert result.get('no_proxy')=='internal'
+
+
+@pytest.mark.parametrize('entry',[cli,web,ping,skill])
+def test_all_entry_points_inherit_file_proxy(monkeypatch,tmp_path,entry):
+    for key in list(os.environ):
+        if key.lower() in ('http_proxy','https_proxy','all_proxy','easel_proxy'):
+            monkeypatch.delenv(key)
+    env_file=tmp_path/'.env'
+    env_file.write_text('EASEL_PROXY=http://file.invalid:7890\n',encoding='utf-8')
+    monkeypatch.setattr(entry,'PROJECT_ROOT',tmp_path)
+    if entry is web:
+        monkeypatch.setattr(web,'ENV_FILE',env_file)
+    result=entry._proxy_env()
+    assert result['EASEL_PROXY']==result['http_proxy']==result['https_proxy']=='http://file.invalid:7890'
+
+
 def test_unix_explicit_empty_proxy_and_distinct_aliases_are_preserved(monkeypatch):
     monkeypatch.setattr(runtime_env, "WINDOWS", False)
     original = {"http_proxy": "", "HTTP_PROXY": "http://upper.invalid:80",

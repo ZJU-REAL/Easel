@@ -46,7 +46,7 @@ def _parse_count(text: str) -> int | None:
     if not text:
         return None
     t = text.replace(",", "").replace("，", "").strip()
-    m = re.search(r"([\d.]+)\s*(万|w|k|K|亿)?", t)
+    m = re.search(r"([\d.]+)\s*(万|w|k|m|b|亿)?", t, re.I)
     if not m:
         return None
     try:
@@ -60,6 +60,10 @@ def _parse_count(text: str) -> int | None:
         n *= 1_000
     elif unit == "亿":
         n *= 100_000_000
+    elif unit == "m":
+        n *= 1_000_000
+    elif unit == "b":
+        n *= 1_000_000_000
     return int(round(n))
 
 
@@ -67,13 +71,15 @@ TWEETS_JS = r"""() => {
   const arts = [...document.querySelectorAll('article[data-testid="tweet"]')];
   const num = (s) => {
     if (!s) return null;
-    const m = String(s).replace(/,/g, '').match(/([\d.]+)\s*(万|w|k|K|亿)?/);
+    const m = String(s).replace(/,/g, '').match(/([\d.]+)\s*(万|w|k|m|b|亿)?/i);
     if (!m) return null;
     let n = parseFloat(m[1]);
     const u = (m[2] || '').toLowerCase();
     if (u === '万' || u === 'w') n *= 10000;
     else if (u === 'k') n *= 1000;
     else if (u === '亿') n *= 100000000;
+    else if (u === 'm') n *= 1000000;
+    else if (u === 'b') n *= 1000000000;
     return Math.round(n);
   };
   const ariaNum = (a, tid) => {
@@ -118,6 +124,9 @@ PROFILE_JS = r"""() => {
 
 def fetch(handle: str = "") -> dict:
     from playwright.sync_api import sync_playwright
+    import web_publisher as wp
+    if handle and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", handle):
+        raise ValueError("X handle must contain 1–15 letters, digits or underscores")
 
     profile = BROWSER_PROFILES / PROFILE
     result = {"platform": "twitter-x", "name": "推特 X", "nickname": "",
@@ -130,6 +139,11 @@ def fetch(handle: str = "") -> dict:
             str(profile), headless=True, locale="zh-CN", **_launch_kwargs())
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=60000)
+            wp._settle_login(page, wp.PLATFORMS["twitter-x"])
+            if not wp._is_logged_in(page, wp.PLATFORMS["twitter-x"]):
+                result["warning"] = "X 登录态未核实，请在账号页重新登录"
+                return result
             # 1) 拿 handle（设置页；未登录会跳登录/登出页）
             if not handle:
                 page.goto("https://x.com/settings/profile", wait_until="domcontentloaded",
@@ -160,7 +174,8 @@ def fetch(handle: str = "") -> dict:
                 stats_text = " ".join((st.get("text") or "") for st in (info.get("stats") or []))
                 has_followers = ("关注者" in stats_text or "Followers" in stats_text)
                 # 保留第一个非空帖子数（后续轮次可能解析失败，不能覆盖）
-                posts_initial = posts_initial or _parse_count(info.get("posts") or "")
+                if posts_initial is None:
+                    posts_initial = _parse_count(info.get("posts") or "")
                 if has_followers and posts_initial is not None:
                     break
                 page.wait_for_timeout(2000)
@@ -179,7 +194,9 @@ def fetch(handle: str = "") -> dict:
                 if m2:
                     followers = _parse_count(m2.group(1))
             # 帖子数在滚动/切换视图后可能从 DOM 消失 → 解析失败时保留原值
-            posts = _parse_count(info.get("posts") or "") or posts_initial
+            posts = _parse_count(info.get("posts") or "")
+            if posts is None:
+                posts = posts_initial
             result.update({
                 "loggedIn": True,
                 "nickname": info.get("name") or result["nickname"] or handle,

@@ -43,7 +43,8 @@ def _proxy_env() -> dict[str, str]:
     from easel.runtime_env import proxy_environment
 
     env = proxy_environment(dict(os.environ),
-                            "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*")
+                            "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*",
+                            env_file=PROJECT_ROOT / ".env")
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
     return env
 
@@ -248,11 +249,11 @@ def _warn_unwritable_profiles_dir(profiles_dir: Path | None = None) -> None:
     探针：真实建删一个临时文件，等价于登录 runner 要做的最小写操作。
     """
     d = profiles_dir or (Path.home() / ".easel-browser-profiles")
-    probe = d / ".write-probe"
     try:
+        import tempfile
         d.mkdir(parents=True, exist_ok=True)
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink()
+        with tempfile.TemporaryFile(dir=d) as probe:
+            probe.write(b"ok")
     except OSError:
         print(f"{RED}⚠ 浏览器登录态目录不可写：{d}{NC}\n"
               f"{RED}  各平台扫码/窗口登录会全部失败（子进程 EPERM）。请在终端里直接运行"

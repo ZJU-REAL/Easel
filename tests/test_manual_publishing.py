@@ -59,6 +59,19 @@ def test_export_does_not_mark_content_as_published(client, tmp_path):
     assert not (tmp_path / "_schedule.json").exists()
 
 
+@pytest.mark.parametrize('platform',['juejin','twitter-x'])
+def test_new_channels_support_manual_export_without_platform_calls(client,tmp_path,platform):
+    web.ENV_FILE.write_text('EASEL_PUBLISH_MODE=manual\n',encoding='utf-8')
+    assert client.post(f'/api/publish/{platform}',json={'title':'test','body':'draft'}).status_code==403
+    response=client.post(f'/api/manual-publish/{platform}/export',json={'title':'test','body':'draft','reviewed':True})
+    assert response.status_code==200,response.text
+    assert response.json()['published'] is False
+    with zipfile.ZipFile(tmp_path/response.json()['path']) as archive:
+        meta=json.loads(archive.read('manifest.json'))
+        assert meta['platform']==platform and meta['status']=='ready_for_manual_submission'
+    assert not (tmp_path/'_schedule.json').exists()
+
+
 @pytest.mark.parametrize("relative", ["../outside.png", "_login/qr.png", "project/secret.json", "project/.hidden.png"])
 def test_export_rejects_system_files_and_path_escape(tmp_path, relative):
     outputs = tmp_path / "outputs"

@@ -8,8 +8,20 @@ from pathlib import Path
 WINDOWS = os.name == "nt"
 
 
-def proxy_environment(environment: dict[str, str], default_no_proxy: str) -> dict[str, str]:
+def proxy_environment(environment: dict[str, str], default_no_proxy: str, *, env_file: Path | None = None) -> dict[str, str]:
     """Preserve inherited proxies without Windows case-colliding empty keys."""
+    environment = dict(environment)
+    if env_file is not None and not any(key.lower() == "easel_proxy" for key in environment):
+        try:
+            proxy = ""
+            for line in env_file.read_text(encoding="utf-8-sig").splitlines():
+                key, separator, value = line.strip().partition("=")
+                if separator and key.strip() == "EASEL_PROXY":
+                    proxy = value.strip().strip("\"'")
+            if proxy:
+                environment["EASEL_PROXY"] = proxy
+        except (OSError, UnicodeError):
+            pass
     result = dict(environment)
 
     def keys_for(name: str) -> list[str]:
