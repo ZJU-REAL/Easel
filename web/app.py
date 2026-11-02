@@ -319,6 +319,8 @@ def _heal_openclaw_session(sk: str) -> None:
 # 制作层/直接执行层/chat 超时统一走 easel/timeouts.py（CLI/Web/skill 三入口单一真相源）
 
 SHARED_SCRIPTS = PROJECT_ROOT / "skills" / "shared" / "scripts"
+# 头条发布脚本是自带 SKILL 的专用 publisher（与 xhs/douyin 同款），不在 shared/scripts 下。
+TOUTIAO_SCRIPTS = PROJECT_ROOT / "skills" / "builtin" / "skill-toutiao-publisher" / "scripts"
 if str(SHARED_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SHARED_SCRIPTS))
 
@@ -357,6 +359,8 @@ LOGIN_RUNNERS: dict[str, dict] = {
                   "profile": "TwitterXProfile", "login_window": True},
     "bilibili": {"name": "B站", "backend": "biliup"},
     "douyin": {"name": "抖音", "backend": "douyin", "profile": "DouyinProfile"},
+    # 今日头条：自带专用 publisher（skill-toutiao-publisher），backend=='toutiao' 在各处分派。
+    "toutiao": {"name": "今日头条", "backend": "toutiao", "profile": "ToutiaoProfile"},
     # 微信公众号：扫码登录后台会话（发布+数据都走它），backend=='wechat-oa' 在各处单独分支处理。
     "wechat-oa": {"name": "微信公众号", "backend": "wechat-oa"},
 }
@@ -4517,6 +4521,11 @@ async def _start_login(platform: str, restart: bool = False):
                '--no-proxy',
                '--qr-out', str(qr), '--status-file', str(status),
                '--sms-code-file', str(code_file), '--timeout', str(LOGIN_TIMEOUT)]
+    elif backend == 'toutiao':
+        # 头条自带专用 publisher：login 子命令 headless 抠二维码 + 写 login_state 状态文件
+        cmd = [sys.executable, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'), 'login',
+               '--qr-out', str(qr), '--status-file', str(status),
+               '--timeout', str(LOGIN_TIMEOUT)]
     else:
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'login-qr',
                '--platform', cfg['wp'], '--qr-out', str(qr), '--status-file', str(status),
@@ -4775,6 +4784,8 @@ async def _check_account_whoami(platform: str, force: bool = False):
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'weixin_mp_stats.py'), 'whoami', '--no-proxy']
     elif backend == 'douyin':
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'douyin_publish.py'), 'whoami', '--no-proxy']
+    elif backend == 'toutiao':
+        cmd = [sys.executable, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'), 'whoami']
     else:
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'whoami',
                '--platform', cfg['wp']]
@@ -4893,7 +4904,7 @@ async def api_logout(platform: str):
 
 # 归因层：可抓创作数据的平台（多数走 Playwright 登录态；bilibili 用 biliup cookies 不起浏览器、
 # wechat-oa 走 mp 后台会话 Playwright 拦截数据 XHR）
-ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa", "juejin", "twitter-x"}
+ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa", "juejin", "twitter-x", "toutiao"}
 _analytics_inflight: dict[str, asyncio.Task] = {}
 
 
@@ -5015,6 +5026,8 @@ class PublishRequest(BaseModel):
     media: list[str] = []
     tags: str = ''
     persona: str = ''
+    # 存草稿：仅今日头条支持（落后台草稿箱，不公开发布）。其他平台忽略此字段。
+    draft: bool = False
 
 
 class ManualPublishRequest(BaseModel):
@@ -5072,7 +5085,8 @@ def _read_publish_status(platform: str) -> dict:
 
 
 def _record_successful_publish(title: str, body: str, cfg: dict, profile: str = '',
-                               tags: str = '', ptype: str = '') -> None:
+                               tags: str = '', ptype: str = '',
+                               status: str = 'published') -> None:
     try:
         scripts_dir = str(SHARED_SCRIPTS)
         if scripts_dir not in sys.path:
@@ -5082,7 +5096,8 @@ def _record_successful_publish(title: str, body: str, cfg: dict, profile: str = 
             calendar_ops.record_publish(cfg['name'], title, note=body[:200],
                                         tags=tags, ptype=ptype,
                                         source='publish-page', profile=profile,
-                                        data_path=SCHEDULE_FILE, forward_log=True)
+                                        data_path=SCHEDULE_FILE, forward_log=status == 'published',
+                                        status=status)
     except Exception:
         pass
 
@@ -5176,6 +5191,8 @@ async def api_publish(platform: str, req: PublishRequest):
         raise HTTPException(400, '选择的画像不存在或名称非法')
     if not req.title.strip() and not req.body.strip():
         raise HTTPException(400, '标题/正文不能为空')
+    if req.draft and platform != 'toutiao':
+        raise HTTPException(400, '此平台不支持存草稿，未提交；请明确选择发布方式')
     imgs, vids = [], []
     for rel in req.media or []:
         full = _safe_output_path(rel)
@@ -5192,6 +5209,9 @@ async def api_publish(platform: str, req: PublishRequest):
         raise HTTPException(400, f"{cfg['name']} 只能发视频，请附带一个视频文件")
     title = req.title.strip() or req.body.strip()[:20]
     tags = req.tags or ''
+    # 存草稿：仅今日头条支持（落后台草稿箱，不公开发布）。其他平台即便传了 draft
+    # 也按「直接发布」处理——不能让草稿意图落到会真发的平台上。
+    is_draft = platform == 'toutiao' and req.draft
     publish_type = '视频' if vids else ('文章' if platform == 'wechat-oa' else '图文')
     py = sys.executable
     if platform == 'xiaohongshu':
@@ -5217,6 +5237,15 @@ async def api_publish(platform: str, req: PublishRequest):
         cmd += ['--status-file', str(status_file), '--sms-code-file', str(code_file)]
         return _start_async_publish(platform, cmd, title, req.body, cfg, status_file, code_file,
                                     profile, tags, publish_type)
+    elif platform == 'toutiao':
+        # 头条图文：正文走 --content 直传（不落临时文件）。一键发布 → --exec；
+        # 发布页选了「存草稿」时改用 --draft（只落后台草稿箱，不点发布按钮）。
+        # 附件图片全部走 --images 插进正文（头条会自动取正文首图作封面）。
+        cmd = [py, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'),
+               '--content', req.body, '--title', title, '--tags', tags]
+        if imgs:
+            cmd += ['--images', ','.join(imgs)]
+        cmd.append('--draft' if is_draft else '--exec')
     elif platform == 'wechat-oa':
         # 微信公众号：走「后台会话」发布（免 AppID/AppSecret、免 IP 白名单）。
         # 正文 MD → 公众号 HTML（skill 排版器）→ 会话建草稿（weixin_mp_stats.py publish，内嵌图传 mp CDN）。
@@ -5256,14 +5285,26 @@ async def api_publish(platform: str, req: PublishRequest):
             cmd += ['--media', media]
     # 公众号走后台会话（Playwright，脚本自带 --proxy，默认直连）；其余平台走 _publish_env
     pub_env = _proxy_env() if platform == 'wechat-oa' else _publish_env()
+    capture = {}
+    if platform == 'toutiao':
+        pub_env = dict(pub_env, PYTHONIOENCODING='utf-8')
+        capture = {'encoding': 'utf-8', 'errors': 'replace'}
     try:
         proc = await asyncio.to_thread(subprocess.run, cmd, cwd=str(PROJECT_ROOT), env=pub_env,
-                                       capture_output=True, text=True, timeout=600)
+                                       capture_output=True, text=True, timeout=600, **capture)
     except subprocess.TimeoutExpired:
         raise HTTPException(504, '发布超时（媒体处理慢或流程卡住）')
     ok = proc.returncode == 0
     tail = (proc.stderr or proc.stdout or '').strip().splitlines()
     detail = '\n'.join(tail[-8:])
+    if platform == 'toutiao' and ok:
+        try:
+            receipt = json.loads(proc.stdout or '')
+            ok = isinstance(receipt, dict) and receipt.get('draft_saved' if is_draft else 'published') is True
+        except (ValueError, TypeError):
+            ok = False
+        if not ok:
+            detail = '操作结果未核实，请到平台后台核对，先别重试。'
     try:
         with (OUTPUTS_DIR / '_publish.log').open('a', encoding='utf-8') as lf:
             lf.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {platform} rc={proc.returncode} ok={ok} =====\n")
@@ -5273,8 +5314,10 @@ async def api_publish(platform: str, req: PublishRequest):
     except Exception:
         pass
     if ok:
-        _record_successful_publish(title, req.body, cfg, profile, tags, publish_type)
-    return {'ok': ok, 'message': '发布成功' if ok else '发布失败（见 detail）', 'detail': detail}
+        _record_successful_publish(title, req.body, cfg, profile, tags, publish_type,
+                                   status='draft' if is_draft else 'published')
+    return {'ok': ok, 'message': ('已存草稿' if is_draft else '发布成功') if ok else '发布失败（见 detail）',
+            'detail': detail}
 
 
 class ProfileBuildRequest(BaseModel):

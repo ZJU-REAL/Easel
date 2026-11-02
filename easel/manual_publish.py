@@ -18,6 +18,7 @@ PLATFORMS = {
     "zhihu": ("知乎", "https://zhuanlan.zhihu.com/write"),
     "juejin": ("掘金", "https://juejin.cn/editor/drafts/new?v=2"),
     "twitter-x": ("推特 X", "https://x.com/compose/post"),
+    "toutiao": ("今日头条", "https://mp.toutiao.com/profile_v4/graphic/publish"),
     "bilibili": ("B站", "https://member.bilibili.com/"),
     "wechat-oa": ("公众号", "https://mp.weixin.qq.com/"),
 }
