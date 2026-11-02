@@ -97,6 +97,18 @@ def test_native_model_endpoint_uses_project_root_without_writing_config(sandbox,
     assert not list(web.SESSIONS_DIR.glob("harness/*"))
 
 
+def test_native_model_endpoint_supports_hermes(sandbox, monkeypatch):
+    async def models(selected, request):
+        assert selected == "hermes"
+        assert request.cwd == web.PROJECT_ROOT
+        return [{"id": "provider/model", "label": "Model", "default": True}]
+
+    monkeypatch.setattr(native_models, "available_models", models)
+    response = sandbox.post("/api/settings/harness/models/hermes")
+    assert response.status_code == 200
+    assert response.json()["models"][0]["id"] == "provider/model"
+
+
 @pytest.mark.parametrize(("error", "status"), [
     (HarnessError("secret-test-key"), 409),
     (OSError("secret-test-key"), 409),

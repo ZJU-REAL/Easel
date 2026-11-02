@@ -78,3 +78,18 @@ def acp_command(cwd: Path) -> tuple[str, ...]:
     if not executable or Path(executable).suffix.lower() in (".bat", ".cmd"):
         raise HarnessError("ACP command 必须使用可执行程序，Windows 请使用 node + 脚本而非 .cmd")
     return (executable, *command[1:])
+
+
+def hermes_command(*, profile: str | None = None) -> tuple[str, ...]:
+    """Resolve Hermes to a direct executable; never invoke a shell shim."""
+    executable = shutil.which("hermes")
+    if not executable:
+        raise HarnessError("Hermes CLI 未安装或不在 PATH；请安装 Hermes Agent 并检查运行 Web 的账户 PATH")
+    path = Path(executable)
+    if path.suffix.lower() in (".cmd", ".bat"):
+        raise HarnessError("无法安全启动 Hermes 的 Windows .cmd/.bat 入口；请安装可执行的 Hermes CLI，或配置可直接运行的 hermes.exe，再重启 Easel")
+    command = [str(path.resolve())]
+    if profile:
+        command += ["--profile", profile]
+    command.append("acp")
+    return tuple(command)
