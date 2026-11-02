@@ -91,7 +91,9 @@ def test_doctor_only_reports_for_openclaw_without_changing_exit_code(config, mon
                  "_chromium_available", "_env_key_valid", "_gateway_healthy"):
         monkeypatch.setattr(doctor, name, lambda *args: True)
     for name in ("_primary_model_routable", "_skills_synced"):
-        monkeypatch.setattr(doctor, name, lambda: (True, ""))
+        monkeypatch.setattr(doctor, name, lambda *args: (True, ""))
+    monkeypatch.setattr(doctor, "_skills_fresh", lambda *args: (True, ""))
+    monkeypatch.setattr("easel.skills_sync.agent_workspace", lambda: config.parent / "workspace")
     monkeypatch.setattr(local_agents, "summarize_local_agents", lambda: {"installedCount": 0})
     calls = []
     monkeypatch.setattr(doctor, "_tool_loop_policy", lambda: calls.append(True) or ["状态未知"])
