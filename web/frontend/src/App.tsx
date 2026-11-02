@@ -46,7 +46,7 @@ function onboardingSeen(): boolean {
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
-  const [personas, setPersonas] = useState<PersonaItem[]>([]);
+  const [, setPersonas] = useState<PersonaItem[]>([]);
   const personaRequestId = useRef(0);
   const refreshPersonas = useCallback(async () => {
     const id = ++personaRequestId.current;
@@ -823,10 +823,6 @@ export default function App() {
       <Sidebar
         currentPage={currentPage}
         onPageChange={setCurrentPage}
-        personas={personas}
-        selectedPersona={selectedPersona}
-        onPersonaChange={handlePersonaChange}
-        onNewProfile={() => setShowWizard(true)}
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSessionSelect={handleSessionSelect}
