@@ -1,5 +1,5 @@
 /* 能力菜单数据（笔入口「能做的都在这」用）
- * 113 个技能的展示名/分组/状态 + 整片管线接入位。
+ * 115 个技能的展示名/分组/状态 + 整片管线接入位。
  * 技能集更新时随技能库重新生成。 */
 export interface CapabilityItem { id?: string; label: string; desc?: string; skill?: string | null; status?: string; }
 export interface CapabilityGroup { id?: string; label: string; items: CapabilityItem[]; }
@@ -8,7 +8,7 @@ export const CAPABILITY_MENU: { meta?: unknown; tabs: CapabilityTab[] } = {
  "meta": {
   "name": "Easel 能力菜单",
   "version": "v1-draft",
-  "date": "2026-09-17",
+  "date": "2026-10-03",
   "legend": {
    "done": "已验（真机跑过 · 有产物）",
    "ready": "可用（工具就绪 · 未真跑）",
@@ -17,7 +17,7 @@ export const CAPABILITY_MENU: { meta?: unknown; tabs: CapabilityTab[] } = {
   },
   "counts": {
    "done": 7,
-   "ready": 96,
+   "ready": 97,
    "need": 10,
    "incoming": 1
   }
@@ -411,6 +411,12 @@ export const CAPABILITY_MENU: { meta?: unknown; tabs: CapabilityTab[] } = {
        "status": "ready"
       },
       {
+       "skill": "skill-toutiao-publisher",
+       "label": "今日头条",
+       "desc": "今日头条（头条号）图文发布：把已成稿的文章发布到 mp.toutiao.com，支持标题、 封面、话题标签、存草稿与直接发布，走 Playwright 浏览器自动化 + 登录态持久化。 当用户说\"发头条\"\"发布到今日头条\"\"头条号发文章\"\"同步到头条\"\"头条存草稿\"\"头条图文发布\"时使用。 与 skill-cross-platform-publish 的区别：那个是一稿多发的编排层，本 SKILL 只管头条单平台落地发布； 正文生产交给制作层 SKILL（copywriting / article-outline）。",
+       "status": "ready"
+      },
+      {
        "skill": "skill-cross-platform-publish",
        "label": "跨平台一键",
        "desc": "跨平台一键发布：一份内容适配并发布到多个平台（小红书/抖音/B站/公众号/快手/视频号/知乎）。 按各平台格式约束（字数/比例/标签/内容类型）适配内容，再逐个委派对应平台发布 SKILL。 当用户说\"一键发布\"\"同时发",
@@ -473,7 +479,7 @@ export const CAPABILITY_MENU: { meta?: unknown; tabs: CapabilityTab[] } = {
       {
        "skill": "skill-algorithm-updates",
        "label": "算法规则追踪",
-       "desc": "追踪抖音、小红书、B站、微博、知乎和视频号的算法、推荐分发、审核与变现规则变化，并分析对创作者的影响。 当用户说“算法/推荐机制变了吗、流量规则更新、为什么流量下降、平台规则变化”时使用。 内容热点用 skill-tre",
+       "desc": "追踪抖音、小红书、B站、微博、知乎、视频号和今日头条的算法、推荐分发、审核与变现规则变化，并分析对创作者的影响。 当用户说“算法/推荐机制变了吗、流量规则更新、为什么流量下降、平台规则变化”时使用。 内容热点用 skill-tre",
        "status": "ready"
       }
      ]
@@ -593,7 +599,7 @@ export const CAPABILITY_MENU: { meta?: unknown; tabs: CapabilityTab[] } = {
       {
        "skill": "skill-cross-platform-diff",
        "label": "跨平台差异",
-       "desc": "跨平台内容差异深度分析。分析同一话题/内容在不同平台（小红书、抖音、B站、知乎、 微博、公众号、X 等）的呈现差异：内容形式、受众偏好、话语体系、流量逻辑、变现路径。 帮创作者理解\"同一个内容在不同平台应该怎么做\"。当用",
+       "desc": "跨平台内容差异深度分析。分析同一话题/内容在不同平台（小红书、抖音、B站、知乎、 微博、公众号、今日头条、X 等）的呈现差异：内容形式、受众偏好、话语体系、流量逻辑、变现路径。 帮创作者理解\"同一个内容在不同平台应该怎么做\"。当用",
        "status": "ready"
       },
       {

@@ -202,10 +202,82 @@ export function deletePersona(name: string): Promise<{ ok: boolean; deleted: str
 }
 
 // ---- 热点雷达 ----
-export interface TrendItem { title: string; hot: string; url: string; }
-export interface TrendGroup { platform: string; label: string; items: TrendItem[]; ok?: boolean; }
-export function fetchTrends(platforms: string, limit = 12): Promise<{ trends: TrendGroup[]; updated: number }> {
-  return request(`/api/trends?platforms=${encodeURIComponent(platforms)}&limit=${limit}`);
+import { parseTrends, parseTrendSources, parseTrendManagement } from './trendValidation';
+
+async function trendRequest(url: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
+  try {
+    const response = await fetch(`${BASE}${url}`, { cache: 'no-store', ...options, signal: AbortSignal.timeout(timeout) });
+    if (!response.body) throw new Error('热点接口未返回数据。');
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 4 * 1024 * 1024) { await reader.cancel(); throw new Error('热点接口响应过大，已停止加载。'); }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    let data: unknown;
+    try {
+      const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      let depth = 0, quoted = false, escaped = false;
+      for (const char of raw) {
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (char === '\\') escaped = true;
+          else if (char === '"') quoted = false;
+        } else if (char === '"') quoted = true;
+        else if (char === '{' || char === '[') { if (++depth > 24) throw new Error(); }
+        else if (char === '}' || char === ']') depth--;
+      }
+      data = JSON.parse(raw);
+    } catch { throw new Error('热点接口响应格式异常，请稍后重试。'); }
+    if (!response.ok) {
+      const detail = data && typeof data === 'object' && 'detail' in data ? data.detail : null;
+      throw new Error(typeof detail === 'string' ? detail.slice(0, 240) : `热点请求失败（${response.status}）`);
+    }
+    return data;
+  } catch (error: unknown) {
+    if (error instanceof DOMException && ['TimeoutError', 'AbortError'].includes(error.name)) throw new Error('热点请求超时，请稍后重试。');
+    throw error instanceof Error ? error : new Error('热点请求失败，请稍后重试。');
+  }
+}
+export interface TrendItem {
+  id: string; title: string; hot: string; url: string; published_at: string | null;
+  heat: { value: number | null; text: string; unit: string };
+}
+export interface TrendGroup {
+  platform: string; label: string; items: TrendItem[]; ok: boolean;
+  status: 'fresh' | 'stale' | 'error'; stale: boolean; fetched_at: string | null;
+  last_attempt_at: number; error: { code: string; message: string } | null;
+}
+export interface TrendSource {
+  id: string; label: string; type: 'python' | 'http' | 'rss'; default: boolean; refresh_seconds: number;
+}
+export function fetchTrendSources() {
+  return trendRequest('/api/trends/sources').then(parseTrendSources);
+}
+export function fetchTrends(platforms?: string, limit = 12) {
+  return trendRequest(`/api/trends?limit=${limit}${platforms === undefined ? '' : `&platforms=${encodeURIComponent(platforms)}`}`, {}, 130000).then(parseTrends);
+}
+export interface TrendManagedSource {
+  id: string; label: string; type: TrendSource['type'] | 'unknown'; enabled: boolean; default: boolean; builtin: boolean;
+}
+export function fetchTrendManagement() {
+  return trendRequest('/api/trends/manage').then(parseTrendManagement);
+}
+export async function updateTrendSource(value: Record<string, unknown>): Promise<{ id: string }> {
+  const result = await trendRequest('/api/trends/manage', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+  }, 15000);
+  if (!result || typeof result !== 'object' || !('ok' in result) || result.ok !== true || !('id' in result) || typeof result.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(result.id)) throw new Error('保存结果异常，请刷新数据源列表确认。');
+  return { id: result.id };
 }
 
 // ---- 内容排期 ----
@@ -512,10 +584,11 @@ export function exportManualPackage(platform: string, payload: {
 }
 
 /** 一键发布到某平台（真发布，--exec）。media 为 outputs 相对路径数组。
- * 抖音返回 {async:true}，需轮询 publishStatus；其他平台同步返回结果。 */
+ * 抖音返回 {async:true}，需轮询 publishStatus；其他平台同步返回结果。
+ * draft=true 表示存草稿（仅今日头条支持，落后台草稿箱不公开发布）。 */
 export function publishNow(
   platform: string,
-  payload: { title: string; body: string; media: string[]; tags?: string; persona?: string },
+  payload: { title: string; body: string; media: string[]; tags?: string; draft?: boolean; persona?: string },
 ): Promise<PublishResult> {
   return request<PublishResult>(`/api/publish/${encodeURIComponent(platform)}`, {
     method: 'POST',
@@ -896,6 +969,24 @@ export function saveChatTransport(transport: 'api' | 'openclaw'): Promise<ModelC
   return request('/api/settings/chat/transport', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transport }),
+  });
+}
+
+// ── 网络代理设置（EASEL_PROXY；更多设置页） ─────────────────────────
+
+export interface ProxySettings {
+  proxy: string;                       // 生效中的代理地址，空串=未配置
+  source: 'env' | 'envfile' | 'none';  // env=启动环境固定（只读）；envfile=.env 持久化
+}
+
+export function fetchProxySettings(): Promise<ProxySettings> {
+  return request('/api/settings/proxy');
+}
+
+export function saveProxySettings(proxy: string): Promise<{ ok: boolean; proxy: string; source: string }> {
+  return request('/api/settings/proxy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proxy }),
   });
 }
 

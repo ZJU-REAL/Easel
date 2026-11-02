@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Paper video starter</title>
+<style>
+:root{--bg:#F7F8F5;--ink:#172B32;--accent:#087E82;--muted:#6F8083;--line:#D7DFDC;--node-fill:#E5EFE9;--diagram-muted:#B8CFC5;--highlight:var(--accent)}
+*{box-sizing:border-box}html,body{margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+#film{position:absolute;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden;background:var(--bg)}
+.top{position:absolute;left:90px;right:90px;top:48px;height:58px;border-bottom:1px solid var(--line);font-size:23px;color:var(--accent);letter-spacing:3px}
+.scene,.visual,.copy{position:absolute;inset:0}.scene{display:none}.scene.active{display:block}
+.eyebrow{position:absolute;left:94px;top:145px;color:var(--accent);font-size:23px;letter-spacing:2px}
+h1{position:absolute;left:90px;top:235px;margin:0;font-size:84px;line-height:1.4;font-weight:600}
+.note{position:absolute;left:96px;top:650px;font-size:32px;color:var(--muted);line-height:1.6}
+.accent{color:var(--accent)}.node{fill:var(--node-fill);stroke:var(--accent);stroke-width:2}.diagram-label{font-size:32px;fill:var(--ink)}
+.fig{position:absolute;display:block;object-fit:contain;padding:22px;background:#fff;border-radius:12px}
+.paper-highlight{position:absolute;border:2.5px solid var(--highlight);border-radius:6px;background:transparent;box-shadow:0 0 0 1px #ffffffcc;pointer-events:none}
+.caption-area{position:absolute;left:80px;right:80px;top:934px;height:88px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+#caption{font-size:40px;line-height:1.5;max-width:1760px;white-space:nowrap}.footer{position:absolute;right:92px;bottom:24px;font-size:18px;color:var(--muted)}
+#progress{position:absolute;left:0;bottom:0;height:4px;background:var(--accent)}
+</style></head><body><main id="film">
+<div class="top">RESEARCH FILM · 工程演示</div>
+<section id="opening" class="scene">
+ <div class="visual"><svg viewBox="0 0 900 480" style="position:absolute;left:900px;top:340px;width:900px;height:480px">
+  <g id="concept-a"><rect class="node" x="40" y="100" width="300" height="170" rx="12"/><text class="diagram-label" x="190" y="195" text-anchor="middle">研究问题</text></g>
+  <path id="concept-link" d="M370 185H490m-16-12l16 12-16 12" stroke="var(--accent)" stroke-width="3" fill="none" pathLength="1"/>
+  <g id="concept-b"><rect class="node" x="520" y="100" width="300" height="170" rx="12"/><text class="diagram-label" x="670" y="195" text-anchor="middle">核心想法</text></g>
+ </svg></div>
+ <div class="copy"><div class="eyebrow">OPENING / 内容驱动的引入</div><h1>先讲清问题<br>再展示<span class="accent">证据</span></h1><div class="note">用与论文相关的简洁元素<br>解释观众需要理解的关系</div></div>
+</section>
+<section id="evidence" class="scene">
+ <div class="visual"><svg viewBox="0 0 900 480" style="position:absolute;left:900px;top:340px;width:900px;height:480px"><rect x="40" y="50" width="780" height="330" rx="12" fill="white"/><path d="M110 135H720M110 210H650M110 285H750" stroke="var(--diagram-muted)" stroke-width="12"/></svg></div>
+ <div class="copy"><div class="eyebrow">EVIDENCE / 替换为核实的论文内容</div><h1>完整原图<br><span class="accent">必要时</span>再框选</h1><div class="note">模板中的示意不是论文证据<br>按实际资产与口播重新编排</div></div>
+</section>
+<div class="caption-area"><div id="caption"></div></div><div class="footer" id="counter"></div><div id="progress"></div>
+</main><script src="motion-utils.js"></script><script src="timeline.js"></script><script src="motion.js"></script></body></html>

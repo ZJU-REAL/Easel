@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "scripts": [
+    {
+      "id": "my-news-script",
+      "label": "我的行业采集脚本",
+      "script": "../collectors/news.py",
+      "args": [],
+      "env": {"NEWS_TOKEN": "${NEWS_TOKEN}"}
+    }
+  ]
+}

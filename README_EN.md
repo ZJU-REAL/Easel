@@ -83,7 +83,7 @@ Easel follows five connected workflows: **Discover** relevant trends and opportu
 - **Executable Skills:** image, card, voice-over, subtitle, editing, short-drama, and publishing Skills include runnable tools and save deliverables to `outputs/`.
 - **One source, many platforms:** adapt a single idea into Xiaohongshu cards, short video, a Zhihu article, or a short post while respecting platform conventions.
 - **Project-based outputs:** source material, intermediate files, metadata, and final deliverables stay together for revision, retrying, and publishing.
-- **A publishing and learning loop:** Easel supports login, adaptation, and publishing workflows for Xiaohongshu, Douyin, Kuaishou, Zhihu, Bilibili, WeChat Channels, and WeChat Official Accounts, with performance data feeding back into account profiles.
+- **A publishing and learning loop:** Easel supports login, adaptation, and publishing workflows for Xiaohongshu, Douyin, Kuaishou, Zhihu, Bilibili, WeChat Channels, WeChat Official Accounts, and Toutiao, with performance data feeding back into account profiles.
 
 ## 🧭 Five-Layer Content Workflow
 
@@ -94,6 +94,8 @@ Easel follows five connected workflows: **Discover** relevant trends and opportu
 5. **Attribute:** collect views, engagement, comments, and content performance, then preserve useful patterns in the account profile.
 
 ## 🧰 Implemented Capabilities
+
+The trend radar accepts user-defined Python collectors, HTTP services, and RSS/Atom feeds through a versioned data contract. Its existing six platforms use the same pipeline; adding your own source does not require changing the frontend.
 
 | Layer | Capabilities |
 |---|---|
@@ -320,6 +322,7 @@ Easel uses an isolated `easel` OpenClaw profile and does not overwrite an existi
 
 ## 📑 Documentation
 
+- [Trend collectors: Python scripts / HTTP services / RSS feeds (Chinese)](docs/trend-collectors.md)
 - [Capability map](docs/skill-function-mapping.md)
 - [SKILL interface specification](docs/SKILL-SPEC.md)
 - [Prompt and architecture layers](docs/prompt-stack.md)

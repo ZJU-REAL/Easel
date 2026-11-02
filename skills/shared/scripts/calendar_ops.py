@@ -57,6 +57,7 @@ SOURCES = {"manual", "publish-page", "chat", "scheduler"}
 PLATFORM_NAMES = {
     "xiaohongshu": "小红书", "douyin": "抖音", "kuaishou": "快手",
     "weixin-channels": "微信视频号", "zhihu": "知乎", "bilibili": "B站",
+    "toutiao": "今日头条",
 }
 
 
@@ -148,8 +149,9 @@ def _forward_publish_log(platform: str, title: str, url: str, ptype: str,
 def record_publish(platform: str, title: str, url: str = "", ptype: str = "",
                    tags: str = "", note: str = "", source: str = "chat",
                    profile: str = "", data_path: Path | None = None,
-                   forward_log: bool = True) -> bool:
+                   forward_log: bool = True, status: str = "published") -> bool:
     """追加一条已发布记录到日历底座。返回是否写入。全程异常安全。
+    status='draft' 用于「存草稿」——内容进了平台草稿箱，不算已发布。
     env EASEL_CALENDAR_AUTORECORD=0 时直接跳过（发布页由 web 记录，防重复）。"""
     if os.environ.get("EASEL_CALENDAR_AUTORECORD") == "0":
         return False
@@ -163,7 +165,7 @@ def record_publish(platform: str, title: str, url: str = "", ptype: str = "",
             "date": now.strftime("%Y-%m-%d"),
             "platform": _norm_platform(platform),
             "time": now.strftime("%H:%M"),
-            "status": "published",
+            "status": status if status in CONTENT_STATUSES else "published",
             "note": (note or "")[:200],
             "kind": "content",
             "url": url or "",
@@ -175,7 +177,7 @@ def record_publish(platform: str, title: str, url: str = "", ptype: str = "",
         atomic_write(path, items)
     except Exception:
         return False  # 记录失败绝不影响发布
-    if forward_log:
+    if forward_log and item['status'] == 'published':
         _forward_publish_log(_norm_platform(platform), item["title"], url, ptype,
                              tags, "calendar-auto", profile)
     return True

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export default function SettingsSelect({ value, options, disabled = false, label, onChange }: {
+export default function SettingsSelect({ value, options, disabled = false, label, title, className = '', onChange }: {
   value: string;
   options: { value: string; label: string }[];
   disabled?: boolean;
   label: string;
+  title?: string;
+  className?: string;
   onChange: (value: string) => void;
 }) {
   const anchor = useRef<HTMLButtonElement | null>(null);
@@ -17,9 +19,9 @@ export default function SettingsSelect({ value, options, disabled = false, label
   };
 
   return (
-    <span className="settings-select-wrap">
+    <span className={`settings-select-wrap ${className}`}>
       <button type="button" className="proto-trigger settings-select" ref={anchor}
-        aria-label={label} aria-haspopup="listbox" aria-expanded={open && !disabled} disabled={disabled}
+        title={title} aria-label={label} aria-haspopup="listbox" aria-expanded={open && !disabled} disabled={disabled}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -88,6 +90,10 @@ export function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pul
         event.stopPropagation();
         onClose();
         anchor?.focus();
+      } else if (event.key === 'Tab') {
+        // Close like a native select, then let Tab move past its trigger.
+        onClose();
+        anchor?.focus();
       }
     };
     document.addEventListener('mousedown', onDown);
@@ -146,6 +152,6 @@ export function OptionsDropdown({ anchor, items, current, emptyHint, onPull, pul
         </div>
       ))}
     </div>,
-    document.body,
+    anchor?.closest('dialog[open]') || document.body,
   );
 }

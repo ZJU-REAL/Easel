@@ -196,7 +196,33 @@ OPENCLAW_SESSIONS_DIR = _oc_state_dir() / "agents" / "main" / "sessions"
 # 内容取决于网关——支持 extended-thinking 的网关会按档位回传思考流；不支持的（如内网 codewiz，
 # 实测 transcript 里 assistant 只有 text 块、thinking 恒为 0）面板留空，调高档位也不会有内容。
 # 默认 medium：让支持思考的部署直接显示较完整思考；EASEL_THINKING_LEVEL 可覆盖（low 提速 / high 更详尽）。
-THINKING_LEVEL = (os.environ.get("EASEL_THINKING_LEVEL", "").strip() or "medium")
+def _thinking_level_setting() -> str:
+    """思考档位：进程环境优先，其次项目根 .env。
+
+    THINKING_LEVEL 在模块导入时求值，而 .env 并不会被注入 os.environ（app 内部按需解析），
+    所以此前在 .env 里写 EASEL_THINKING_LEVEL 完全无效。对只支持特定档位的模型
+    （如 glm-5.3 仅 off/ultra）会直接报 `Thinking level "medium" is not supported` 导致对话无法开始。
+    """
+    env_val = os.environ.get("EASEL_THINKING_LEVEL", "").strip()
+    if env_val:
+        return env_val
+    try:
+        env_file = Path(__file__).resolve().parent.parent / ".env"
+        file_value = ""
+        for line in env_file.read_text(encoding="utf-8-sig").splitlines():
+            s = line.strip()
+            if s and not s.startswith("#") and "=" in s:
+                k, _, v = s.partition("=")
+                if k.strip() == "EASEL_THINKING_LEVEL":
+                    file_value = v.strip().strip("\"'")
+        if file_value:
+            return file_value
+    except (OSError, UnicodeError):
+        pass
+    return "medium"
+
+
+THINKING_LEVEL = _thinking_level_setting()
 
 # gateway 进程把原始事件流（token/thinking/收尾）写到的**单个共享文件**。
 # 关键：`openclaw agent` 只是瘦客户端，没有 --raw-stream 标志——只有常驻 gateway 按它自己
@@ -293,12 +319,16 @@ def _heal_openclaw_session(sk: str) -> None:
 # 制作层/直接执行层/chat 超时统一走 easel/timeouts.py（CLI/Web/skill 三入口单一真相源）
 
 SHARED_SCRIPTS = PROJECT_ROOT / "skills" / "shared" / "scripts"
+# 头条发布脚本是自带 SKILL 的专用 publisher（与 xhs/douyin 同款），不在 shared/scripts 下。
+TOUTIAO_SCRIPTS = PROJECT_ROOT / "skills" / "builtin" / "skill-toutiao-publisher" / "scripts"
 if str(SHARED_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SHARED_SCRIPTS))
 
 from model_registry import model_group
 
 BROWSER_PROFILES = Path.home() / ".easel-browser-profiles"
+
+
 LOGIN_DIR = OUTPUTS_DIR / "_login"
 PUBLISH_DIR = OUTPUTS_DIR / "_publish"   # 异步发布的状态/验证码文件（抖音发布可能触发短信墙）
 PROFILE_BUILD_DIR = OUTPUTS_DIR / "_profile_build"   # 异步画像构建的状态文件（避免长请求被代理超时）
@@ -321,8 +351,16 @@ LOGIN_RUNNERS: dict[str, dict] = {
     "kuaishou": {"name": "快手", "backend": "web", "wp": "kuaishou", "profile": "KuaishouProfile"},
     "weixin-channels": {"name": "微信视频号", "backend": "web", "wp": "weixin-channels", "profile": "ChannelsProfile"},
     "zhihu": {"name": "知乎", "backend": "web", "wp": "zhihu", "profile": "ZhihuProfile"},
+    "juejin": {"name": "掘金", "backend": "web", "wp": "juejin", "profile": "JuejinProfile"},
+    # X 无扫码登录 → login_window：登录时弹有头浏览器窗口由用户手动完成
+    # （web_publisher login-qr --headed 窗口模式，状态走 window_login）；国际站需外网代理
+    # （web_publisher 按 needs_proxy 读 EASEL_PROXY/https_proxy，未配则回退系统代理）。
+    "twitter-x": {"name": "推特 X", "backend": "web", "wp": "twitter-x",
+                  "profile": "TwitterXProfile", "login_window": True},
     "bilibili": {"name": "B站", "backend": "biliup"},
     "douyin": {"name": "抖音", "backend": "douyin", "profile": "DouyinProfile"},
+    # 今日头条：自带专用 publisher（skill-toutiao-publisher），backend=='toutiao' 在各处分派。
+    "toutiao": {"name": "今日头条", "backend": "toutiao", "profile": "ToutiaoProfile"},
     # 微信公众号：扫码登录后台会话（发布+数据都走它），backend=='wechat-oa' 在各处单独分支处理。
     "wechat-oa": {"name": "微信公众号", "backend": "wechat-oa"},
 }
@@ -504,6 +542,7 @@ SKILL_API_REQUIREMENTS: dict[str, dict] = {
 
 _ENV_ALLOWLIST: set[str] = {
     "EASEL_DIRECT_API_BASE_URL", "EASEL_DIRECT_API_KEY", "EASEL_DIRECT_API_MODEL",
+    "EASEL_PROXY",   # 设置页「网络代理」持久化（_write_env 支持空串删行=清除）
 }
 for _spec in SKILL_API_REQUIREMENTS.values():
     for _key in _spec.get("settings", []):
@@ -733,13 +772,21 @@ def clean_agent_output(raw: str) -> str:
     return '\n'.join(lines).strip()
 
 
+def _easel_proxy() -> str:
+    """EASEL_PROXY 解析链：进程环境变量优先，其次 .env（设置页「网络代理」持久化项）。
+    返回 '' 表示未配置。设置页保存后无需重启——每次起子进程都重新解析。"""
+    from easel.runtime_env import proxy_environment
+    return proxy_environment(dict(os.environ), '', env_file=ENV_FILE).get('EASEL_PROXY', '').strip()
+
+
 def _proxy_env() -> dict[str, str]:
     """返回带外网代理的环境变量（保护内网直连）。"""
-    env = os.environ.copy()
+    from easel.runtime_env import proxy_environment
+
+    env = proxy_environment(dict(os.environ),
+                            'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com',
+                            env_file=ENV_FILE)
     env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
-    env.setdefault('http_proxy', os.environ.get('EASEL_PROXY', ''))
-    env.setdefault('https_proxy', os.environ.get('EASEL_PROXY', ''))
-    env.setdefault('no_proxy', 'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com')
     return env
 
 
@@ -1875,6 +1922,43 @@ async def api_chat_transport_save(req: ChatTransportRequest):
     from easel.harnesses.rpc import close_sessions
     await close_sessions()
     return _model_channels()
+
+
+class ProxyRequest(BaseModel):
+    proxy: str = ''
+
+
+@app.get("/api/settings/proxy")
+async def api_settings_proxy_get():
+    """读取网络代理配置：source=env（启动环境固定，设置页只读）/ envfile（.env 持久化）/ none。"""
+    proxy = _easel_proxy()
+    source = 'env' if 'EASEL_PROXY' in os.environ else ('envfile' if proxy else 'none')
+    return {'proxy': proxy, 'source': source}
+
+
+@app.post("/api/settings/proxy")
+async def api_settings_proxy_save(req: ProxyRequest):
+    """保存/清除网络代理（写 .env 的 EASEL_PROXY，空串=清除）。
+    立即生效：登录/发布/热点等子进程每次启动都经 _proxy_env 重新解析，无需重启服务。"""
+    if 'EASEL_PROXY' in os.environ:
+        raise HTTPException(409, '启动环境已指定 EASEL_PROXY，设置页无法覆盖；请改启动环境后重启')
+    proxy = (req.proxy or '').strip()
+    if proxy:
+        try:
+            u = urllib.parse.urlsplit(proxy)
+        except ValueError:
+            u = None
+        try:
+            valid = (u is not None and u.scheme in ('http', 'https', 'socks5', 'socks5h')
+                     and bool(u.hostname) and u.port != 0 and u.username is None and u.password is None
+                     and not u.query and not u.fragment and u.path in ('', '/')
+                     and not any(c.isspace() or ord(c) < 32 for c in proxy) and '\\' not in proxy)
+        except ValueError:
+            valid = False
+        if not valid:
+            raise HTTPException(400, '代理地址需形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080（不含用户名密码）')
+    _write_env({'EASEL_PROXY': proxy})   # 空串 → 删除该行（清除代理）
+    return {'ok': True, 'proxy': proxy, 'source': 'envfile' if proxy else 'none'}
 
 
 @app.get("/api/settings/models")
@@ -4437,10 +4521,18 @@ async def _start_login(platform: str, restart: bool = False):
                '--no-proxy',
                '--qr-out', str(qr), '--status-file', str(status),
                '--sms-code-file', str(code_file), '--timeout', str(LOGIN_TIMEOUT)]
+    elif backend == 'toutiao':
+        # 头条自带专用 publisher：login 子命令 headless 抠二维码 + 写 login_state 状态文件
+        cmd = [sys.executable, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'), 'login',
+               '--qr-out', str(qr), '--status-file', str(status),
+               '--timeout', str(LOGIN_TIMEOUT)]
     else:
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'login-qr',
                '--platform', cfg['wp'], '--qr-out', str(qr), '--status-file', str(status),
                '--timeout', str(LOGIN_TIMEOUT)]
+        if cfg.get('login_window'):
+            # 无扫码平台（X）：弹有头窗口手动登录，前端按 window_login 状态展示提示
+            cmd.append('--headed')
     # 新登录开始 → 清掉旧的 whoami 缓存（登录前可能缓存了「未登录」），避免登录成功后仍读到旧结果
     with _WHOAMI_LOCK:
         _WHOAMI_CACHE.pop(platform, None)
@@ -4692,6 +4784,8 @@ async def _check_account_whoami(platform: str, force: bool = False):
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'weixin_mp_stats.py'), 'whoami', '--no-proxy']
     elif backend == 'douyin':
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'douyin_publish.py'), 'whoami', '--no-proxy']
+    elif backend == 'toutiao':
+        cmd = [sys.executable, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'), 'whoami']
     else:
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'whoami',
                '--platform', cfg['wp']]
@@ -4810,7 +4904,7 @@ async def api_logout(platform: str):
 
 # 归因层：可抓创作数据的平台（多数走 Playwright 登录态；bilibili 用 biliup cookies 不起浏览器、
 # wechat-oa 走 mp 后台会话 Playwright 拦截数据 XHR）
-ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa"}
+ANALYTICS_PLATFORMS = {"xiaohongshu", "douyin", "kuaishou", "zhihu", "weixin-channels", "bilibili", "wechat-oa", "juejin", "twitter-x", "toutiao"}
 _analytics_inflight: dict[str, asyncio.Task] = {}
 
 
@@ -4878,6 +4972,13 @@ async def _fetch_analytics(platform: str):
     if platform == "bilibili":
         cmd = [sys.executable, str(SHARED_SCRIPTS / "bili_login.py"), "stats",
                "--cookie", str(PROJECT_ROOT / "cookies.json")]
+    elif platform == "twitter-x":
+        # X 官方 API 免费层已取消（followers_count 也不再开放）→ 读个人主页 DOM（x_stats.py）。
+        cmd = [sys.executable, str(SHARED_SCRIPTS / "x_stats.py"), "fetch"]
+    elif platform == "juejin":
+        # 掘金走公开 JSON 接口（juejin_stats.py：账号概览需登录 cookie、文章列表免登录），
+        # 比 Playwright 解析 DOM 快且稳；cookie 由脚本自己从 JuejinProfile 读取。
+        cmd = [sys.executable, str(SHARED_SCRIPTS / "juejin_stats.py"), "fetch"]
     elif platform == "wechat-oa":
         # 公众号数据走「后台网页端」(mp.weixin.qq.com 管理员会话 + Playwright 拦截数据 XHR)：
         # 开发者 datacube 接口需认证+群发+接口权限，多数号取不到；后台端有登录态即可看到发表记录/数据。
@@ -4925,6 +5026,8 @@ class PublishRequest(BaseModel):
     media: list[str] = []
     tags: str = ''
     persona: str = ''
+    # 存草稿：仅今日头条支持（落后台草稿箱，不公开发布）。其他平台忽略此字段。
+    draft: bool = False
 
 
 class ManualPublishRequest(BaseModel):
@@ -4982,7 +5085,8 @@ def _read_publish_status(platform: str) -> dict:
 
 
 def _record_successful_publish(title: str, body: str, cfg: dict, profile: str = '',
-                               tags: str = '', ptype: str = '') -> None:
+                               tags: str = '', ptype: str = '',
+                               status: str = 'published') -> None:
     try:
         scripts_dir = str(SHARED_SCRIPTS)
         if scripts_dir not in sys.path:
@@ -4992,7 +5096,8 @@ def _record_successful_publish(title: str, body: str, cfg: dict, profile: str = 
             calendar_ops.record_publish(cfg['name'], title, note=body[:200],
                                         tags=tags, ptype=ptype,
                                         source='publish-page', profile=profile,
-                                        data_path=SCHEDULE_FILE, forward_log=True)
+                                        data_path=SCHEDULE_FILE, forward_log=status == 'published',
+                                        status=status)
     except Exception:
         pass
 
@@ -5086,6 +5191,8 @@ async def api_publish(platform: str, req: PublishRequest):
         raise HTTPException(400, '选择的画像不存在或名称非法')
     if not req.title.strip() and not req.body.strip():
         raise HTTPException(400, '标题/正文不能为空')
+    if req.draft and platform != 'toutiao':
+        raise HTTPException(400, '此平台不支持存草稿，未提交；请明确选择发布方式')
     imgs, vids = [], []
     for rel in req.media or []:
         full = _safe_output_path(rel)
@@ -5102,6 +5209,9 @@ async def api_publish(platform: str, req: PublishRequest):
         raise HTTPException(400, f"{cfg['name']} 只能发视频，请附带一个视频文件")
     title = req.title.strip() or req.body.strip()[:20]
     tags = req.tags or ''
+    # 存草稿：仅今日头条支持（落后台草稿箱，不公开发布）。其他平台即便传了 draft
+    # 也按「直接发布」处理——不能让草稿意图落到会真发的平台上。
+    is_draft = platform == 'toutiao' and req.draft
     publish_type = '视频' if vids else ('文章' if platform == 'wechat-oa' else '图文')
     py = sys.executable
     if platform == 'xiaohongshu':
@@ -5127,6 +5237,15 @@ async def api_publish(platform: str, req: PublishRequest):
         cmd += ['--status-file', str(status_file), '--sms-code-file', str(code_file)]
         return _start_async_publish(platform, cmd, title, req.body, cfg, status_file, code_file,
                                     profile, tags, publish_type)
+    elif platform == 'toutiao':
+        # 头条图文：正文走 --content 直传（不落临时文件）。一键发布 → --exec；
+        # 发布页选了「存草稿」时改用 --draft（只落后台草稿箱，不点发布按钮）。
+        # 附件图片全部走 --images 插进正文（头条会自动取正文首图作封面）。
+        cmd = [py, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'),
+               '--content', req.body, '--title', title, '--tags', tags]
+        if imgs:
+            cmd += ['--images', ','.join(imgs)]
+        cmd.append('--draft' if is_draft else '--exec')
     elif platform == 'wechat-oa':
         # 微信公众号：走「后台会话」发布（免 AppID/AppSecret、免 IP 白名单）。
         # 正文 MD → 公众号 HTML（skill 排版器）→ 会话建草稿（weixin_mp_stats.py publish，内嵌图传 mp CDN）。
@@ -5166,14 +5285,26 @@ async def api_publish(platform: str, req: PublishRequest):
             cmd += ['--media', media]
     # 公众号走后台会话（Playwright，脚本自带 --proxy，默认直连）；其余平台走 _publish_env
     pub_env = _proxy_env() if platform == 'wechat-oa' else _publish_env()
+    capture = {}
+    if platform == 'toutiao':
+        pub_env = dict(pub_env, PYTHONIOENCODING='utf-8')
+        capture = {'encoding': 'utf-8', 'errors': 'replace'}
     try:
         proc = await asyncio.to_thread(subprocess.run, cmd, cwd=str(PROJECT_ROOT), env=pub_env,
-                                       capture_output=True, text=True, timeout=600)
+                                       capture_output=True, text=True, timeout=600, **capture)
     except subprocess.TimeoutExpired:
         raise HTTPException(504, '发布超时（媒体处理慢或流程卡住）')
     ok = proc.returncode == 0
     tail = (proc.stderr or proc.stdout or '').strip().splitlines()
     detail = '\n'.join(tail[-8:])
+    if platform == 'toutiao' and ok:
+        try:
+            receipt = json.loads(proc.stdout or '')
+            ok = isinstance(receipt, dict) and receipt.get('draft_saved' if is_draft else 'published') is True
+        except (ValueError, TypeError):
+            ok = False
+        if not ok:
+            detail = '操作结果未核实，请到平台后台核对，先别重试。'
     try:
         with (OUTPUTS_DIR / '_publish.log').open('a', encoding='utf-8') as lf:
             lf.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {platform} rc={proc.returncode} ok={ok} =====\n")
@@ -5183,8 +5314,10 @@ async def api_publish(platform: str, req: PublishRequest):
     except Exception:
         pass
     if ok:
-        _record_successful_publish(title, req.body, cfg, profile, tags, publish_type)
-    return {'ok': ok, 'message': '发布成功' if ok else '发布失败（见 detail）', 'detail': detail}
+        _record_successful_publish(title, req.body, cfg, profile, tags, publish_type,
+                                   status='draft' if is_draft else 'published')
+    return {'ok': ok, 'message': ('已存草稿' if is_draft else '发布成功') if ok else '发布失败（见 detail）',
+            'detail': detail}
 
 
 class ProfileBuildRequest(BaseModel):
@@ -5352,116 +5485,88 @@ async def api_delete_session(session_key: str):
     return {'deleted': False, 'reason': 'session not found'}
 
 
-TREND_SOURCES: dict[str, tuple[str, str | None]] = {
-    "weibo": ("https://v2.xxapi.cn/api/weibohot", "https://60s.viki.moe/v2/weibo"),
-    "douyin": ("https://v2.xxapi.cn/api/douyinhot", "https://60s.viki.moe/v2/douyin"),
-    "zhihu": ("https://api.zhihu.com/topstory/hot-list?limit=50", "https://60s.viki.moe/v2/zhihu"),
-    "bilibili": ("https://v2.xxapi.cn/api/bilibilihot", "https://60s.viki.moe/v2/bili"),
-    "baidu": ("https://v2.xxapi.cn/api/baiduhot", "https://60s.viki.moe/v2/baidu/hot"),
-    "toutiao": ("https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
-                "https://60s.viki.moe/v2/toutiao"),
-}
-TREND_LABELS = {
-    "weibo": "微博",
-    "douyin": "抖音",
-    "zhihu": "知乎",
-    "bilibili": "B站",
-    "baidu": "百度",
-    "toutiao": "头条",
-}
-_TREND_CACHE: dict[str, tuple[float, list]] = {}
-_HOT_TITLE_KEYS = ("title", "Title", "word", "name", "keyword")
-_HOT_HOT_KEYS = ("hot", "hot_value", "HotValue", "hotValue", "num", "detail_text")
-_HOT_URL_KEYS = ("url", "Url", "link", "mobil_url")
+# Source commands/URLs are loaded exclusively from a trusted local configuration file.
+# The browser only selects registered IDs; it cannot supply executable commands.
+from easel.trends.service import TrendService, failure_group as trend_failure_group
+from easel.trends.sources import ConfigError as TrendConfigError, load_sources as load_trend_sources
+from easel.trends import management as trend_management
+from easel.trends.protocol import CollectorError as TrendCollectorError, safe_json as trend_safe_json
+from easel.trends.protocol import MAX_MANAGEMENT_BYTES
+
+_TREND_SERVICE = TrendService()
 
 
-def _http_get_json(url: str, timeout: int = 8):
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-    })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+def _trend_registry():
+    warnings = []
+    try:
+        environment = read_settings(ENV_FILE)
+        sources = load_trend_sources(PROJECT_ROOT, environment, warnings=warnings)
+        return sources, environment, warnings
+    except Exception:
+        return [], {}, ["热点配置暂时无法读取，请检查本地配置；其他工作台功能不受影响。"]
 
 
-def _pick_str(data: object, keys: tuple[str, ...]) -> str:
-    if not isinstance(data, dict):
-        return ""
-    for key in keys:
-        value = data.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return str(value)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+@app.get("/api/trends/sources")
+async def api_trend_sources():
+    sources, _, warnings = _trend_registry()
+    return {"version": 1, "sources": [source.public() for source in sources], "warnings": warnings}
 
 
-def _trend_web_url(url: str) -> str:
-    match = re.fullmatch(r'https?://api\.zhihu\.com/questions/(\d+)', url)
-    return f'https://www.zhihu.com/question/{match.group(1)}' if match else url
+def _trend_manager_guard(request: Request):
+    # Check the real transport peer even when Origin/Host have been forged by a remote client.
+    if not _loopback_peer(request) or (request.headers.get("origin") and request.headers["origin"] not in _LOCAL_ORIGINS):
+        raise HTTPException(403, "数据源管理仅允许本机操作")
 
 
-def _parse_hot(obj: object) -> list[dict]:
-    data = obj.get("data") if isinstance(obj, dict) else None
-    if isinstance(data, dict):
-        data = data.get("data") or data.get("list") or []
-    out: list[dict] = []
-    if not isinstance(data, list):
-        return out
-    for item in data:
-        if isinstance(item, str):
-            if item.strip():
-                out.append({"title": item.strip(), "hot": "", "url": ""})
-            continue
-        if not isinstance(item, dict):
-            continue
-        target = item.get("target") if isinstance(item.get("target"), dict) else {}
-        title = _pick_str(item, _HOT_TITLE_KEYS) or _pick_str(target, _HOT_TITLE_KEYS)
-        if not title:
-            continue
-        hot = _pick_str(item, _HOT_HOT_KEYS) or _pick_str(target.get("metrics_area"), ("text",))
-        url = _pick_str(item, _HOT_URL_KEYS) or _pick_str(target, _HOT_URL_KEYS)
-        out.append({"title": title, "hot": hot, "url": _trend_web_url(url)})
-    return out
+@app.get("/api/trends/manage")
+async def api_trend_manage(request: Request):
+    _trend_manager_guard(request)
+    try:
+        return await asyncio.to_thread(trend_management.describe, PROJECT_ROOT, read_settings(ENV_FILE))
+    except Exception:
+        raise HTTPException(409, "无法读取数据源管理配置，请修复本地配置文件后重试") from None
 
 
-def _fetch_platform(pf: str) -> list[dict]:
-    primary, backup = TREND_SOURCES.get(pf, (None, None))
-    for url in (primary, backup):
-        if not url:
-            continue
-        try:
-            items = _parse_hot(_http_get_json(url))
-            if items:
-                return items
-        except Exception:
-            continue
-    return []
+@app.post("/api/trends/manage")
+async def api_trend_manage_write(request: Request):
+    _trend_manager_guard(request)
+    length = request.headers.get("content-length", "")
+    if length and (not length.isascii() or not length.isdigit() or len(length) > 10):
+        raise HTTPException(400, "无效的请求长度")
+    if length.isdigit() and int(length) > MAX_MANAGEMENT_BYTES:
+        raise HTTPException(413, "数据源操作最多 256 KiB")
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_MANAGEMENT_BYTES:
+            raise HTTPException(413, "数据源操作最多 256 KiB")
+        raw.extend(chunk)
+    try:
+        value = trend_safe_json(bytes(raw), MAX_MANAGEMENT_BYTES)
+        if not isinstance(value, dict):
+            raise TrendConfigError("数据源操作必须是对象")
+        return await asyncio.to_thread(trend_management.update, PROJECT_ROOT, read_settings(ENV_FILE), value)
+    except TrendConfigError as error:
+        raise HTTPException(400, str(error)) from None
+    except TrendCollectorError:
+        raise HTTPException(400, "数据源操作不是有效 JSON 或字段过深") from None
+    except Exception:
+        raise HTTPException(409, "配置保存失败，原配置已保留，请检查文件权限或修复配置") from None
 
 
 @app.get("/api/trends")
-async def api_trends(platforms: str = "weibo,douyin,zhihu", limit: int = 12):
-    pfs = [p.strip() for p in platforms.split(",") if p.strip() in TREND_SOURCES]
-    now = time.time()
-    loop = asyncio.get_event_loop()
-    result = []
-    for pf in pfs:
-        c = _TREND_CACHE.get(pf)
-        if c and now - c[0] < 300:
-            items = c[1]
-        else:
-            items = await loop.run_in_executor(None, _fetch_platform, pf)
-            if items:
-                _TREND_CACHE[pf] = (now, items)
-            elif c:
-                items = c[1]
-        result.append({
-            "platform": pf,
-            "label": TREND_LABELS.get(pf, pf),
-            "items": items[:max(1, min(limit, 30))],
-            "ok": bool(items),
-        })
-    return {"trends": result, "updated": int(now)}
+async def api_trends(platforms: str | None = None, limit: int = 12):
+    if platforms is not None and len(platforms) > 8192:
+        raise HTTPException(400, "数据源查询过长")
+    sources, environment, warnings = _trend_registry()
+    registry = {source.id: source for source in sources}
+    selected = ([source.id for source in sources if source.default] if platforms is None else
+                list(dict.fromkeys(p.strip() for p in platforms.split(",") if p.strip() in registry)))
+    results = await asyncio.gather(*(
+        asyncio.to_thread(_TREND_SERVICE.get, registry[identifier], environment, max(1, min(limit, 30)))
+        for identifier in selected), return_exceptions=True)
+    groups = [result if isinstance(result, dict) else trend_failure_group(registry[identifier])
+              for identifier, result in zip(selected, results)]
+    return {"version": 1, "trends": groups, "updated": int(time.time()), "warnings": warnings}
 
 
 SCHEDULE_FILE = OUTPUTS_DIR / "_schedule.json"

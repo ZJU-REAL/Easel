@@ -13,20 +13,24 @@ interface PublishPageProps {
 }
 
 // 平台列表须与后端 LOGIN_RUNNERS 对齐（有登录/发布链路的才列）
-const PLATFORMS: { key: string; label: string; titleLimit?: number; bodyLimit: number; hint: string }[] = [
+// draft: true = 该平台支持「存草稿」（落后台草稿箱，不公开发布）
+const PLATFORMS: { key: string; label: string; titleLimit?: number; bodyLimit: number; hint: string; draft?: boolean }[] = [
   { key: 'xiaohongshu', label: '小红书', titleLimit: 20, bodyLimit: 1000, hint: '标题≤20，正文≤1000，重情绪+话题标签' },
   { key: 'douyin', label: '抖音', titleLimit: 55, bodyLimit: 55, hint: '文案≤55，前几字是钩子' },
   { key: 'kuaishou', label: '快手', titleLimit: 30, bodyLimit: 1000, hint: '视频或图片(图文)，标题≤30，需附媒体' },
   { key: 'weixin-channels', label: '视频号', bodyLimit: 1000, hint: '需附视频，短描述+话题标签，微信扫码登录' },
   { key: 'zhihu', label: '知乎', bodyLimit: 5000, hint: '长文/回答，讲清逻辑' },
+  { key: 'juejin', label: '掘金', titleLimit: 100, bodyLimit: 20000, hint: '技术文章（Markdown），标题≤100；发布默认分类，标签需掘金已有标签' },
   { key: 'bilibili', label: 'B站', titleLimit: 80, bodyLimit: 2000, hint: '需附视频，标题≤80、简介≤2000，默认投「知识」分区' },
+  { key: 'toutiao', label: '今日头条', titleLimit: 30, bodyLimit: 10000, draft: true, hint: '图文长文，标题≤30 字，话题≤5 个；附件图片插进正文，可存草稿' },
   { key: 'wechat-oa', label: '公众号', titleLimit: 64, bodyLimit: 20000, hint: '图文文章，正文用 Markdown，首图作封面，发到草稿箱；需先在账号页「登录公众号后台」扫码' },
+  { key: 'twitter-x', label: '推特 X', bodyLimit: 280, hint: '标题与正文合并，最终长度以 X 校验为准；可附 1 图或 1 视频；窗口登录需要运行 Easel 的电脑有图形桌面及外网连接' },
 ];
 const LABEL2KEY = Object.fromEntries(PLATFORMS.map((p) => [p.label, p.key]));
 
 // 能一键发布的平台（有后端 publisher）
-const PUBLISHABLE = new Set(['xiaohongshu', 'douyin', 'kuaishou', 'weixin-channels', 'zhihu', 'bilibili', 'wechat-oa']);
-// 必须附带媒体的平台（无媒体发不了）——公众号需要一张封面图，也计入
+const PUBLISHABLE = new Set(['xiaohongshu', 'douyin', 'kuaishou', 'weixin-channels', 'zhihu', 'juejin', 'bilibili', 'wechat-oa', 'twitter-x', 'toutiao']);
+// 必须附带媒体的平台（无媒体发不了）——公众号需要一张封面图，也计入；X 纯文字推文合法，不计入
 const MEDIA_REQUIRED = new Set(['xiaohongshu', 'douyin', 'kuaishou', 'weixin-channels', 'bilibili', 'wechat-oa']);
 // 只能发视频的平台（抖音/视频号/B站：图文不走此链路，必须视频）
 const VIDEO_ONLY = new Set(['douyin', 'weixin-channels', 'bilibili']);
@@ -48,6 +52,8 @@ export default function PublishPage({ persona }: PublishPageProps) {
   const [platforms, setPlatforms] = useState<string[]>(draft0.platforms);
   const [overrides, setOverrides] = useState<Record<string, string>>(draft0.overrides);
   const [tags, setTags] = useState(draft0.tags || '');
+  // 存草稿模式：只对声明了 draft 能力的平台（今日头条）生效，其余平台仍真发布
+  const [asDraft, setAsDraft] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
   const [toast, setToast] = useState('');
@@ -203,14 +209,24 @@ export default function PublishPage({ persona }: PublishPageProps) {
     } finally {
       setChecking(false);
     }
+    // 存草稿只对声明 draft 能力的平台（今日头条）生效；其余平台一律真发布
+    const draftTargets = asDraft ? targets.filter((t) => t.draft) : [];
+    const liveTargets = asDraft ? targets.filter((t) => !t.draft) : targets;
     const okToSend = window.confirm(
       `发布前预检已执行，结果已显示在页面中。人设评分只做提醒，不会阻止发布。\n\n` +
-      `即将【真实发布】到：${targets.map((t) => t.label).join('、')}。\n` +
-      `这会公开发布到你的账号，确定继续？`);
+      (draftTargets.length
+        ? `将【存入草稿箱】：${draftTargets.map((t) => t.label).join('、')}（不公开发布）。\n`
+        : '') +
+      (liveTargets.length
+        ? `即将【真实发布】到：${liveTargets.map((t) => t.label).join('、')}。\n` +
+          `这会公开发布到你的账号，确定继续？`
+        : '确认继续？'));
     if (!okToSend) return;
 
     setPublishing(true);
     for (const t of targets) {
+      // 存草稿只对声明 draft 能力的平台生效（今日头条）；其余平台一律真发布
+      const asDraftThis = asDraft && !!t.draft;
       if (!loginOf(t.key)) {
         setPub((r) => ({ ...r, [t.key]: { status: 'fail', msg: '未登录 · 去账号页登录' } }));
         continue;
@@ -223,9 +239,9 @@ export default function PublishPage({ persona }: PublishPageProps) {
         setPub((r) => ({ ...r, [t.key]: { status: 'fail', msg: `${t.label}只能发视频，请从内容库选一个视频` } }));
         continue;
       }
-      setPub((r) => ({ ...r, [t.key]: { status: 'publishing', msg: '发布中…可能需 1-2 分钟' } }));
+      setPub((r) => ({ ...r, [t.key]: { status: 'publishing', msg: asDraftThis ? '存草稿中…可能需 1-2 分钟' : '发布中…可能需 1-2 分钟' } }));
       try {
-        const res = await publishNow(t.key, { title, body: effective(t.key), media: selectedMedia, tags, persona });
+        const res = await publishNow(t.key, { title, body: effective(t.key), media: selectedMedia, tags, persona, draft: asDraftThis });
         if (res.async) {
           // 抖音：异步发布，轮询状态；风控触发短信墙时弹输入框（条件触发，没触发就直接跑完）
           await pollAsyncPublish(t.key, t.label);
@@ -233,7 +249,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
           setPub((r) => ({
             ...r,
             [t.key]: res.ok
-              ? { status: 'ok', msg: '已发布 ✅' }
+              ? { status: 'ok', msg: asDraftThis ? '已存草稿 ✅' : '已发布 ✅' }
               : { status: 'fail', msg: res.detail || res.message || '发布失败' },
           }));
         }
@@ -309,6 +325,8 @@ export default function PublishPage({ persona }: PublishPageProps) {
   };
 
   const canPublish = platforms.some((k) => PUBLISHABLE.has(k));
+  // 已选平台里支持存草稿的（目前只有今日头条）——没有就不显示开关，避免误导
+  const draftCapable = PLATFORMS.filter((p) => platforms.includes(p.key) && p.draft);
 
   return (
     <div className="publish-page">
@@ -335,10 +353,16 @@ export default function PublishPage({ persona }: PublishPageProps) {
               onClick={() => toggle(p.key)}>{p.label}</button>
           ))}
         </div>
+        {draftCapable.length > 0 && (
+          <label className="draft-toggle">
+            <input type="checkbox" checked={asDraft} onChange={(e) => setAsDraft(e.target.checked)} />
+            <span>存草稿（{draftCapable.map((p) => p.label).join('、')} 进平台草稿箱，不公开发布；同批次的其它平台仍会真发布）</span>
+          </label>
+        )}
 
         <label className="field-label" style={{ marginTop: 14 }}>
           媒体附件 {selectedMedia.length > 0 && <span className="pv-badge">{selectedMedia.length} 个</span>}
-          <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 12 }}>（小红书/抖音/快手/微信视频号/B站必需，从内容库选；抖音、视频号、B站须为视频）</span>
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 12 }}>（小红书/抖音/快手/微信视频号/B站必需，从内容库选；抖音、视频号、B站须为视频；今日头条选中的图会插进正文）</span>
         </label>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button className="btn btn-sm" onClick={() => setShowPicker((v) => !v)}>
