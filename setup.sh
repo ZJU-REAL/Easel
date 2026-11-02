@@ -374,23 +374,27 @@ else
     echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
 fi
 
-# ---- 1. Node.js >= 24.16 ----
-# 跟随 openclaw@latest 的引擎要求：当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0
-# （注意 25.x 与 26.0 被排除）。setup 默认安装 openclaw@latest，故 Node 下限对齐到 24.16。
+# ---- 1. Node.js >= 24.22.1 ----
+# 跟随 openclaw@latest 的引擎要求：当前 2026.10.x 需要 Node >=24.22.1 <25 || >=26.12.1
+# （注意 25.x 与 26.0–26.11 被排除）。setup 默认安装 openclaw@latest，故 Node 下限对齐到 24.22.1。
 # 默认先走国内镜像再回落 nodejs.org：实测同一个包 nodejs.org ~20KB/s（20 分钟都下不完），
 # 阿里云 ~590KB/s（53 秒）。EASEL_NODE_MIRROR 可覆盖，镜像目录结构需与 nodejs.org/dist 一致。
 NODE_MIRROR_DEFAULT="https://mirrors.aliyun.com/nodejs-release"
 step "1/8" "检查系统环境" "Python · Node.js · Git · FFmpeg"
 info "检查 Node.js..."
-node_version_ok() {  # $1=major $2=minor
+node_version_ok() {  # $1=major $2=minor $3=patch
+    local patch="${3:-0}"
     if [ "$CHAT_MODE" = api ]; then
         { [ "$1" -eq 20 ] && [ "$2" -ge 19 ]; } \
             || { [ "$1" -eq 22 ] && [ "$2" -ge 12 ]; } \
             || [ "$1" -ge 23 ]
         return
     fi
-    { [ "$1" -eq 24 ] && [ "$2" -ge 16 ]; } \
-        || { [ "$1" -eq 26 ] && [ "$2" -ge 1 ]; } \
+    # openclaw@latest engines: >=24.22.1 <25 || >=26.12.1（25.x 与 26.0–26.11 不行）
+    { [ "$1" -eq 24 ] && [ "$2" -gt 22 ]; } \
+        || { [ "$1" -eq 24 ] && [ "$2" -eq 22 ] && [ "$patch" -ge 1 ]; } \
+        || { [ "$1" -eq 26 ] && [ "$2" -gt 12 ]; } \
+        || { [ "$1" -eq 26 ] && [ "$2" -eq 12 ] && [ "$patch" -ge 1 ]; } \
         || [ "$1" -ge 27 ]
 }
 NODE_OK=false
@@ -398,7 +402,9 @@ if command -v node &>/dev/null; then
     NODE_VER=$(node -v | sed 's/v//')
     NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
     NODE_MINOR=$(echo "$NODE_VER" | cut -d. -f2)
-    if node_version_ok "$NODE_MAJOR" "$NODE_MINOR"; then
+    NODE_PATCH=$(echo "$NODE_VER" | cut -d. -f3)
+    NODE_PATCH="${NODE_PATCH:-0}"
+    if node_version_ok "$NODE_MAJOR" "$NODE_MINOR" "$NODE_PATCH"; then
         NODE_OK=true
     fi
 fi
@@ -417,11 +423,11 @@ else
             BREW_NODE24_PREFIX="$(brew --prefix node@24)"
             export PATH="$BREW_NODE24_PREFIX/bin:$PATH"
         else
-            echo "macOS 未找到 Homebrew。请先安装 Node.js 24.16+（Homebrew: brew install node@24），再重新运行 setup.sh。" >&2
+            echo "macOS 未找到 Homebrew。请先安装 Node.js 24.22.1+（Homebrew: brew install node@24），再重新运行 setup.sh。" >&2
             exit 1
         fi
     else
-        NODE_TARGET="v24.21.0"
+        NODE_TARGET="v24.22.1"
         NODE_DIR="node-${NODE_TARGET}-linux-x64"
         # 已有 nvm 就装进用户目录：不需要 root，也不覆盖系统 node。
         if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
@@ -446,7 +452,7 @@ else
                 warn "从 $base 下载 Node 失败，尝试下一个源"
             done
             if [ "$NODE_OK_DL" != true ]; then
-                echo "Node.js ${NODE_TARGET} 下载失败。请手动安装 Node 24.16+ 后重新运行，或用" >&2
+                echo "Node.js ${NODE_TARGET} 下载失败。请手动安装 Node 24.22.1+ 后重新运行，或用" >&2
                 echo "  EASEL_NODE_MIRROR=<镜像地址> bash setup.sh   指定可用镜像。" >&2
                 exit 1
             fi
@@ -457,7 +463,7 @@ else
                 if command -v sudo >/dev/null 2>&1; then
                     NODE_SUDO="sudo"
                 else
-                    echo "需要 root 才能写入 /usr/local，且未找到 sudo。请手动安装 Node 24.16+ 后重试。" >&2
+                    echo "需要 root 才能写入 /usr/local，且未找到 sudo。请手动安装 Node 24.22.1+ 后重试。" >&2
                     exit 1
                 fi
             fi
