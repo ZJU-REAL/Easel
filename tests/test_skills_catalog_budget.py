@@ -14,6 +14,7 @@ from easel.commands import doctor
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+BUILTIN_SKILL_COUNT = len(list((PROJECT_ROOT / "skills/builtin").glob("*/SKILL.md")))
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def isolated(tmp_path, monkeypatch):
 def test_defaults_fit_all_builtin_descriptions(isolated):
     count, chars = doctor._builtin_skills_estimate({})
     updates = doctor._skills_budget_updates({}, {})
-    assert count == 115
+    assert count == BUILTIN_SKILL_COUNT
     assert updates["maxSkillsInPrompt"] >= count
     assert updates["maxSkillsPromptChars"] >= chars + 8192
     assert updates["maxSkillsInPrompt"] == 200
@@ -87,7 +88,7 @@ def test_invalid_config_is_not_replaced_by_defaults(isolated, config):
 def test_long_unicode_workspace_expands_default_budget(isolated, monkeypatch):
     monkeypatch.setenv("EASEL_OPENCLAW_WORKSPACE", "/" + "路径😀&" * 150)
     count, chars = doctor._builtin_skills_estimate({})
-    assert count == 115 and chars > 80000
+    assert count == BUILTIN_SKILL_COUNT and chars > 80000
     assert doctor._skills_budget_updates({}, {})["maxSkillsPromptChars"] >= chars + 8192
 
 
@@ -98,7 +99,7 @@ def test_doctor_distinguishes_estimates_from_runtime_visibility(isolated):
     config.write_bytes(source)
     before = config.stat().st_mtime_ns
     output = "\n".join(doctor._context_budget_policy())
-    assert "115 个" in output and "离线上界估算" in output
+    assert f"{BUILTIN_SKILL_COUNT} 个" in output and "离线上界估算" in output
     assert "不含第三方技能" in output and "风险" in output
     assert "实际遗漏不能由此推定" in output
     assert "运行时可见性未知" in output and "Eligible 数不等于" in output
@@ -125,9 +126,19 @@ def test_doctor_large_budget_does_not_claim_runtime_success(isolated):
 def _run_installer_plan(isolated, shell, *, env_text="", reject=False):
     root, config = isolated
     (root / ".env").write_text(env_text, encoding="utf-8")
-    environment = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "REJECT_SKILLS": "1" if reject else ""}
+    environment = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "REJECT_SKILLS": "1" if reject else "",
+                   "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     if shell == "bash":
-        if not shutil.which("bash"):
+        if os.name == "nt":
+            # Windows' System32/bash.exe launches WSL and cannot run this native-Python probe.
+            git = shutil.which("git")
+            candidates = [Path(git).resolve().parent.parent / "bin/bash.exe"] if git else []
+            candidates.extend(Path(os.environ[key]) / "Git/bin/bash.exe"
+                              for key in ("ProgramFiles", "ProgramFiles(x86)") if os.environ.get(key))
+            executable = next((str(path) for path in candidates if path.is_file()), None)
+        else:
+            executable = shutil.which("bash")
+        if not executable:
             pytest.skip("bash unavailable")
         source = (PROJECT_ROOT / "setup.sh").read_text(encoding="utf-8")
         start = source.index("oc_configure_skills_budget() {")
@@ -140,7 +151,7 @@ def _run_installer_plan(isolated, shell, *, env_text="", reject=False):
             'warn_collect() { echo "WARN|$1|$2"; }\n'
             + body + "\noc_configure_skills_budget\necho DONE\n"
         )
-        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+        result = subprocess.run([executable, "-c", script], capture_output=True, text=True, encoding="utf-8", errors="replace",
                                 env=environment, timeout=30)
     else:
         executable = shutil.which(shell)
@@ -152,6 +163,8 @@ def _run_installer_plan(isolated, shell, *, env_text="", reject=False):
         script = root / "probe.ps1"
         script.write_text(
             "param($Python, $Root)\n$ErrorActionPreference = 'Stop'\n"
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n"
+            "$OutputEncoding = [Console]::OutputEncoding\n"
             "function Add-Warning($Label, $Detail, $Fix) { Write-Output \"WARN|$Label|$Detail\" }\n"
             "function Set-OpenClawConfig($Key, $Value, [switch]$Json, $Label) {\n"
             "if ($env:REJECT_SKILLS) { Add-Warning $Label 'Unrecognized key' ''; return }\n"
@@ -159,7 +172,7 @@ def _run_installer_plan(isolated, shell, *, env_text="", reject=False):
             + body + "\nSet-OpenClawSkillsBudget\nWrite-Output DONE\n", encoding="utf-8-sig")
         result = subprocess.run([executable, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                                  "-File", str(script), sys.executable, str(root)],
-                                capture_output=True, text=True, env=environment, timeout=30)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", env=environment, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "DONE" in result.stdout
     return result.stdout

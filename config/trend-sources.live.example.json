@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "include_builtin": true,
+  "sources": [
+    {
+      "id": "live-python-hn",
+      "label": "Hacker News",
+      "type": "python",
+      "script": "../examples/trends/live_collector.py",
+      "args": [
+        "--provider",
+        "hackernews",
+        "--limit",
+        "20"
+      ],
+      "timeout_seconds": 20,
+      "refresh_seconds": 300
+    },
+    {
+      "id": "live-http-github",
+      "label": "GitHub CLI Releases",
+      "type": "http",
+      "url": "http://127.0.0.1:8766/trends",
+      "timeout_seconds": 20,
+      "refresh_seconds": 300
+    },
+    {
+      "id": "live-rss-bbc",
+      "label": "BBC News",
+      "type": "rss",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "timeout_seconds": 20,
+      "refresh_seconds": 900
+    },
+    {
+      "id": "live-atom-github",
+      "label": "GitHub CLI Releases",
+      "type": "rss",
+      "url": "https://github.com/cli/cli/releases.atom",
+      "headers": {
+        "User-Agent": "Easel-public-collector-example/1.0"
+      },
+      "timeout_seconds": 20,
+      "refresh_seconds": 900
+    }
+  ]
+}

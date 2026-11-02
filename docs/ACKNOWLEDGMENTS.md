@@ -29,6 +29,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 
 | 项目 | 用于 SKILL | 借鉴点 |
 |------|-----------|--------|
+| [hongxingli319 原创技能](https://github.com/hongxingli319/Easel/tree/d94dd0bd9b22c2f9d90521e2c8b4b16ec251c489/skills/builtin/real-lab-paper-promotion) | real-lab-paper-promotion | 原创代码、文档、六篇写作案例与 Easel 适配，由作者按 Apache-2.0 公开。完整来源、版本、许可文本及声明见 [EASEL-META.md](../skills/builtin/real-lab-paper-promotion/EASEL-META.md)。 |
 | [langgptai/LangGPT](https://github.com/langgptai/LangGPT) | post-formatter | 结构化提示词框架 |
 | [kangarooking/system-prompt-skills](https://github.com/kangarooking/system-prompt-skills) | post-formatter | 中文销售型文案框架 |
 | [MrGeDiao/shuorenhua（说人话）](https://github.com/MrGeDiao/shuorenhua) | post-formatter / text-polisher | 中文去 AI 味改写规则 |
@@ -55,6 +56,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 
 | 项目 | 用于 SKILL | 借鉴点 |
 |------|-----------|--------|
+| [hongxingli319 原创技能](https://github.com/hongxingli319/Easel/tree/65f657f4b0755295226f942fc117794e7f2bcea5/skills/builtin/real-lab-paper2video-v1) | real-lab-paper2video-v1 | 原创代码、文档、模板与 Easel 适配，Apache-2.0；内置 paper2assets 来自 Microsoft ResearchStudio，固定提交 `664cc8951f4c0e6de8d578993b76f9e0bb035141`，保留 MIT 许可及原版权声明。完整来源、版本、许可文本及声明见 [EASEL-META.md](../skills/builtin/real-lab-paper2video-v1/EASEL-META.md)。 |
 | [xiph/rnnoise](https://github.com/xiph/rnnoise) | audio-denoise | RNNoise 降噪算法 |
 | [GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models) | audio-denoise | RNNoise 预训练模型 |
 | [timsainb/noisereduce](https://github.com/timsainb/noisereduce) | audio-denoise | 频谱降噪 |

@@ -39,16 +39,13 @@ PROFILE = "easel"
 
 
 def _proxy_env() -> dict[str, str]:
-    """返回带外网代理的环境变量（保护内网直连）。
-    EASEL_PROXY 进程环境优先，其次 .env（设置页「网络代理」持久化，read_settings 已含此序）。"""
-    env = os.environ.copy()
+    """返回带外网代理的环境变量（保护内网直连）。"""
+    from easel.runtime_env import proxy_environment
+
+    env = proxy_environment(dict(os.environ),
+                            "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*",
+                            env_file=PROJECT_ROOT / ".env")
     env.setdefault("EASEL_ROOT", str(PROJECT_ROOT))
-    proxy = read_settings().get("EASEL_PROXY", "").strip()
-    if proxy:
-        env["EASEL_PROXY"] = proxy   # 显式回写：.env 来源的代理对子进程同样可见
-    env.setdefault("http_proxy", proxy)
-    env.setdefault("https_proxy", proxy)
-    env.setdefault("no_proxy", "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*")
     return env
 
 CYAN = "\033[0;36m"
@@ -217,20 +214,24 @@ def _warn_stale_frontend() -> None:
     frontend = PROJECT_ROOT / "web" / "frontend"
     dist = frontend / "dist"
     try:
-        dist_mtime = max((f.stat().st_mtime for f in dist.rglob("*") if f.is_file()),
-                         default=None)
+        # The server uses this entry; touching a copied public asset is not a rebuild.
+        dist_mtime = (dist / "index.html").stat().st_mtime if (dist / "index.html").is_file() else None
     except OSError:
         dist_mtime = None
     if dist_mtime is None:
-        print(f"{YELLOW}⚠ 前端尚未构建（web/frontend/dist 为空）：页面会是回退版。"
+        print(f"{YELLOW}⚠ 前端尚未构建（web/frontend/dist 缺少 index.html）：页面会是回退版。"
               f"请执行：cd web/frontend && npm run build{NC}", file=sys.stderr)
         return
-    watched = [frontend / "index.html"]
-    for sub in ("src", "public"):
-        d = frontend / sub
-        if d.is_dir():
-            watched.extend(f for f in d.rglob("*") if f.is_file())
     try:
+        watched = [frontend / name for name in ("index.html", "package.json", "package-lock.json", "vite.config.ts")]
+        watched.extend(frontend.glob("tsconfig*.json"))
+        # The React entry imports this shared stylesheet outside src/.
+        watched.append(PROJECT_ROOT / "web" / "static" / "dropdown.css")
+        for sub in ("src", "public"):
+            d = frontend / sub
+            if d.is_dir():
+                watched.extend(f for f in d.rglob("*") if f.is_file())
+        watched = [f for f in watched if f.is_file()]
         newest_src = max((f.stat().st_mtime for f in watched), default=0)
     except OSError:
         return
@@ -248,11 +249,11 @@ def _warn_unwritable_profiles_dir(profiles_dir: Path | None = None) -> None:
     探针：真实建删一个临时文件，等价于登录 runner 要做的最小写操作。
     """
     d = profiles_dir or (Path.home() / ".easel-browser-profiles")
-    probe = d / ".write-probe"
     try:
+        import tempfile
         d.mkdir(parents=True, exist_ok=True)
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink()
+        with tempfile.TemporaryFile(dir=d) as probe:
+            probe.write(b"ok")
     except OSError:
         print(f"{RED}⚠ 浏览器登录态目录不可写：{d}{NC}\n"
               f"{RED}  各平台扫码/窗口登录会全部失败（子进程 EPERM）。请在终端里直接运行"

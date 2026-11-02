@@ -58,8 +58,10 @@
 ```
 现象：接口返回 ok:true，内容根本没上线
 根因：成功判定只看 URL 变化；拒绝原因只在页面 console（如「摘要不满足最低50字」）
-修复：① gone_selector（弹窗必须关闭）② 捕获 console error 并在失败时回显真实原因
+修复：X / 掘金核对本次提交接口返回的有效作品 ID；URL、弹窗消失和普通 toast 不能代替平台响应
 ```
+
+最终提交按钮仅点击一次。点击超时或没有收到可核实的响应时，返回“结果未核实”，提示到平台后台核对，不自动再次点击。平台接受提交不保证立即公开可见，仍可能进入审核队列。
 
 ### 4. Playwright 通用步骤的重 SPA 盲区
 
@@ -68,6 +70,7 @@
 | `goto` 等 `load` 会超时 | 引擎已统一 `wait_until="domcontentloaded"` + 60s |
 | `waitfor` 等 visible 等不到隐藏元素 | 步骤加 `"att": True` → `state="attached"` |
 | 自定义 UI 组件标准 click 无效 | 用 `{"action": "js_click"}` |
+| 最终提交发生超时 | 不自动改用 JS 或再次点击，先核对平台结果 |
 | 首次进入有引导遮罩 | 加 `"optional": True` 的关闭步骤 |
 | Trusted Types CSP 禁止 `innerHTML` | 用全选 + Delete 键，别赋值 innerHTML |
 
@@ -84,7 +87,9 @@
 |---|---|---|---|
 | 掘金 | `user_api/v1/user/get`（账号概览，含 `follower_count`） | 需 cookie | 高 |
 | 掘金 | `content_api/v1/article/query_list`（文章级阅读/赞/评/藏） | **免登录** | 高 |
-| X | 个人主页 DOM（关注者/帖子数/推文级赞转评看） | 需登录 | 中（官方 API 免费层已取消） |
+| X | 个人主页 DOM（关注者/帖子数/推文级赞转评看） | 先核对登录态 | 随平台页面结构变化 |
+
+匿名查询掘金用户资料不代表当前浏览器已登录；近期抓取的文章或推文只是样本，不将其互动总和视为账号完整历史累计。
 
 **读登录 cookie 的正确姿势**：Chromium 的 cookie 是加密的，手工读 SQLite 只能拿到空值。
 用 Playwright 的 `context.request` 让 Chromium 自己解密并带上 cookie：

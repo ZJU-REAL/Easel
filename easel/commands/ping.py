@@ -10,7 +10,7 @@ import urllib.request
 
 from easel.gateway_endpoint import healthz_url, port_source, resolve_gateway_port
 from easel.openclaw_cmd import openclaw_base_cmd
-from easel.direct_api import DirectAPIError, read_settings, stream_chat
+from easel.direct_api import DirectAPIError, PROJECT_ROOT, read_settings, stream_chat
 
 GREEN = "\033[0;32m"
 RED = "\033[0;31m"
@@ -19,11 +19,11 @@ NC = "\033[0m"
 
 def _proxy_env() -> dict[str, str]:
     """返回带外网代理的环境变量（保护内网直连）。"""
-    env = os.environ.copy()
-    env.setdefault("http_proxy", os.environ.get("EASEL_PROXY", ""))
-    env.setdefault("https_proxy", os.environ.get("EASEL_PROXY", ""))
-    env.setdefault("no_proxy", "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*")
-    return env
+    from easel.runtime_env import proxy_environment
+
+    return proxy_environment(dict(os.environ),
+                             "localhost,127.0.0.1,*.xiaohongshu.com,*.devops.xiaohongshu.com,10.*",
+                             env_file=PROJECT_ROOT / ".env")
 
 
 def _step(label: str, cmd: list[str], timeout: int = 30,

@@ -129,8 +129,15 @@ function prune(sessions: ChatSession[]): ChatSession[] {
   return pruned.slice(0, MAX_SESSIONS);
 }
 
-export function saveSessions(sessions: ChatSession[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(prune(sessions)));
+export function saveSessions(sessions: ChatSession[]): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prune(sessions)));
+    return true;
+  } catch {
+    // Keep the live conversation in memory; never throw from a React state updater.
+    if (typeof window !== 'undefined') queueMicrotask(() => window.dispatchEvent(new Event('easel-session-save-error')));
+    return false;
+  }
 }
 
 export function createSession(persona?: string): ChatSession {

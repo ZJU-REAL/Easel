@@ -302,15 +302,13 @@ PLATFORMS: dict[str, dict] = {
             {"action": "wait", "value": "2500"},
             {"action": "screenshot", "value": "outputs/_login/juejin-prefill.png"},
             # 点顶部「发布」→ 右侧弹出 .publish-popup 发布面板（分类/标签/封面/专栏/摘要）
-            {"action": "click", "commit": True,
+            {"action": "click",
              "selector": "button:has-text('发布'), .publish-btn"},
             {"action": "waitfor", "value": "15000", "selector": ".publish-popup.active, .publish-popup"},
             # 分类必选：.category-list .item 是 div（不是 button）；默认投「人工智能」，
             # 可用 --tags 的第一个标签或默认值覆盖。选不到就点第一个可选分类兜底。
-            {"action": "click", "optional": True,
-             "selector": ".publish-popup .category-list .item:has-text('人工智能')"},
-            {"action": "click", "optional": True,
-             "selector": ".publish-popup .category-list .item"},
+            {"action": "click",
+             "selector": ".publish-popup .category-list .item:has-text('人工智能'), .publish-popup .category-list .item"},
             {"action": "wait", "value": "800"},
             # 标签必填：点 placeholder 展开下拉（input 被 placeholder 遮挡，直接点 input 会超时）
             {"action": "click", "optional": True, "selector": ".publish-popup .byte-select__placeholder"},
@@ -334,13 +332,9 @@ PLATFORMS: dict[str, dict] = {
             {"action": "screenshot", "value": "outputs/_login/juejin-publish-panel.png"},
             # 确认发布：面板底部 primary 按钮 =「确定并发布」。
             # 用 js_click（JS 派发事件）：掘金是自定义 UI 组件，标准 click 常被判不可点而静默无效。
-            {"action": "js_click",
+            {"action": "js_click", "commit": True,
              "selector": ".publish-popup .ui-btn.primary, .publish-popup button:has-text('确定并发布')"},
             {"action": "wait", "value": "8000"},
-            # 兜底：若面板仍在（主按钮未生效），再点一次原生 click
-            {"action": "click", "optional": True,
-             "selector": ".publish-popup .ui-btn.primary, .publish-popup button:has-text('确定并发布')"},
-            {"action": "wait", "value": "5000"},
         ],
         # 成功判定要「弹窗真的关掉」：服务端拒绝（如账号受限）时 .publish-popup 不会关闭，
         # 只靠 URL 变化会假报成功（实测掘金「账户目前受到限制」正是这样被漏掉的）。
@@ -368,7 +362,7 @@ PLATFORMS: dict[str, dict] = {
         "login_navigation_timeout_ms": 30000,
         "media_optional": True,  # 纯文字推文合法；图/视频可选（取第一个媒体文件）
         # 已登录标志：左侧导航底部账号切换按钮只在登录后渲染；data-testid 是 X 上最稳定的锚点
-        "login_check": "[data-testid='SideNav_AccountSwitcher_Button'], [data-testid='AppTabBar_Home_Link']",
+        "login_check": "[data-testid='SideNav_AccountSwitcher_Button']",
         "login_strict": True,
         "logged_out_selector": "[data-testid='loginButton'], a[href='/i/flow/login'], a[href='/login']",
         "whoami_url": "https://x.com/home",
@@ -432,15 +426,73 @@ def _env_file_value(key: str, env_file: Path | None = None) -> str:
     环境变量之外再查设置页持久化下来的配置）。读不到/没有该键返回 ''。"""
     path = env_file or (Path(__file__).resolve().parents[3] / ".env")
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
+        result = ""
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
             s = line.strip()
             if s and not s.startswith("#") and "=" in s:
                 k, _, v = s.partition("=")
                 if k.strip() == key:
-                    return v.strip().strip("\"'")
-    except OSError:
+                    result = v.strip().strip("\"'")
+        return result
+    except (OSError, UnicodeError):
         pass
     return ""
+
+
+def _publish_receipt(platform: str, url: str, status: int, payload: object) -> dict | None:
+    """Accept only the matching platform's submission response, never a URL or toast."""
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    if platform == "juejin":
+        matches = parsed.scheme == "https" and parsed.hostname == "api.juejin.cn" and parsed.path == "/content_api/v1/article/publish"
+    elif platform == "twitter-x":
+        matches = (parsed.scheme == "https" and parsed.hostname in {"x.com", "api.x.com", "twitter.com", "api.twitter.com"}
+                   and "/graphql/" in parsed.path and parsed.path.endswith("/CreateTweet"))
+    else:
+        return None
+    if not matches:
+        return None
+    if not 200 <= status < 300 or not isinstance(payload, dict):
+        return {"outcome": "unknown"}
+    if platform == "juejin":
+        if type(payload.get("err_no")) is int and payload["err_no"] != 0:
+            return {"outcome": "rejected"}
+        if type(payload.get("err_no")) is not int or payload["err_no"] != 0:
+            return {"outcome": "unknown"}
+        data = payload.get("data")
+        identifier = data.get("article_id") if isinstance(data, dict) else None
+    else:
+        if payload.get("errors"):
+            return {"outcome": "rejected"}
+        try:
+            identifier = payload["data"]["create_tweet"]["tweet_results"]["result"]["rest_id"]
+        except (KeyError, TypeError):
+            identifier = None
+    if (type(identifier) not in (str, int) or len(str(identifier)) > 32
+            or not re.fullmatch(r"[0-9]+", str(identifier)) or int(identifier) <= 0):
+        return {"outcome": "unknown"}
+    link = f"https://juejin.cn/post/{identifier}" if platform == "juejin" else f"https://x.com/i/status/{identifier}"
+    return {"outcome": "accepted", "id": str(identifier), "url": link}
+
+
+def _observe_publish_receipt(page, platform: str) -> dict:
+    state = {"submitted": False, "outcome": "unknown"}
+    def receive(response):
+        if not state["submitted"] or state["outcome"] == "accepted":
+            return
+        try:
+            if response.request.method != "POST":
+                return
+            result = _publish_receipt(platform, response.url, response.status, response.json())
+            if result is not None:
+                state.update(result)
+        except Exception:
+            pass  # A missing/unreadable receipt leaves the outcome unknown.
+    page.on("response", receive)
+    return state
 
 
 # headless 校验国际站时的 UA 伪装：headless Chromium 默认 UA 含 "HeadlessChrome"，
@@ -466,7 +518,7 @@ def _launch_kwargs(cfg: dict, platform: str = "", headless: bool = False) -> dic
     if cfg.get("needs_proxy"):
         slug = platform.upper().replace("-", "_")
         proxy = (os.environ.get("EASEL_PROXY") or (os.environ.get(f"{slug}_PROXY") if slug else "")
-                 or _env_file_value("EASEL_PROXY")
+                 or (_env_file_value("EASEL_PROXY") if "EASEL_PROXY" not in os.environ else "")
                  or os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
                  or os.environ.get("all_proxy") or os.environ.get("ALL_PROXY") or "").strip()
         if proxy:
@@ -796,6 +848,7 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
             str(profile), headless=not headed,
             viewport={"width": 1440, "height": 900}, **_launch_kwargs(cfg, a.platform, headless=not headed))
         page = browser.pages[0] if browser.pages else browser.new_page()
+        receipt = _observe_publish_receipt(page, a.platform) if a.platform in {"juejin", "twitter-x"} else None
         # 收集页面 console 错误：平台把「账号受限/风控」这类拒绝只打在控制台、UI 不给提示
         # （掘金实测："抱歉，您的账户目前受到限制，暂时无法发布文章"）。失败时据此给出真实原因。
         console_errors: list[str] = []
@@ -873,6 +926,8 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                     # 单次提交契约 × 人类节奏：提交前「复核 + 反应」双停顿（human_pace）
                     human_pace.pause_before_commit(
                         len(str(ctx.get("title") or "")) + len(str(ctx.get("desc") or "")))
+                    if receipt is not None:
+                        receipt["submitted"] = True
                 try:
                     if act == "goto":
                         # 用 domcontentloaded 而非默认的 load：重 SPA（如掘金编辑器、Studio 类后台）
@@ -931,6 +986,8 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                         try:
                             el.click(force=True, timeout=5000)
                         except Exception:
+                            if receipt is not None and s.get("commit"):
+                                _die("提交结果未知，请到平台后台核对，先别重发。", 5)
                             # 回退：完整指针事件链（pointerdown→mousedown→mouseup→click）
                             page.evaluate("""
                                 el => {
@@ -958,7 +1015,12 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                             el.scroll_into_view_if_needed()
                         except Exception:
                             pass
-                        el.click()
+                        try:
+                            el.click()
+                        except Exception:
+                            if receipt is not None and s.get("commit"):
+                                _die("提交结果未知，请到平台后台核对，先别重发。", 5)
+                            raise
                     elif act == "wait":
                         page.wait_for_timeout(int(val or 1000))
                     elif act == "press":
@@ -977,7 +1039,7 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
             # 发布结果校验（界面层，旁证）：配置了 publish_success 才验；未配的平台沿用"跑完即报"
             chk = cfg.get("publish_success")
             ui_ok = False
-            if chk:
+            if chk and receipt is None:
                 deadline = time.time() + 30
                 while time.time() < deadline:
                     url = (page.url or "").lower()
@@ -998,7 +1060,16 @@ def _run_browser(a, headed: bool, do_publish: bool) -> int:
                     page.wait_for_timeout(500)
             # 读回对账（权威判定）：回到作品管理页读本人作品列表，标题+时间窗对上才算成功。
             # 界面判定只作旁证；四档结算（verified 才成功），未核实绝不冒报成功、不许盲目重发。
-            if cfg.get("readback") and a.platform in _READBACK_VERIFIERS:
+            if receipt is not None:
+                deadline = time.monotonic() + 30
+                while receipt["outcome"] == "unknown" and time.monotonic() < deadline:
+                    page.wait_for_timeout(250)
+                if receipt["outcome"] == "rejected":
+                    _die(f"{cfg['name']}拒绝本次提交，请到平台后台查看原因。", 5)
+                if receipt["outcome"] != "accepted":
+                    _die(f"{cfg['name']}发布结果未核实，请到平台后台核对，先别重发。", 5)
+                print(f"✅ {cfg['name']}发布提交已确认（平台响应作品 {receipt['id']}）：{receipt['url']}")
+            elif cfg.get("readback") and a.platform in _READBACK_VERIFIERS:
                 verdict = _readback_verify(a.platform, page, title=ctx.get("title") or "",
                                            since_ms=submitted_at_ms or flow_started_ms,
                                            snapshot_ids=snapshot_ids)
@@ -1631,11 +1702,14 @@ def cmd_login_qr(a) -> int:
             if window_mode and cfg.get("login_mode") == "window":
                 login_state.write_status(
                     sf, "window_login",
-                    f"请在弹出的浏览器窗口里登录 {cfg['name']}，完成后窗口会自动关闭（期间不要手动关窗口）。")
+                    f"请在运行 Easel 的电脑弹出的浏览器窗口里登录 {cfg['name']}，完成后窗口会自动关闭。该方式需要图形桌面。")
                 print(f"🪟 {cfg['name']} 请在弹出的浏览器窗口完成登录…", file=sys.stderr)
                 deadline = time.time() + timeout_s
                 while time.time() < deadline:
                     try:
+                        if not browser.pages:
+                            login_state.write_status(sf, "expired", "登录窗口已关闭，请重新发起登录")
+                            return 1
                         if any(_is_logged_in(candidate, cfg) for candidate in browser.pages):
                             browser.close()
                             browser = None
@@ -1648,7 +1722,6 @@ def cmd_login_qr(a) -> int:
                             return 0
                     except Exception:
                         # 用户手动关了窗口/页面崩溃 → 明确终态，别让前端无限转圈
-                        browser = None
                         login_state.write_status(sf, "expired", "登录窗口已关闭，请重新发起登录")
                         return 1
                     # 用 time.sleep 而非 page.wait_for_timeout：用户关窗后 page 已死，

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Easel RSS 演示订阅</title>
+    <link>https://example.com/</link>
+    <description>仅用于本地接入验证的演示数据。</description>
+    <item>
+      <guid isPermaLink="false">example-rss-1</guid>
+      <title>示例订阅：RSS 文章也能收藏和继续创作</title>
+      <link>https://example.com/articles/1</link>
+      <pubDate>Thu, 29 Oct 2026 10:00:00 +0800</pubDate>
+    </item>
+  </channel>
+</rss>

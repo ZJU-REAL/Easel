@@ -75,6 +75,25 @@ def test_env_var_pins_proxy_readonly(env_tmp, monkeypatch):
     assert r.status_code == 409, "启动环境固定时代理只读"
 
 
+@pytest.mark.parametrize('bad', ['http://127.0.0.1:0', 'http://127.0.0.1:99999', 'http://127.0.0.1:abc',
+                              'http://127.0.0.1/path', 'http://127.0.0.1?x=1', 'http://127.0.0.1#x',
+                              'http://127.0.0.1/\nheader', 'http://127.0.0.1\\evil'])
+def test_proxy_rejects_malformed_authority_without_writing(env_tmp, bad):
+    from fastapi.testclient import TestClient
+    with TestClient(web.app, base_url='http://127.0.0.1:7860', headers={'Origin':'http://127.0.0.1:7860'}) as client:
+        assert client.post('/api/settings/proxy',json={'proxy':bad}).status_code==400
+    assert not env_tmp.exists()
+
+
+def test_empty_process_proxy_disables_file_fallback(env_tmp, monkeypatch):
+    monkeypatch.setenv('EASEL_PROXY','')
+    env_tmp.write_text('EASEL_PROXY=http://127.0.0.1:7890\n',encoding='utf-8')
+    assert web._easel_proxy()==''
+    assert web._proxy_env()['EASEL_PROXY']==''
+    monkeypatch.setattr(web_publisher,'_env_file_value',lambda *a,**k:'http://127.0.0.1:7890')
+    assert 'proxy' not in web_publisher._launch_kwargs(web_publisher.PLATFORMS['twitter-x'],'twitter-x')
+
+
 def test_proxy_env_resolution_order(env_tmp, monkeypatch):
     env_tmp.write_text("EASEL_PROXY=http://127.0.0.1:7890\n", encoding="utf-8")
     env = web._proxy_env()

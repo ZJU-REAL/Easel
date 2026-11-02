@@ -1,0 +1,91 @@
+{
+  "name": "paper2assets",
+  "source": "Microsoft ResearchStudio",
+  "snapshot_date": "2026-10-30",
+  "version": "664cc8951f4c0e6de8d578993b76f9e0bb035141",
+  "scope": "All 10 Python files from the pinned upstream scripts directory; no upstream documentation is vendored.",
+  "upstream_scripts_modified": false,
+  "files": [
+    {
+      "path": "scripts/build_package.py",
+      "bytes": 16672,
+      "sha256": "d49925af9cecd47ca3785a40813ff45fad9300da708bbec06e71ed820e24f16a",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/build_package.py",
+      "git_blob_sha1": "54e40e59b1eecb5010bd8bf612605376aaa66c30"
+    },
+    {
+      "path": "scripts/crop_figure.py",
+      "bytes": 40175,
+      "sha256": "d09344be964c5cf4098ed8457b3ad8ba79ab1cbb976e34ec8f4bfd638f82c7f3",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/crop_figure.py",
+      "git_blob_sha1": "55efe8f20f29e0dd645936824fa482ed350cba48"
+    },
+    {
+      "path": "scripts/extract_pdf.py",
+      "bytes": 38850,
+      "sha256": "574a39a07dc706b47172ed92f5248f18007670606cf7cca6a073aa4582775d61",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/extract_pdf.py",
+      "git_blob_sha1": "ac56f0028ae106473bd115f6aae9f6670cba39ed"
+    },
+    {
+      "path": "scripts/fetch_conf_logo.py",
+      "bytes": 10170,
+      "sha256": "e4e9c21f8ce12bedb987c420b8235e73c7e58e6662d44a3927cb18c3afedf4cb",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/fetch_conf_logo.py",
+      "git_blob_sha1": "8a94bc35d56d64b957c938359b89a47bba617792"
+    },
+    {
+      "path": "scripts/fetch_logos.py",
+      "bytes": 40162,
+      "sha256": "60893f2ed08d63f0ea68b8ecf38fdba25c429585df545e2c1c9d09f870ed63a9",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/fetch_logos.py",
+      "git_blob_sha1": "5cf8fe9a925045d03ec680aef64de21f1efa0bd0"
+    },
+    {
+      "path": "scripts/make_qr.py",
+      "bytes": 12107,
+      "sha256": "b93fba8630be1d92a8f2d6b53ffc3d92847e1607f5ffdfe80bd6a38019ec0283",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/make_qr.py",
+      "git_blob_sha1": "14cacb2af579d17e90d9165daac84f14db15201f"
+    },
+    {
+      "path": "scripts/source_figures.py",
+      "bytes": 13528,
+      "sha256": "6abd08318dee51cc60de1fd4d4a93c2e4573d99afedaac29ab4d551a34431e5e",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/source_figures.py",
+      "git_blob_sha1": "0382b8176ae78c6078e27077fe9ce2457a18321b"
+    },
+    {
+      "path": "scripts/utils/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/utils/__init__.py",
+      "git_blob_sha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "scripts/utils/layout.py",
+      "bytes": 3549,
+      "sha256": "63a640de802df6ddcc6c8b595aa114f3e4a0088c7fde7e0dcd68d9a7f4e0ab55",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/utils/layout.py",
+      "git_blob_sha1": "3d31e88a368cbf09d10604a102ff6c09a87c40f2"
+    },
+    {
+      "path": "scripts/utils/logo_trim.py",
+      "bytes": 5116,
+      "sha256": "7cbf81b08de35840a6fdefe96948494459c8c6e83170a66d280847a2901b80ae",
+      "upstream_path": "ResearchStudio-Reel/skills/paper2assets/scripts/utils/logo_trim.py",
+      "git_blob_sha1": "ae0a287a7f801142b5e27cc46989f91655894c3a"
+    }
+  ],
+  "source_repository": "https://github.com/microsoft/ResearchStudio",
+  "source_path": "ResearchStudio-Reel/skills/paper2assets",
+  "source_url": "https://github.com/microsoft/ResearchStudio/tree/664cc8951f4c0e6de8d578993b76f9e0bb035141/ResearchStudio-Reel/skills/paper2assets",
+  "commit": "664cc8951f4c0e6de8d578993b76f9e0bb035141",
+  "commit_date": "2026-07-09",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "license_source_url": "https://github.com/microsoft/ResearchStudio/blob/664cc8951f4c0e6de8d578993b76f9e0bb035141/LICENSE",
+  "license_sha256": "db60a6df93f1786929a223558ca0c202ef61095600785cf7503fbcd4bac1bd02",
+  "copyright": "Copyright (c) 2026 Happy",
+  "verified_date": "2026-11-02"
+}

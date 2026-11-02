@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "include_builtin": true,
+  "sources": [
+    {
+      "id": "my-python",
+      "label": "我的 Python 热点",
+      "type": "python",
+      "script": "../examples/trends/python_collector.py",
+      "args": [],
+      "default": true,
+      "timeout_seconds": 20,
+      "refresh_seconds": 300,
+      "max_stale_seconds": 86400
+    },
+    {
+      "id": "my-http",
+      "label": "我的 HTTP 热点",
+      "enabled": false,
+      "type": "http",
+      "url": "http://127.0.0.1:8766/trends",
+      "method": "GET",
+      "headers": {},
+      "default": true,
+      "timeout_seconds": 10,
+      "refresh_seconds": 300,
+      "max_stale_seconds": 86400
+    },
+    {
+      "id": "my-rss",
+      "label": "我的 RSS 订阅",
+      "enabled": false,
+      "type": "rss",
+      "url": "https://example.com/feed.xml",
+      "headers": {},
+      "default": true,
+      "timeout_seconds": 10,
+      "refresh_seconds": 900,
+      "max_stale_seconds": 86400
+    }
+  ]
+}
