@@ -1,0 +1,6 @@
+interface:
+  display_name: "REAL Lab 论文宣传"
+  short_description: "从论文生成限长小红书中文文案与逐段对应的原始图表截图"
+  default_prompt: "使用 $real-lab-paper-promotion，根据我提供的 PDF 或 arXiv 生成小红书文案和对应论文截图。"
+policy:
+  allow_implicit_invocation: true
