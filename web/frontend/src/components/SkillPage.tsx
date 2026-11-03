@@ -4,9 +4,15 @@ import { fetchSkills } from '../lib/api';
 import type { SkillItem } from '../lib/api';
 import SkillDrawer from './SkillDrawer';
 import { displayName } from '../lib/skillDisplayNames';
+import { planningSkillIcons } from './skillIconsPlanning';
+import { produceSkillIcons } from './skillIconsProduce';
+import { publishSkillIcons } from './skillIconsPublish';
+import { brandSkillIcons } from './skillIconsBrand';
 import {
   IconSearch, IconCompass, IconSkills, IconSend, IconChart, IconLayers,
   IconVideo, IconImage, IconMusic, IconMic, IconText, IconLayout, IconProfile, IconOutputs,
+  IconAlgorithmUpdates, IconCompetitorAnalysis, IconContentGap, IconPlatformDiff, IconEventCalendar,
+  IconNewsIntel, IconRssFeed, IconTrendingTopics, IconAudienceUgc,
 } from './icons';
 
 interface SkillPageProps {
@@ -27,9 +33,26 @@ const LAYERS: LayerMeta[] = [
 const LAYER_META: Record<string, LayerMeta> = Object.fromEntries(LAYERS.map((l) => [l.key, l]));
 const OTHER: LayerMeta = { key: 'other', label: '其他', Icon: IconLayers, color: 'var(--layer-general)' };
 
+const specific: Record<string, IconC> = {
+    'skill-algorithm-updates': IconAlgorithmUpdates,
+    'skill-competitor-analysis': IconCompetitorAnalysis,
+    'skill-content-gap-analysis': IconContentGap,
+    'skill-cross-platform-diff': IconPlatformDiff,
+    'skill-event-calendar': IconEventCalendar,
+    'skill-news-intelligence': IconNewsIntel,
+    'skill-rss-aggregator': IconRssFeed,
+    'skill-trending-topics': IconTrendingTopics,
+    'skill-ugc-discovery': IconAudienceUgc,
+    ...planningSkillIcons,
+    ...produceSkillIcons,
+    ...publishSkillIcons,
+    ...brandSkillIcons,
+};
+
 // 按 skill 名关键词映射线性图标（无匹配退回层图标）
 function iconFor(name: string, LayerIcon: IconC): IconC {
   const n = name.toLowerCase();
+  if (Object.hasOwn(specific, n)) return specific[n];
   const map: [RegExp, IconC][] = [
     [/video|clip|reframe|highlight|beat|slideshow|intro|chapter/, IconVideo],
     [/image|img|photo|poster|infographic|comparison|meme|remove-bg|green-screen|enhance/, IconImage],
@@ -74,7 +97,7 @@ export default function SkillPage({ persona }: SkillPageProps) {
   const grouped = useMemo(() => {
     const g: Record<string, SkillItem[]> = {};
     for (const s of filtered) {
-      const key = LAYER_META[s.layer] ? s.layer : 'other';
+      const key = Object.hasOwn(LAYER_META, s.layer) ? s.layer : 'other';
       (g[key] ||= []).push(s);
     }
     return g;
@@ -123,25 +146,23 @@ export default function SkillPage({ persona }: SkillPageProps) {
             </div>
             <div className="skill-grid">
               {grouped[layer.key].map((s) => {
-                const meta = LAYER_META[s.layer] || OTHER;
+                const meta = Object.hasOwn(LAYER_META, s.layer) ? LAYER_META[s.layer] : OTHER;
                 const Icon = iconFor(s.name, meta.Icon);
-                const alert = s.needsApi && !s.apiConfigured;
                 return (
                   <div
                     key={s.name}
                     className="card card-hover skill-card"
-                    style={{ ['--layer-color' as string]: meta.color }}
                     onClick={() => setSelected(s.name)}
                   >
-                    {alert && <div className="skill-card-alert" title="需要配置 API key">!</div>}
-                    <div className="skill-card-icon" style={{ color: meta.color }}><Icon size={19} /></div>
-                    <div className="skill-card-name">{displayName(s.name)}</div>
-                    <div className="skill-card-rawname">{s.name}</div>
-                    <div className="skill-card-desc">{s.description?.trim() || LAYER_DESC[layer.key]}</div>
-                    <div className="skill-card-foot">
-                      {s.needsApi && (s.apiConfigured
-                        ? <span className="badge badge-ok">已配置</span>
-                        : <span className="badge badge-warn">需 API</span>)}
+                    <div className="skill-card-icon" style={{ color: meta.color }}><Icon size={26} /></div>
+                    <div className="skill-card-content">
+                      <div className="skill-card-head">
+                        <div className="skill-card-name">{displayName(s.name)}</div>
+                        {s.needsApi && (s.apiConfigured
+                          ? <span className="badge badge-ok">已配置</span>
+                          : <span className="badge badge-warn" title="需要配置 API key">需 API</span>)}
+                      </div>
+                      <div className="skill-card-desc">{s.description?.trim() || LAYER_DESC[layer.key]}</div>
                     </div>
                   </div>
                 );
