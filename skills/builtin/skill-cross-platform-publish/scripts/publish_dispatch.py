@@ -47,6 +47,9 @@ PLATFORMS: dict[str, dict] = {
     "zhihu": {"publisher": "skill-zhihu-publisher", "types": ["article", "answer"],
               "title": 100, "body": 0, "tags": 5, "aspect": "-",
               "note": "文章/回答；专业排版；话题标签"},
+    "toutiao": {"publisher": "skill-toutiao-publisher", "types": ["article"],
+                "title": 30, "body": 0, "tags": 5, "aspect": "-",
+                "note": "头条号图文；标题≤30字；资讯式长文 800-2500 字；话题≤5 个；可存草稿"},
 }
 
 
@@ -124,6 +127,13 @@ def cmd_selftest(_a) -> int:
     print("publish_dispatch 自检 ...", file=sys.stderr)
     # 路由映射存在
     assert PLATFORMS["xiaohongshu"]["publisher"] == "skill-xhs-publisher"
+    assert PLATFORMS["toutiao"]["publisher"] == "skill-toutiao-publisher"
+    # 头条标题上限 30 字：31 字应告警，30 字不应告警
+    over = _check_platform("toutiao", {"title": "标" * 31, "media_type": "article"})
+    assert any("标题" in w for w in over["warnings"]), "头条标题超长未告警"
+    fit = _check_platform("toutiao", {"title": "标" * 30, "tags": ["a"],
+                                      "media_type": "article"})
+    assert not fit["warnings"], f"头条合规内容不应告警：{fit}"
     # 约束检查：超长标题应告警
     r = _check_platform("xiaohongshu", {"title": "一" * 30, "tags": list(range(12)),
                                         "media_type": "article"})

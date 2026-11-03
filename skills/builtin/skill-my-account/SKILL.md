@@ -38,11 +38,12 @@ layer: general
 
 ## 支持平台
 
-whoami：小红书 / 抖音 / 知乎 / 快手 / 视频号。
-account_stats fetch `--platform`：`xiaohongshu` / `douyin` / `kuaishou` / `zhihu` / `weixin-channels`。
+whoami：小红书 / 抖音 / 知乎 / 快手 / 视频号 / 今日头条。
+account_stats fetch `--platform`：`xiaohongshu` / `douyin` / `kuaishou` / `zhihu` / `weixin-channels` / `toutiao`。
 
 > 各平台数据完整度不同（真机现状）：**小红书**最全（粉丝/获赞/关注/近 7 日环比 + 笔记带链接封面）；
 > **知乎**（粉丝=关注者、获赞=赞同总量 + 文章列表）；**快手**创作中心不给粉丝/获赞总数，只有近 7 日互动 + 作品列表；
+> **今日头条**（粉丝数在首页、指标在「数据→作品数据」页：昨日展现/阅读/点赞/评论；没有获赞与关注位）；
 > **抖音/视频号**登录后按各自创作页取。拿不到的项如实显示"—"，不编不凑。
 
 ## 执行流程

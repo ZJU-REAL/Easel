@@ -30,7 +30,7 @@ import tempfile
 from datetime import datetime, timedelta
 
 # ---- 平台 / 类型识别规则 ----------------------------------------------------
-PLATFORMS = ["xiaohongshu", "weibo", "douyin", "zhihu", "wechat", "x"]
+PLATFORMS = ["xiaohongshu", "weibo", "douyin", "zhihu", "wechat", "x", "toutiao"]
 PLATFORM_ALIASES = {
     "小红书": "xiaohongshu", "xhs": "xiaohongshu",
     "微博": "weibo", "wb": "weibo",
@@ -38,6 +38,7 @@ PLATFORM_ALIASES = {
     "知乎": "zhihu",
     "公众号": "wechat", "weixin": "wechat", "微信": "wechat",
     "twitter": "x", "推特": "x",
+    "今日头条": "toutiao", "头条": "toutiao", "头条号": "toutiao", "tt": "toutiao",
 }
 EXT_TYPE = {
     ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image",

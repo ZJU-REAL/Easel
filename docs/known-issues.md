@@ -1,5 +1,11 @@
 # 已知问题
 
+## 修改技能后仍读到旧副本
+
+OpenClaw 的 `easel doctor` 分别检查技能目录是否存在，以及当前仓库文件与 workspace 副本的内容是否一致。内容一致只表示文件已同步，不保证已有会话缓存已重载。
+
+先运行 `python scripts/sync_if_stale.py --check` 只读检查；需要时运行 `python scripts/sync_if_stale.py` 更新仓库已有技能与共享文件。此工具保留额外本机文件、workspace 记忆和已有画像／产物副本，不自动重启引擎；遇到不同的既有目录或链接会报告并保留，请先核对其中的数据再处理。
+
 本页记录目前已知、且与 Easel 使用相关的问题，以及推荐的规避方式。遇到未列出的问题，欢迎提交 [Issue](https://github.com/ZJU-REAL/Easel/issues)。
 
 ---

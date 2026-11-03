@@ -151,6 +151,12 @@ def _skills_synced() -> tuple[bool, str]:
     return ok, f"agent 实际读取的 workspace 是 {ws}，其中 skills/ 为空或不存在"
 
 
+def _skills_fresh() -> tuple[bool, str]:
+    """Check current repository skill files independently of workspace existence."""
+    from easel.skills_sync import skills_sync_state
+    return skills_sync_state()
+
+
 def _env_key_valid() -> bool:
     """Check .env 配置了可用的认证。
 
@@ -640,6 +646,9 @@ def cmd_doctor(_args) -> int:
         synced, synced_detail = _skills_synced()
         all_ok &= _check("Skills synced", synced,
                           f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash agents/sync.sh（Linux/macOS）")
+        fresh, fresh_detail = _skills_fresh()
+        all_ok &= _check("Skills up-to-date", fresh,
+                          f"{fresh_detail}；运行 python scripts/sync_if_stale.py；已有会话的缓存重载由底座决定")
 
     # 6. Key project files
     gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"
