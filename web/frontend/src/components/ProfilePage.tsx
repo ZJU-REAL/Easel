@@ -102,7 +102,7 @@ export default function ProfilePage(props: ProfilePageProps) {
     <div className="profile-page">
       <div className="profile-head">
         <div>
-          <h1 className="page-title">用户画像 <span className="profile-title-en">Profile</span></h1>
+          <h1 className="page-title">用户画像</h1>
           <p className="page-subtitle">管理你的定位、风格与受众，为每一种创作找到合适的身份。</p>
         </div>
         <button className="btn btn-primary" onClick={props.onNewProfile}><IconPlus size={15} /> 新建画像</button>

@@ -10,6 +10,8 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 
 ## 视觉 / 卡片 / 图表
 
+技能库的平台标识来自 [Simple Icons 16.16.0](https://github.com/simple-icons/simple-icons/tree/16.16.0/icons)。项目集合采用 CC0；具体品牌标识的许可和商标使用条件需分别核对，详见其 [免责声明](https://github.com/simple-icons/simple-icons/blob/develop/DISCLAIMER.md)。
+
 | 项目 | 用于 SKILL | 借鉴点 |
 |------|-----------|--------|
 | [nexu-io/open-design](https://github.com/nexu-io/open-design) | card-quote / card-xiaohongshu | HTML 卡片模板与视觉签名 |

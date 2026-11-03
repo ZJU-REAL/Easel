@@ -1,5 +1,5 @@
 // 技能中文展示名（本地补丁 · 2026-09-17）
-// 展示层：中文名给用户看（大字）；skill id 原名保持小字，供 agent / 排查使用。
+// 展示层：中文名给用户看；技能原名保留在详情中，供排查使用。
 // 数据源：能力清单菜单（capability-menu），重新生成即可更新。
 export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'ai-image-gen': 'AI 生图',
@@ -36,6 +36,8 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'paper-explainer': '论文解读',
   'post-formatter': '社媒帖子成稿',
   'poster-hero': '竖版海报',
+  'real-lab-paper-promotion': '论文小红书宣传',
+  'real-lab-paper2video-v1': '论文视频宣传片',
   'remove-bg': '抠图换背景',
   'roi-calculator': 'ROI 计算',
   'short-drama': 'AI 微短剧',
@@ -80,6 +82,7 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'skill-publish-notify': '发布通知',
   'skill-publish-scheduler': '批量排期',
   'skill-quality-gate': '质量关',
+  'skill-record-card': '项目内容记录卡',
   'skill-risk-scanner': '版权 / 原创风险',
   'skill-rss-aggregator': 'RSS 订阅',
   'skill-seo-quality': '搜索流量优化',
@@ -110,6 +113,7 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'video-editing': '自然语言剪辑',
   'video-highlights': '高光切片',
   'video-intro-outro': '片头 / 片尾',
+  'video-production': '整片视频制作',
   'video-reframe': '画幅转换',
   'video-script': '视频脚本',
   'video-strategy': '视频策略选型',
@@ -119,5 +123,5 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export function displayName(raw: string): string {
-  return SKILL_DISPLAY_NAMES[raw] || raw;
+  return Object.hasOwn(SKILL_DISPLAY_NAMES, raw) ? SKILL_DISPLAY_NAMES[raw] : raw;
 }

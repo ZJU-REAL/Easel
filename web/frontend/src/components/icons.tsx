@@ -8,6 +8,16 @@ const svg = (size = 18, sw = 1.8) => ({
   strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
 });
 
+export const IconAlgorithmUpdates = ({ size }: P) => <svg {...svg(size)}><path d="M4 6h10M4 12h6M4 18h10"/><circle cx="17" cy="6" r="2"/><circle cx="13" cy="12" r="2"/><circle cx="17" cy="18" r="2"/><path d="M19 12h2"/></svg>;
+export const IconCompetitorAnalysis = ({ size }: P) => <svg {...svg(size)}><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 11l2-2 2 2 2-3"/></svg>;
+export const IconContentGap = ({ size }: P) => <svg {...svg(size)}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 14v7M14 17.5h7"/></svg>;
+export const IconPlatformDiff = ({ size }: P) => <svg {...svg(size)}><rect x="3" y="4" width="7" height="16" rx="2"/><rect x="14" y="4" width="7" height="16" rx="2"/><path d="M6 8h1M17 8h1M6 12h1M17 12h1M6 16h1M17 16h1"/></svg>;
+export const IconEventCalendar = ({ size }: P) => <svg {...svg(size)}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18m-9 3 .8 1.6 1.8.3-1.3 1.3.3 1.8-1.6-.8-1.6.8.3-1.8-1.3-1.3 1.8-.3z"/></svg>;
+export const IconNewsIntel = ({ size }: P) => <svg {...svg(size)}><path d="M4 4h16v16H4zM7 8h4v4H7zM14 8h3M14 12h3M7 16h10"/></svg>;
+export const IconRssFeed = ({ size }: P) => <svg {...svg(size)}><circle cx="5" cy="19" r="1"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/></svg>;
+export const IconTrendingTopics = ({ size }: P) => <svg {...svg(size)}><path d="M4 17 9 12l3 3 7-7M15 8h4v4"/><path d="M4 21h16"/></svg>;
+export const IconAudienceUgc = ({ size }: P) => <svg {...svg(size)}><path d="M4 14V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-4 3v-3H6a2 2 0 0 1-2-2Z"/><circle cx="9" cy="9" r="1"/><circle cx="15" cy="9" r="1"/><path d="M9 12c1.5 1 4.5 1 6 0"/></svg>;
+
 export const IconChat = ({ size, className, strokeWidth }: P) => (
   <svg {...svg(size, strokeWidth)} className={className}>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

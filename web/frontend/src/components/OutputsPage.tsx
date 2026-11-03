@@ -240,18 +240,18 @@ export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProp
     <div className="gallery-page">
       <div className="gallery-head">
         <div>
-          <h1 className="page-title">
-            <IconOutputs size={21} />
-            <span className="crumb" onClick={() => goTo(0)}>内容库</span>
+          <h1 className="page-title">内容库</h1>
+          {stack.length > 0 && <nav className="gallery-breadcrumb" aria-label="内容库路径">
+            <button className="crumb" onClick={() => goTo(0)}>内容库</button>
             {stack.map((name, i) => (
               <span key={i}>
                 <span className="crumb-sep">/</span>
                 {i === stack.length - 1
                   ? (projectMeta?.title && i === 0 ? projectMeta.title : name)
-                  : <span className="crumb" onClick={() => goTo(i + 1)}>{name}</span>}
+                  : <button className="crumb" onClick={() => goTo(i + 1)}>{name}</button>}
               </span>
             ))}
-          </h1>
+          </nav>}
           <p className="page-subtitle">
             {atTop
               ? `按项目归档，共 ${roots.length} 个项目。点项目进去看成品与素材。`
