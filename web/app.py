@@ -4522,10 +4522,10 @@ async def _start_login(platform: str, restart: bool = False):
                '--qr-out', str(qr), '--status-file', str(status),
                '--sms-code-file', str(code_file), '--timeout', str(LOGIN_TIMEOUT)]
     elif backend == 'toutiao':
-        # 头条自带专用 publisher：login 子命令 headless 抠二维码 + 写 login_state 状态文件
+        # 扫码后可能要求绑定手机号；必须弹有头窗口让账号本人填写手机号和验证码。
         cmd = [sys.executable, str(TOUTIAO_SCRIPTS / 'toutiao_publish.py'), 'login',
                '--qr-out', str(qr), '--status-file', str(status),
-               '--timeout', str(LOGIN_TIMEOUT)]
+               '--timeout', str(LOGIN_TIMEOUT), '--headed']
     else:
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'web_publisher.py'), 'login-qr',
                '--platform', cfg['wp'], '--qr-out', str(qr), '--status-file', str(status),
