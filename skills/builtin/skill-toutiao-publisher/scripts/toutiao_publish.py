@@ -524,7 +524,7 @@ def login(wait_seconds: int, headed: bool = True) -> int:
 
 def _login_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="toutiao_publish.py login",
-                                description="扫码登录头条号（Web 端驱动，headless 抠二维码）")
+                                description="扫码登录头条号（Web 端驱动，可见窗口完成手机绑定）")
     p.add_argument("--qr-out", help="二维码截图落盘路径（默认 outputs/_login/toutiao.png）")
     p.add_argument("--status-file", help="登录状态 JSON（默认 outputs/_login/toutiao.json）")
     p.add_argument("--timeout", type=int, default=180, help="等待扫码秒数")
@@ -540,13 +540,39 @@ def _whoami_parser() -> argparse.ArgumentParser:
 
 
 def _is_logged_in(page) -> bool:
-    """URL 已离开登录/SSO 域即视为已登录。
+    """确认已离开登录流程，且没有停在手机号绑定页。
 
     优先用 URL 而不是元素选择器：未登录时头条号后台会重定向到登录页，
-    这个信号比容易随改版失效的 DOM 特征稳定得多。
+    但扫码后的手机号绑定页也可能位于头条域名，不能把它算作已登录。
     """
     url = (page.url or "").lower()
-    return not any(h in url for h in _LOGIN_URL_HINTS)
+    return (not any(h in url for h in _LOGIN_URL_HINTS)
+            and not _needs_phone_binding(page))
+
+
+def _needs_phone_binding(page) -> bool:
+    """识别扫码后的平台手机号绑定页；不读取或保存手机号/验证码。"""
+    for frame in [page, *getattr(page, "frames", [])]:
+        try:
+            title = frame.get_by_text("手机绑定", exact=True).first
+            phone = frame.locator("input[placeholder*='手机']").first
+            if title.is_visible() and phone.is_visible():
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _backend_authenticated(page) -> bool:
+    """离开扫码页后重进创作者后台，避免中途跳转被误判为登录成功。"""
+    if not _is_logged_in(page):
+        return False
+    try:
+        page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(2500)
+    except Exception:
+        return False
+    return _is_logged_in(page)
 
 
 def _capture_qr(page, qr_out: Path) -> bool:
@@ -572,7 +598,7 @@ def _capture_qr(page, qr_out: Path) -> bool:
 
 def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
               headed: bool = False) -> int:
-    """headless 抠二维码登录：二维码落盘 + 按 login_state 协议写状态，供 Web 轮询。"""
+    """扫码登录：二维码落盘；手机绑定阶段转可见窗口，状态供 Web 轮询。"""
     import login_state
 
     try:
@@ -594,21 +620,41 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(2500)
-            if _is_logged_in(page):
+            if _backend_authenticated(page):
                 login_state.write_status(str(status_file), "success", "已登录")
                 print("✅ 今日头条 已登录（登录态在持久化目录）")
                 return 0
-            if not _capture_qr(page, qr_out):
-                login_state.write_status(str(status_file), "error",
-                                         "未找到登录二维码（头条号后台可能已改版）")
-                return 1
-            login_state.write_status(str(status_file), "qr_ready", "二维码已就绪，请扫码",
-                                     qr=str(qr_out))
-            print(f"📱 二维码已保存：{qr_out}")
+            binding = _needs_phone_binding(page)
+            if binding:
+                if not headed:
+                    login_state.write_status(str(status_file), "error",
+                                             "头条号要求绑定手机号；请用有头浏览器重新登录")
+                    return 1
+                login_state.write_status(str(status_file), "window_login",
+                                         "请在弹出的今日头条窗口绑定手机号并输入短信验证码")
+            else:
+                if not _capture_qr(page, qr_out):
+                    login_state.write_status(str(status_file), "error",
+                                             "未找到登录二维码（头条号后台可能已改版）")
+                    return 1
+                login_state.write_status(str(status_file), "qr_ready",
+                                         "二维码已就绪，请扫码；后续验证请在浏览器窗口完成",
+                                         qr=str(qr_out))
+                print(f"📱 二维码已保存：{qr_out}")
             deadline = time.time() + max(timeout_s, 30)
             while time.time() < deadline:
                 page.wait_for_timeout(2000)
-                if _is_logged_in(page):
+                if _needs_phone_binding(page):
+                    if not binding:
+                        binding = True
+                        try:
+                            qr_out.unlink()
+                        except OSError:
+                            pass
+                        login_state.write_status(str(status_file), "window_login",
+                                                 "扫码已确认；请在弹出的今日头条窗口绑定手机号并输入短信验证码")
+                    continue
+                if _backend_authenticated(page):
                     login_state.write_status(str(status_file), "success", "登录成功")
                     try:
                         qr_out.unlink()  # 成功后清掉二维码图，避免误扫过期码
@@ -616,7 +662,8 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                         pass
                     print("✅ 登录成功")
                     return 0
-            login_state.write_status(str(status_file), "expired", "二维码超时未扫")
+            login_state.write_status(str(status_file), "expired",
+                                     "手机绑定未完成，请重新登录" if binding else "二维码超时未扫")
             return 1
         except Exception as exc:
             # 浏览器起不来（内核没装 / profile 被占用）也必须把状态写成 error：

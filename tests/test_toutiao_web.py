@@ -86,6 +86,7 @@ def test_login_dispatch_uses_toutiao_login_subcommand(monkeypatch, client):
     assert Path(cmd[1]).as_posix().endswith(SCRIPT_SUFFIX), cmd
     assert cmd[2] == "login", cmd
     assert "--qr-out" in cmd and "--status-file" in cmd, cmd
+    assert "--headed" in cmd, "头条扫码后需在可见窗口完成手机号绑定"
     assert str(web.LOGIN_DIR / "toutiao.png") in cmd, cmd
     assert str(web.LOGIN_DIR / "toutiao.json") in cmd, cmd
 
