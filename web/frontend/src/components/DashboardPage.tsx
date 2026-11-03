@@ -147,7 +147,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
   return (
     <div className="page-scroll dash-page">
       <div className="dash-hero">
-        <h1 className="page-title" style={{ fontSize: 26 }}>{greet} 👋</h1>
+        <h1 className="page-title">{greet} 👋</h1>
         <p className="page-subtitle">
           {apiDirect ? (gatewayStatus === 'connected' ? '仅聊天模式已配置，可开始对话。' : '请先配置仅聊天模式的模型 API。')
             : agentRuntime !== 'openclaw' ? (gatewayStatus === 'connected'
@@ -184,6 +184,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
             <span><IconFire size={16} /> 今日热点</span>
             <button className="dash-more" onClick={() => onNavigate('trends')}>热点雷达 →</button>
           </div>
+          <div className="dash-trend-list" tabIndex={0} role="region" aria-label="今日热点列表">
           {trends.length === 0 && <div className="dash-empty">暂无热点，请到热点雷达查看数据源状态。</div>}
           {trends.map((g) => (
             <div key={g.platform} className="dash-trend-group">
@@ -197,6 +198,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
               ))}
             </div>
           ))}
+          </div>
         </div>
 
         {/* 选题库 */}
