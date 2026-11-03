@@ -935,17 +935,20 @@ textarea.field { resize: vertical; min-height: 90px; }
 .trend-script-toolbar { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; }
 .trend-script-toolbar > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text-secondary); }
 .trend-code-editor { font-family: Consolas, 'SFMono-Regular', monospace; font-size: 12px; line-height: 1.65; tab-size: 4; }
-.trend-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 8px; transition: background var(--t-fast); }
-.trend-item:hover { background: var(--surface-hover); }
+.trend-item { position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 8px; transition: background var(--t-fast); }
+.trend-item:hover, .trend-item:focus-within { background: var(--surface-hover); }
 .trend-rank { width: 20px; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-tertiary); flex-shrink: 0; }
 .trend-rank.top { color: var(--accent-end); }
 .trend-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .trend-title { font-size: 13px; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trend-title:hover { color: var(--accent-start); }
 .trend-hot { font-size: 11px; color: var(--text-tertiary); }
-.trend-use { opacity: 0; transition: all var(--t-fast); flex-shrink: 0; font-size: 12px; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--accent-end); cursor: pointer; white-space: nowrap; }
-.trend-item:hover .trend-use { opacity: 1; }
-.trend-use:hover { background: var(--accent-soft); border-color: transparent; }
+.trend-item-actions { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; padding: 5px 5px 5px 18px; background: linear-gradient(to right, transparent, var(--surface-hover) 14px); opacity: 0; pointer-events: none; transition: opacity var(--t-fast); }
+.trend-item:hover .trend-item-actions, .trend-item:focus-within .trend-item-actions { opacity: 1; pointer-events: auto; }
+.trend-use, .trend-save { display: inline-flex; align-items: center; justify-content: center; padding: 5px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text-tertiary); cursor: pointer; }
+.trend-use:hover, .trend-save:hover { color: var(--accent-end); background: var(--accent-soft); border-color: transparent; }
+.trend-use:focus-visible, .trend-save:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
+@media (hover: none) { .trend-item-actions { position: static; transform: none; opacity: 1; pointer-events: auto; flex-shrink: 0; padding: 0; background: transparent; } }
 .trend-empty { color: var(--text-tertiary); font-size: 13px; padding: 10px 12px; }
 
 /* ============ 内容日历 ============ */
@@ -1101,12 +1104,6 @@ textarea.field { resize: vertical; min-height: 90px; }
 .idea-act:hover { color: var(--text); border-color: var(--border-strong); }
 .idea-act.next { margin-left: auto; color: var(--accent-end); }
 .idea-act.next:hover { background: var(--accent-soft); border-color: transparent; }
-
-/* 热点收藏按钮 */
-.trend-save { opacity: 0; transition: all var(--t-fast); flex-shrink: 0; display: inline-flex; align-items: center;
-  padding: 5px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text-tertiary); cursor: pointer; }
-.trend-item:hover .trend-save { opacity: 1; }
-.trend-save:hover { color: var(--accent-end); background: var(--accent-soft); border-color: transparent; }
 
 /* ============ 发布中心 ============ */
 .publishing-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; }
