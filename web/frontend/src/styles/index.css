@@ -903,11 +903,20 @@ textarea.field { resize: vertical; min-height: 90px; }
 .notice-error { max-width: 1100px; margin: 14px auto 0; color: var(--red); background: var(--red-soft); border: 1px solid transparent; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; }
 
 /* ============ 热点雷达 ============ */
-.trend-platforms { display: flex; gap: 8px; flex-wrap: wrap; max-width: 1100px; margin: 14px auto 0; }
-.trend-grid { max-width: 1100px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.trend-platforms { max-width: 1100px; margin: 14px auto 0; }
+.trend-source-controls { display: flex; gap: 6px; overflow-x: auto; padding: 5px 2px 9px; }
+.trend-source-controls .chip { flex: none; white-space: nowrap; background: transparent; color: var(--text-secondary); border-color: var(--border); }
+.trend-source-controls .chip.active { background: var(--accent-soft); color: var(--accent-end); border-color: transparent; }
+.trend-source-controls .chip:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
+.trend-grid { max-width: 1100px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; align-items: start; }
+.content-panel { min-width: 0; }
+.content-panel-body { max-height: 250px; overflow-y: auto; scrollbar-gutter: stable; }
+.content-panel-body:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
 .trend-col { padding: 14px 6px 10px; }
+.trend-col .content-panel-body { max-height: 430px; }
 .trend-col-head { font-weight: 650; font-size: 14px; padding: 0 12px 8px; display: flex; align-items: center; gap: 8px; }
-.trend-count { color: var(--text-tertiary); font-size: 12px; font-weight: 500; }
+.trend-source-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trend-count { color: var(--text-tertiary); font-size: 12px; font-weight: 500; flex-shrink: 0; }
 .trend-source-status { padding: 0 12px 8px; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .trend-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .trend-manager { margin: auto; width: 720px; max-width: calc(100vw - 64px); max-height: 86vh; padding: 24px; overflow-y: auto; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
@@ -940,7 +949,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .trend-rank { width: 20px; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-tertiary); flex-shrink: 0; }
 .trend-rank.top { color: var(--accent-end); }
 .trend-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.trend-title { font-size: 13px; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trend-title { font-size: 13px; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .trend-title:hover { color: var(--accent-start); }
 .trend-hot { font-size: 11px; color: var(--text-tertiary); }
 .trend-item-actions { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; padding: 5px 5px 5px 18px; background: linear-gradient(to right, transparent, var(--surface-hover) 14px); opacity: 0; pointer-events: none; transition: opacity var(--t-fast); }
@@ -948,7 +957,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .trend-use, .trend-save { display: inline-flex; align-items: center; justify-content: center; padding: 5px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text-tertiary); cursor: pointer; }
 .trend-use:hover, .trend-save:hover { color: var(--accent-end); background: var(--accent-soft); border-color: transparent; }
 .trend-use:focus-visible, .trend-save:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
-@media (hover: none) { .trend-item-actions { position: static; transform: none; opacity: 1; pointer-events: auto; flex-shrink: 0; padding: 0; background: transparent; } }
+@media (hover: none), (max-width: 640px) { .trend-item-actions { display: none; } }
 .trend-empty { color: var(--text-tertiary); font-size: 13px; padding: 10px 12px; }
 
 /* ============ 内容日历 ============ */
@@ -999,6 +1008,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .dash-more { background: none; border: none; color: var(--text-tertiary); font-size: 12px; cursor: pointer; }
 .dash-more:hover { color: var(--accent-end); }
 .dash-empty { color: var(--text-tertiary); font-size: 13px; padding: 8px 0; }
+.dash-card-wide .content-panel-body { max-height: 480px; }
 .dash-trend-group { margin-bottom: 10px; }
 .dash-trend-plat { font-size: 12px; color: var(--text-tertiary); font-weight: 600; margin-bottom: 4px; }
 .dash-trend-item { padding: 3px 0; }
@@ -1520,3 +1530,8 @@ textarea.field { resize: vertical; min-height: 90px; }
 
 .persona-control .settings-select { min-height: 36px; border-radius: var(--radius); }
 .settings-overlay .thinking-controls .settings-select-wrap { width: auto; min-width: 0; }
+
+@media (max-width: 640px) {
+  .trends-page { padding: 22px 16px 40px; min-width: 0; }
+  .trends-page .page-head { flex-wrap: wrap; }
+}
