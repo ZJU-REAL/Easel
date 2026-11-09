@@ -4,6 +4,7 @@ import { fetchTrendSources, fetchTrends, createIdea } from '../lib/api';
 import type { TrendGroup, TrendSource } from '../lib/api';
 import { IconFire, IconRefresh, IconBookmark, IconCheck, IconChat } from './icons';
 import TrendSourcesDialog from './TrendSourcesDialog';
+import ContentPanel from './ContentPanel';
 
 interface TrendsPageProps {
   onUseTopic: (title: string) => void;   // 一键做成内容 → 跳 chat
@@ -112,7 +113,7 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
         </button></div>
       </div>
 
-      <div className="trend-platforms">
+      <div className="trend-platforms trend-source-controls" role="group" aria-label="选择热点数据源">
         {sources.map((p) => (
           <button key={p.id} className={`chip ${selected.includes(p.id) ? 'active' : ''}`}
             aria-pressed={selected.includes(p.id)} onClick={() => toggle(p.id)}>{p.label}</button>
@@ -129,14 +130,13 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
 
       <div className="trend-grid">
         {groups.map((g) => (
-          <div key={g.platform} className="card trend-col">
-            <div className="trend-col-head">{g.label}<span className="trend-count">{g.items.length}</span></div>
+          <ContentPanel key={g.platform} className="trend-col" label={`${g.label}热点列表`} header={
+            <div className="trend-col-head"><span className="trend-source-label" title={g.label}>{g.label}</span><span className="trend-count">{g.items.length}</span></div>}>
             <div className="trend-source-status">
               {g.fetched_at && <span>采集于 {new Date(g.fetched_at).toLocaleString('zh-CN')}</span>}
               {g.stale && <span> · 缓存已过期</span>}
               {g.error && <div role="status">{g.error.message}{g.stale ? '，暂用上次结果' : ''}</div>}
             </div>
-            <div className="trend-list">
               {g.items.length === 0 && !loading && (
                 <div className="trend-empty">
                   {!g.ok ? '该数据源暂时不可用' : '采集成功，暂无热点'}
@@ -161,8 +161,7 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+          </ContentPanel>
         ))}
       </div>
       {managerOpen && <TrendSourcesDialog onClose={() => setManagerOpen(false)} onChanged={addedId => {

@@ -25,6 +25,7 @@ function setup() {
     '../lib/api': { createIdea: data => { calls.push(data); return Promise.resolve(); } },
     './icons': { IconFire: 'fire', IconRefresh: 'refresh', IconBookmark: 'bookmark', IconCheck: 'check', IconChat: 'chat' },
     './TrendSourcesDialog': { __esModule: true, default: 'dialog' },
+    './ContentPanel': { __esModule: true, default: 'panel' },
   };
   const exports = {};
   runInNewContext(outputText, { exports, require: name => modules[name], window: {} });
