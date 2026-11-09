@@ -11,6 +11,9 @@
 from __future__ import annotations
 
 import subprocess
+import os
+import shlex
+import signal
 import textwrap
 from pathlib import Path
 
@@ -29,7 +32,7 @@ def _bash_works() -> bool:
     return p.returncode == 0 and p.stdout.strip() == "ok"
 
 
-needs_bash = pytest.mark.skipif(not _bash_works(), reason="没有可用的 bash")
+needs_bash = pytest.mark.skipif(os.name == 'nt' or not _bash_works(), reason="需要非 Windows 的 bash 环境")
 
 
 def _slice(text: str, start: str, end: str) -> str:
@@ -46,29 +49,26 @@ def _stub_tools(tmp_path: Path, npm_ping_ok: bool, pypi_ok: bool,
     bin_dir.mkdir(parents=True, exist_ok=True)
     npm = bin_dir / "npm"
     ping = "0" if npm_ping_ok else "7"
-    npm.write_text(f"""#!/usr/bin/env bash
-echo "npm $*" >> {log}
+    npm.write_text(f"""#!/bin/bash
+echo "npm $*" >> {shlex.quote(str(log))}
 exit {ping}
 """, encoding="utf-8")
     # 真实流程里 npm ping 失败不 abort，但裸 ping 退出码 7 会让 set -e 里的
     # if 条件正常走 false 分支 —— 退出码非零即可。
     py = bin_dir / "python3"
-    open_code = "pass" if pypi_ok else "raise SystemExit(1)"
-    py.write_text(f"""#!/usr/bin/env python3
-import sys
-if "--version" in sys.argv:
-    print("3.11.0"); sys.exit(0)
-if "urlopen" in " ".join(sys.argv):
-    {open_code}
-    sys.exit(0)
-sys.exit(0)
+    py.write_text(f"""#!/bin/bash
+case "$*" in
+  *--version*) echo 'Python 3.11.0'; exit 0 ;;
+  *urlopen*) exit {0 if pypi_ok else 1} ;;
+esac
+exit 0
 """, encoding="utf-8")
     for f in (npm, py):
         f.chmod(0o755)
     return str(tmp_path / "bin")
 
 
-def _run(block: str, tmp_path: Path, bin_dir: str, extra_env: str = "") -> subprocess.CompletedProcess:
+def _run(block: str, tmp_path: Path, bin_dir: str, extra_env: str = "", timeout: float = 60) -> subprocess.CompletedProcess:
     script = textwrap.dedent(f"""
         set -uo pipefail
         export PATH="{bin_dir}:$PATH"
@@ -81,8 +81,18 @@ def _run(block: str, tmp_path: Path, bin_dir: str, extra_env: str = "") -> subpr
         echo "RESULT_NPM_ARGS=${{NPM_REGISTRY_ARGS[*]:-unset}}"
         echo "RESULT_PIP_ARGS=${{PIP_ARGS[*]:-unset}}"
     """)
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                          timeout=60, errors="replace")
+    process = subprocess.Popen(["bash", "-c", script], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, errors="replace", start_new_session=True, cwd=tmp_path)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
 
 @needs_bash

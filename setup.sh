@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        echo "Windows 原生安装请使用 setup.ps1；setup.sh 仅支持 Linux、macOS 或 WSL。" >&2
+        exit 1
+        ;;
+esac
+
 # ============================================================
 # Easel 一键安装
 # 用法: git clone <repo> && cd Easel && bash setup.sh [--api]
