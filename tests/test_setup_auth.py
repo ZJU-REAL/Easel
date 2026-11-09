@@ -98,6 +98,7 @@ def _run_auth(tmp_path: Path, **env: str) -> tuple[str, dict[str, str]]:
         oc_try()       {{ echo "$1 = $2" >> "$CFG"; return 0; }}
         oc_set_first() {{ v="$2"; shift 3; echo "$1 = $v" >> "$CFG"; return 0; }}
         oc_supports()  {{ return 1; }}
+        oc_configure_native_defaults() {{ :; }}
         warn_collect() {{ echo "WARN|$1：$2"; }}
         OC=_oc
     """) + "\n" + _auth_block()

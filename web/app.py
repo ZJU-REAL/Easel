@@ -2128,7 +2128,7 @@ def _sync_openclaw_chat(provider_updates: dict[str, dict], keep_custom: set[str]
         return f'openclaw 同步失败：{e}'
 
 
-def _sync_anthropic_provider(base: str, key: str) -> str:
+def _sync_anthropic_provider(base: str, key: str, headers: dict | None = None) -> str:
     """把 Web 面板保存的 Anthropic 通道同步成 openclaw.json 里的 anthropic provider。
 
     bash setup.sh 用 oc_write_anthropic 写过同一块配置，但 Web 面板此前只更新 .env ——
@@ -2145,11 +2145,27 @@ def _sync_anthropic_provider(base: str, key: str) -> str:
         providers = data.setdefault('models', {}).setdefault('providers', {})
         prov = providers.get('anthropic')
         target_base = base or 'https://api.anthropic.com'
+        updated_headers = dict(prov.get('headers', {})) if isinstance(prov, dict) and isinstance(prov.get('headers'), dict) else None
+        if updated_headers is not None and key and prov.get('apiKey'):
+            old_key = prov['apiKey']
+            for name, value in list(updated_headers.items()):
+                if value == old_key:
+                    updated_headers[name] = key
+                elif isinstance(value, str) and value == f'Bearer {old_key}':
+                    updated_headers[name] = f'Bearer {key}'
+        if headers is not None:
+            updated_headers = updated_headers or {}
+            for name, value in headers.items():
+                for existing in list(updated_headers):
+                    if existing.lower() == name.lower():
+                        updated_headers.pop(existing)
+                updated_headers[name] = value
         # 早退判据必须把 api 一起算上：否则一个「baseUrl/apiKey 都对、但缺 api」的
         # 残缺 provider（旧版本 Web 面板写出来的就是这样）永远修不回来。
         if isinstance(prov, dict) and prov.get('baseUrl') == target_base \
                 and prov.get('api') == 'anthropic-messages' \
-                and (not key or prov.get('apiKey') == key):
+                and (not key or prov.get('apiKey') == key) \
+                and (updated_headers is None or prov.get('headers') == updated_headers):
             return ''
         new_prov = dict(prov) if isinstance(prov, dict) else {'models': []}
         new_prov['baseUrl'] = target_base
@@ -2162,6 +2178,8 @@ def _sync_anthropic_provider(base: str, key: str) -> str:
         new_prov.setdefault('timeoutSeconds', 600)
         if key:
             new_prov['apiKey'] = key
+        if updated_headers is not None:
+            new_prov['headers'] = updated_headers
         new_prov.setdefault('models', [])
         # 一次性迁移：更早的 Web 面板会把中转站写成一个名叫 relay 的 provider，但从来
         # 不给它填内容，primary 却指过去。本次若没拿到 key，就把 relay 里的捡回来，
@@ -2287,6 +2305,19 @@ async def api_settings_models_save(req: ModelSaveRequest):
             raise HTTPException(400, 'API Key 不能包含空白字符')
         if len(model) > 120 or len(base) > 300 or len(key) > 400:
             raise HTTPException(400, '字段过长，请检查')
+        from easel.model_config import validate_model_ref
+        try:
+            validate_model_ref(model)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from None
+        if is_chat and slot == 'relay':
+            from easel.model_config import api_headers
+            try:
+                api_headers(key, _cur_env.get('EASEL_LLM_API_KEY_HEADER', 'api-key'),
+                            _cur_env.get('EASEL_LLM_API_KEY_PREFIX', ''),
+                            _cur_env.get('EASEL_LLM_ANTHROPIC_VERSION', '2023-06-01'))
+            except ValueError as error:
+                raise HTTPException(400, str(error)) from None
         # 改 Base URL 但把 Key 留空（留空=沿用旧 Key）＝ 把已存的真 Key 指向新地址，
         # 之后一次「连通性自测」就会把它当 Bearer 送到新地址去。换地址必须重填 Key。
         _be, _ke = _SLOT_ENV_KEYS.get(slot, ('', ''))
@@ -2437,7 +2468,14 @@ async def api_settings_models_save(req: ModelSaveRequest):
             else:
                 sync_base = _cur_prov.get('anthropic', ('', ''))[0]
                 sync_key = ''
-            _an = _sync_anthropic_provider(sync_base, sync_key)
+            sync_headers = None
+            header_key = sync_key or _cur_prov.get('anthropic', ('', ''))[1]
+            if sync_slot == 'relay' and header_key:
+                from easel.model_config import api_headers
+                sync_headers = api_headers(header_key, effective_env.get('EASEL_LLM_API_KEY_HEADER', 'api-key'),
+                                           effective_env.get('EASEL_LLM_API_KEY_PREFIX', ''),
+                                           effective_env.get('EASEL_LLM_ANTHROPIC_VERSION', '2023-06-01'))
+            _an = _sync_anthropic_provider(sync_base, sync_key, sync_headers)
             if _an:
                 note = f'{note}；{_an}' if note else _an
     resp = {"ok": True, "note": note}
@@ -5026,7 +5064,7 @@ class PublishRequest(BaseModel):
     media: list[str] = []
     tags: str = ''
     persona: str = ''
-    # 存草稿：仅今日头条支持（落后台草稿箱，不公开发布）。其他平台忽略此字段。
+    # 存草稿：仅今日头条支持；其他平台收到草稿请求时明确拒绝。
     draft: bool = False
 
 
@@ -5209,8 +5247,7 @@ async def api_publish(platform: str, req: PublishRequest):
         raise HTTPException(400, f"{cfg['name']} 只能发视频，请附带一个视频文件")
     title = req.title.strip() or req.body.strip()[:20]
     tags = req.tags or ''
-    # 存草稿：仅今日头条支持（落后台草稿箱，不公开发布）。其他平台即便传了 draft
-    # 也按「直接发布」处理——不能让草稿意图落到会真发的平台上。
+    # 仅今日头条支持草稿；其他平台的草稿请求已在上面拒绝。
     is_draft = platform == 'toutiao' and req.draft
     publish_type = '视频' if vids else ('文章' if platform == 'wechat-oa' else '图文')
     py = sys.executable

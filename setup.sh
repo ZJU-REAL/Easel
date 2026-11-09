@@ -294,6 +294,35 @@ PY
     done <<< "$plan"
 }
 
+oc_configure_native_defaults() {
+    local plan key value
+    if ! plan="$(python3 - "$PROJECT_ROOT" "${1:-}" <<'PY'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from easel.commands.doctor import _openclaw_config_path
+from easel.direct_api import read_settings
+from easel.openclaw_defaults import updates
+try:
+    path = _openclaw_config_path()
+    config = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
+    env = read_settings(Path(sys.argv[1]) / '.env')
+    plan = updates(config, sys.argv[2], env.get('EASEL_OPENCLAW_UTILITY_MODEL', ''))
+except (OSError, ValueError):
+    sys.exit(1)
+for key, value in plan.items():
+    print(key + '=' + json.dumps(value, ensure_ascii=False))
+PY
+)"; then
+        warn_collect '后台通知与辅助模型' '配置不可解析，已保留现状' 'easel doctor'
+        return 0
+    fi
+    while IFS='=' read -r key value; do
+        [ -n "$key" ] || continue
+        oc_set '后台通知与辅助模型' "$key" "$value" --json
+    done <<< "$plan"
+}
+
 # ---- 安装报告 ----
 # 把本次安装的遗留问题落盘，供 `easel doctor` 复述。这样「装完还差什么」不依赖用户
 # 记住十几分钟前滚过去的终端输出。
@@ -804,19 +833,17 @@ fi
 # 用法：oc_write_anthropic <baseUrl> <apiKey> [apiKeyHeader] [anthropicVersion]
 oc_write_anthropic() {
     local seed
-    seed="$(A_BASE_URL="$1" A_API_KEY="$2" A_HDR="${3:-}" A_VER="${4:-}" python3 -c '
+    seed="$(A_BASE_URL="$1" A_API_KEY="$2" A_HDR="${3:-}" A_VER="${4:-}" A_PREFIX="${5:-}" python3 -c '
 import json, os
+from easel.model_config import api_headers
 # api 必须显式写死：不写时 OpenClaw 2026.2.x 会把这个 provider 当成 openai-responses，
 # 请求打到 /responses，上游只报「does not support the responses interface」，而 gateway
 # 把它当正常回复塞进 choices[0].message.content → Web 对话静默显示「（无输出）」。
 p = {"baseUrl": os.environ["A_BASE_URL"], "apiKey": os.environ["A_API_KEY"],
      "api": "anthropic-messages", "models": []}
-hdr = os.environ.get("A_HDR"); ver = os.environ.get("A_VER")
-if hdr or ver:
-    h = {}
-    if hdr: h[hdr] = os.environ["A_API_KEY"]
-    if ver: h["anthropic-version"] = ver
-    p["headers"] = h
+headers = api_headers(os.environ["A_API_KEY"], os.environ.get("A_HDR", ""),
+                      os.environ.get("A_PREFIX", ""), os.environ.get("A_VER", ""))
+if headers: p["headers"] = headers
 print(json.dumps(p))')"
     # 2026.9.x 起，--json 整块写入若会删掉 provider 下已存在的子键会被直接拒绝
     # （"Refusing to replace ...; it would remove existing entries: timeoutSeconds"）。
@@ -1052,7 +1079,7 @@ PYGEMINI
 elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     # 原子写入整块 provider（含 header 与 anthropic-version）；整块替换会顺带清掉旧的 CodeWiz 专用 header。
     oc_write_anthropic "$EASEL_LLM_BASE_URL" "$EASEL_LLM_API_KEY" \
-        "${EASEL_LLM_API_KEY_HEADER:-api-key}" "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}"
+        "${EASEL_LLM_API_KEY_HEADER:-api-key}" "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}" "${EASEL_LLM_API_KEY_PREFIX:-}"
     ANTHROPIC_PROVIDER_SYNCED=true
     ok "自定义 Anthropic 兼容 MaaS 认证已同步"
 elif usable_key "${ANTHROPIC_AUTH_TOKEN:-}" && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
@@ -1081,12 +1108,14 @@ fi
 if [ "$AUTH_CONFIGURED" = true ]; then
     oc_set '主模型路由' agents.defaults.model.primary \
         "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" '' high
+    oc_configure_native_defaults "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}"
 else
     # 上面一个 provider 都没写。这时还去写 primary 只会把 agent 指向一个不存在的
     # provider（CLAUDE_MODEL 直接来自 .env），对话时报 "No route-compatible
     # authentication source is configured for <provider>" —— 比「没配置」更难查。
     # 保持不动：既不造假配置，也不覆盖用户上一次跑成功时留下的可用 primary。
     warn "未写入 agents.defaults.model.primary；openclaw 中已有的模型设置保持不变"
+    oc_configure_native_defaults
 fi
 # 整个 agent run 的总时长上限。制作层任务（OpenClaw 自执行短剧/长稿/多镜）很久 → 给足。
 oc_set 'agent 总超时' agents.defaults.timeoutSeconds 7200
