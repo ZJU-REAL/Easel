@@ -133,6 +133,22 @@ function setup() {
     setStatusRequest: callback => { statusRequest = callback; } };
 }
 
+test('overseas login opens a browser modal with no QR instruction and polls to success', async () => {
+  const view = setup();
+  const operation = view.handlers.handleLogin({ platform: 'facebook', name: 'Facebook',
+    supported: true, backend: 'social-browser', loginMode: 'browser' });
+  assert.equal(view.state.qr.mode, 'browser');
+  assert.doesNotMatch(view.state.qr.message, /二维码/);
+  view.pending[0].resolve({ mode: 'browser', state: 'window_login', message: '请在浏览器完成登录' });
+  await operation;
+  assert.equal(view.state.qr.mode, 'browser');
+  assert.equal(view.state.qr.state, 'window_login');
+  view.setStatus({ state: 'success', message: '登录成功', qr: '' });
+  await view.state.intervals[0].callback();
+  assert.equal(view.state.qr.state, 'success');
+  assert.deepEqual(view.state.verifies, ['facebook']);
+});
+
 for (const handler of ['handleLogin', 'handleMpLogin']) {
   test(`${handler} serializes polling and never overwrites terminal success`, async () => {
     const view = setup();

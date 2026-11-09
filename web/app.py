@@ -325,6 +325,7 @@ if str(SHARED_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SHARED_SCRIPTS))
 
 from model_registry import model_group
+from social_login import PLATFORMS as SOCIAL_LOGIN_PLATFORMS
 
 BROWSER_PROFILES = Path.home() / ".easel-browser-profiles"
 
@@ -356,13 +357,17 @@ LOGIN_RUNNERS: dict[str, dict] = {
     # （web_publisher login-qr --headed 窗口模式，状态走 window_login）；国际站需外网代理
     # （web_publisher 按 needs_proxy 读 EASEL_PROXY/https_proxy，未配则回退系统代理）。
     "twitter-x": {"name": "推特 X", "backend": "web", "wp": "twitter-x",
-                  "profile": "TwitterXProfile", "login_window": True},
+                  "profile": "TwitterXProfile", "login_window": True, "loginMode": "browser"},
     "bilibili": {"name": "B站", "backend": "biliup"},
     "douyin": {"name": "抖音", "backend": "douyin", "profile": "DouyinProfile"},
     # 今日头条：自带专用 publisher（skill-toutiao-publisher），backend=='toutiao' 在各处分派。
     "toutiao": {"name": "今日头条", "backend": "toutiao", "profile": "ToutiaoProfile"},
     # 微信公众号：扫码登录后台会话（发布+数据都走它），backend=='wechat-oa' 在各处单独分支处理。
     "wechat-oa": {"name": "微信公众号", "backend": "wechat-oa"},
+    **{platform: {"name": cfg["name"], "profile": cfg["profile"], "backend": "social-browser",
+                  "loginMode": "browser", "note": "在独立浏览器中登录，支持平台二次验证"}
+       # X retains the existing publisher, profile and platform ID above.
+       for platform, cfg in SOCIAL_LOGIN_PLATFORMS.items()},
 }
 
 # ---- 微信公众号（wechat-oa）凭证式接入 ----
@@ -787,6 +792,9 @@ def _proxy_env() -> dict[str, str]:
                             'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com',
                             env_file=ENV_FILE)
     env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
+    social_proxy = env.get('EASEL_SOCIAL_PROXY') or read_settings(ENV_FILE).get('EASEL_SOCIAL_PROXY', '').strip()
+    if social_proxy:
+        env['EASEL_SOCIAL_PROXY'] = social_proxy
     return env
 
 
@@ -4459,6 +4467,7 @@ async def api_accounts():
         {'platform': pf, 'name': cfg['name'], 'backend': cfg['backend'],
          'supported': cfg['backend'] != 'unsupported',
          'loggedIn': _account_logged_in(pf, cfg),
+         'loginMode': cfg.get('loginMode', 'qr'),
          'note': cfg.get('note', '')}
         for pf, cfg in LOGIN_RUNNERS.items()
     ]
@@ -4488,7 +4497,7 @@ async def _start_login(platform: str, restart: bool = False):
     existing = LOGIN_PROCESSES.get(platform)
     if existing is not None and existing.poll() is None:
         if not restart:
-            return {'mode': 'qr', **_login_status(platform)}
+            return {'mode': cfg.get('loginMode', 'qr'), **_login_status(platform)}
         try:
             existing.terminate()
             await asyncio.to_thread(existing.wait, timeout=8)
@@ -4503,7 +4512,11 @@ async def _start_login(platform: str, restart: bool = False):
             f.unlink()
         except OSError:
             pass
-    if backend == 'xhs':
+    if backend == 'social-browser':
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'social_login.py'), 'login',
+               '--platform', platform, '--profile-base', str(BROWSER_PROFILES),
+               '--status-file', str(status), '--timeout', str(LOGIN_TIMEOUT)]
+    elif backend == 'xhs':
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'xhs_publish.py'), 'login', '--no-proxy',
                '--qr-out', str(qr), '--status-file', str(status), '--timeout', str(LOGIN_TIMEOUT)]
     elif backend == 'biliup':
@@ -4548,9 +4561,11 @@ async def _start_login(platform: str, restart: bool = False):
         log_file.close()
     LOGIN_PROCESSES[platform] = proc
     s = _login_status(platform)
+    mode = cfg.get('loginMode', 'qr')
     if s['state'] == 'unknown':
-        s.update(state='starting', message='正在启动浏览器并准备二维码…')
-    return {'mode': 'qr', **s}
+        s.update(state='starting', message='正在打开平台登录浏览器…' if mode == 'browser'
+                 else '正在启动浏览器并准备二维码…')
+    return {'mode': mode, **s}
 
 
 @app.get("/api/login/{platform}/status")
@@ -4564,7 +4579,7 @@ async def api_login_status(platform: str):
         # 只清缓存、不改任何登录/检测逻辑。
         with _WHOAMI_LOCK:
             _WHOAMI_CACHE.pop(platform, None)
-    return {'mode': 'qr', **s}
+    return {'mode': LOGIN_RUNNERS[platform].get('loginMode', 'qr'), **s}
 
 
 class SmsCodeRequest(BaseModel):
@@ -4775,7 +4790,10 @@ async def _check_account_whoami(platform: str, force: bool = False):
     if (not force and hit and (time.time() - hit[0]) < cache_ttl
             and hit[1]['loggedIn'] == _account_logged_in(platform, cfg)):
         return hit[1]
-    if backend == 'biliup':
+    if backend == 'social-browser':
+        cmd = [sys.executable, str(SHARED_SCRIPTS / 'social_login.py'), 'whoami', '--platform', platform,
+               '--profile-base', str(BROWSER_PROFILES)]
+    elif backend == 'biliup':
         cmd = [sys.executable, str(SHARED_SCRIPTS / 'bili_login.py'), 'whoami',
                '--cookie', str(PROJECT_ROOT / 'cookies.json')]
     elif backend == 'xhs':
@@ -5186,6 +5204,8 @@ async def api_publish(platform: str, req: PublishRequest):
     backend = cfg['backend']
     if backend == 'unsupported':
         raise HTTPException(400, f"{cfg['name']} 暂不支持一键发布")
+    if backend == 'social-browser':
+        raise HTTPException(400, f"{cfg['name']} 当前仅支持账号登录，尚未接入一键发布")
     profile = (req.persona or '').strip()
     if profile and (not valid_persona_name(profile) or not profile_exists(profile)):
         raise HTTPException(400, '选择的画像不存在或名称非法')
