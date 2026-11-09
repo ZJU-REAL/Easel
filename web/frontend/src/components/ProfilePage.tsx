@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { fetchPersonas, fetchPersonaFiles, savePersonaFile, deletePersona, fetchAccountAnalytics } from '../lib/api';
+import { useState, useEffect, useCallback } from 'react';
+import { ApiError, fetchPersonaFiles, savePersonaFile, deletePersona, fetchAccountAnalytics } from '../lib/api';
 import type { PersonaItem, PersonaFile, AccountAnalytics } from '../lib/api';
 import { renderMarkdown } from '../lib/sanitize';
 import { IconProfile, IconPlus } from './icons';
@@ -55,6 +55,7 @@ interface ProfilePageProps {
   onUsePersona: (name: string) => void;
   onNewProfile: () => void;
   onDeleted: (name: string) => void;
+  loadPersonas: () => Promise<PersonaItem[] | null>;
 }
 
 const DIM_META: Record<string, { label: string; icon: string }> = {
@@ -72,30 +73,41 @@ export default function ProfilePage(props: ProfilePageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [notice, setNotice] = useState('');
+  const { onDeleted, loadPersonas } = props;
+  const handleDeleted = useCallback((name: string, alreadyMissing = false) => {
+    setPersonas((list) => list.filter((p) => p.name !== name));
+    setViewedPersona('');
+    setNotice(alreadyMissing ? `画像「${name}」已不存在，已更新列表。` : `已删除画像「${name}」`);
+    setRevision((n) => n + 1);
+    onDeleted(name);
+  }, [onDeleted]);
 
   useEffect(() => { setViewedPersona(props.persona); }, [props.persona]);
   useEffect(() => {
     let ignore = false;
     setLoading(true);
     setError('');
-    fetchPersonas().then((list) => {
-      if (!ignore) setPersonas(list);
+    loadPersonas().then((list) => {
+      if (!ignore) {
+        if (list === null) {
+          setError('画像列表已更新，请重新加载。');
+          return;
+        }
+        setPersonas(list);
+        setViewedPersona((name) => list.some((p) => p.name === name) ? name : '');
+      }
     }).catch(() => {
       if (!ignore) setError('加载画像列表失败，请重试。');
     }).finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [revision]);
+  }, [revision, loadPersonas, props.persona]);
 
-  if (viewedPersona) {
+  if (!loading && !error && viewedPersona && personas.some((p) => p.name === viewedPersona)) {
     return <ProfileDetail key={viewedPersona} {...props} persona={viewedPersona}
       inUse={viewedPersona === props.persona}
       onBack={() => { setViewedPersona(''); setRevision((n) => n + 1); }}
-      onDeleted={(name) => {
-        setPersonas((list) => list.filter((p) => p.name !== name));
-        setViewedPersona('');
-        setRevision((n) => n + 1);
-        props.onDeleted(name);
-      }} />;
+      onDeleted={handleDeleted} />;
   }
 
   return (
@@ -111,6 +123,7 @@ export default function ProfilePage(props: ProfilePageProps) {
         <IconProfile size={18} />
         <span>{props.persona ? `当前对话使用「${props.persona}」` : '当前对话为通用模式'}<small>查看和编辑画像不会切换对话身份。</small></span>
       </div>
+      {notice && <p role="status">{notice}</p>}
       {loading ? <div className="loading"><div className="spinner" />加载画像…</div>
         : error ? <div className="empty-state"><p role="alert">{error}</p><button className="btn" onClick={() => setRevision((n) => n + 1)}>重新加载</button></div>
         : personas.length === 0 ? <div className="empty-state profile-empty">
@@ -139,7 +152,8 @@ export default function ProfilePage(props: ProfilePageProps) {
   );
 }
 
-function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: ProfilePageProps & {
+function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Omit<ProfilePageProps, 'onDeleted'> & {
+  onDeleted: (name: string, alreadyMissing?: boolean) => void;
   onBack: () => void;
   inUse: boolean;
 }) {
@@ -150,7 +164,7 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
   const [error, setError] = useState('');
   const [savingFile, setSavingFile] = useState('');
   const [deleting, setDeleting] = useState(false);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ message: string; kind: 'ok' | 'error' } | null>(null);
   const [fetchingWx, setFetchingWx] = useState(false);
 
   useEffect(() => {
@@ -165,12 +179,19 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
         setFiles(d.files);
         setDrafts(Object.fromEntries(d.files.map((f) => [f.filename, f.content])));
       })
-      .catch(() => { if (!ignore) setError('加载画像失败'); })
+      .catch((e: unknown) => {
+        if (ignore) return;
+        if (e instanceof ApiError && e.status === 404) onDeleted(persona, true);
+        else setError(e instanceof Error ? `加载画像失败：${e.message}` : '加载画像失败，请返回列表后重试。');
+      })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [persona]);
+  }, [persona, onDeleted]);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
+  const showToast = (message: string, kind: 'ok' | 'error' = 'ok') => {
+    setToast({ message, kind });
+    setTimeout(() => setToast(null), 2500);
+  };
 
   const handleSave = async (filename: string) => {
     setSavingFile(filename);
@@ -179,7 +200,7 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
       setFiles((prev) => prev.map((f) => f.filename === filename ? { ...f, content: drafts[filename] ?? '' } : f));
       showToast(`已保存 ${DIM_META[filename]?.label || filename} ✓`);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '保存失败');
+      showToast(e instanceof Error ? e.message : '保存失败', 'error');
     } finally {
       setSavingFile('');
     }
@@ -192,7 +213,7 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
     try {
       const a = await fetchAccountAnalytics('wechat-oa');
       if (!a.loggedIn) {
-        showToast('公众号后台未登录：请先到「账号」页扫码登录后再抓取');
+        showToast('公众号后台未登录：请先到「账号」页扫码登录后再抓取', 'error');
         return;
       }
       const base = files.find((f) => f.filename === filename)?.content ?? '';
@@ -203,7 +224,7 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
       setDrafts((p) => ({ ...p, [filename]: merged }));
       showToast(`已抓取并更新画像（粉丝 ${a.followers ?? 0}，已发表 ${a.posts ?? 0} 篇）✓`);
     } catch (e) {
-      showToast(e instanceof Error ? `抓取失败：${e.message}` : '抓取失败（可能未登录或平台改版）');
+      showToast(e instanceof Error ? `抓取失败：${e.message}` : '抓取失败（可能未登录或平台改版）', 'error');
     } finally {
       setFetchingWx(false);
     }
@@ -215,9 +236,9 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
     try {
       await deletePersona(persona);
       onDeleted(persona);
-      showToast(`已删除画像「${persona}」`);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '删除失败');
+      if (e instanceof ApiError && e.status === 404) onDeleted(persona, true);
+      else showToast(e instanceof Error ? `删除失败：${e.message}` : '删除失败', 'error');
     } finally {
       setDeleting(false);
     }
@@ -297,7 +318,9 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Prof
         })
       )}
 
-      {toast && <div className="toast ok"><span className="toast-icon">✓</span>{toast}</div>}
+      {toast && <div className={`toast ${toast.kind}`} role={toast.kind === 'error' ? 'alert' : 'status'}>
+        <span className="toast-icon" aria-hidden="true">{toast.kind === 'ok' ? '✓' : '!'}</span>{toast.message}
+      </div>}
     </div>
   );
 }

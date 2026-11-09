@@ -358,7 +358,9 @@ textarea.field { resize: vertical; min-height: 90px; }
   animation: popIn 0.2s var(--ease);
 }
 .toast.ok { border-color: var(--green-soft); }
+.toast.error { border-color: var(--red); }
 .toast .toast-icon { color: var(--green); margin-right: 7px; }
+.toast.error .toast-icon { color: var(--red); }
 
 /* ============ Chat page ============ */
 .chat-page {
