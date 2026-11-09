@@ -215,6 +215,21 @@ body {
 
 .main-content { flex: 1; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
 
+/* Keep centered page content aligned when a page does not need a scrollbar. */
+.skills-page, .accounts-page, .gallery-page, .profile-page, .dash-page {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 30px 32px 60px;
+  scrollbar-gutter: stable;
+}
+.skills-page-head, .skills-body, .accounts-page > *, .gallery-head,
+.gallery-filters, .gallery-grid, .profile-page > *, .dash-hero, .dash-stats, .dash-grid {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Keep every workbench page on the landing page's warm paper backdrop. */
 .main-content,
 .page-host {
@@ -663,7 +678,6 @@ textarea.field { resize: vertical; min-height: 90px; }
 .send-btn:not(:disabled):hover { filter: brightness(1.1); transform: translateY(-1px); }
 
 /* ============ Skills gallery ============ */
-.skills-page { height: 100%; overflow-y: auto; padding: 30px 32px 60px; }
 .skills-page-head { max-width: 1100px; margin: 0 auto 8px; }
 .skill-search {
   max-width: 1100px; margin: 18px auto 0;
@@ -688,6 +702,7 @@ textarea.field { resize: vertical; min-height: 90px; }
   transform: none; box-shadow: none;
   background: var(--surface-hover); border-color: var(--border-strong);
 }
+.skill-card:focus-visible, .crumb:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
 .skill-card-icon {
   width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -783,7 +798,8 @@ textarea.field { resize: vertical; min-height: 90px; }
 .outputs-viewer-content pre code { background: none; padding: 0; }
 
 /* ============ Profile page ============ */
-.profile-page { width: 100%; min-height: 0; padding: 30px max(32px, calc((100% - 756px) / 2)) 60px; height: 100%; overflow-y: auto; }
+.profile-page { width: 100%; }
+.profile-page > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
 .profile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .profile-dim { margin-top: 16px; }
 .profile-dim-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -812,7 +828,8 @@ textarea.field { resize: vertical; min-height: 90px; }
 @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
 
 /* ============ Accounts page ============ */
-.accounts-page { padding: 30px 32px 60px; overflow-y: auto; height: 100%; }
+.accounts-page > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+.accounts-notice { margin-top: 16px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .accounts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
 .account-card { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
 .account-card-head { display: flex; align-items: center; justify-content: space-between; }
@@ -902,7 +919,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .archived-chevron.open { transform: rotate(90deg); }
 
 /* ============ 通用页容器 ============ */
-.page-scroll { height: 100%; overflow-y: auto; padding: 28px 32px 60px; }
+.page-scroll { height: 100%; overflow-y: auto; padding: 30px 32px 60px; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; max-width: 1100px; margin: 0 auto 4px; }
 .notice-error { max-width: 1100px; margin: 14px auto 0; color: var(--red); background: var(--red-soft); border: 1px solid transparent; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; }
 
@@ -990,8 +1007,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .dash-idea-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-idea:hover .dash-idea-title { color: var(--accent-start); }
 @media (max-width: 760px) { .dash-stats { grid-template-columns: repeat(2, 1fr); } }
-.dash-grid { max-width: 1100px; margin: 18px auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-/* 只让「最近产物」不被同行的高卡（创作数据）拉伸留白，其余卡片仍等高 */
+.dash-grid { max-width: 1100px; margin: 18px auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; align-items: start; }
 .dash-card-top { align-self: start; }
 .dash-card { padding: 16px 18px; }
 .dash-card-head { display: flex; align-items: center; justify-content: space-between; font-weight: 650; font-size: 14px; margin-bottom: 12px; }
@@ -1000,6 +1016,8 @@ textarea.field { resize: vertical; min-height: 90px; }
 .dash-more { background: none; border: none; color: var(--text-tertiary); font-size: 12px; cursor: pointer; }
 .dash-more:hover { color: var(--accent-end); }
 .dash-empty { color: var(--text-tertiary); font-size: 13px; padding: 8px 0; }
+.dash-trend-list { max-height: 250px; overflow-y: auto; scrollbar-gutter: stable; }
+.dash-trend-list:focus-visible { outline: 2px solid var(--accent-start); outline-offset: 2px; }
 .dash-trend-group { margin-bottom: 10px; }
 .dash-trend-plat { font-size: 12px; color: var(--text-tertiary); font-weight: 600; margin-bottom: 4px; }
 .dash-trend-item { padding: 3px 0; }
@@ -1066,10 +1084,9 @@ textarea.field { resize: vertical; min-height: 90px; }
 .ana-note:hover .ana-note-go { color: var(--accent-end); }
 
 /* ============ 内容库画廊 ============ */
-.gallery-page { height: 100%; overflow-y: auto; padding: 28px 32px 60px; }
-.gallery-head { max-width: 1160px; margin: 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.gallery-filters { display: flex; gap: 8px; flex-wrap: wrap; max-width: 1160px; margin: 14px auto 0; }
-.gallery-grid { max-width: 1160px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.gallery-head { max-width: 1100px; margin: 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.gallery-filters { display: flex; gap: 8px; flex-wrap: wrap; max-width: 1100px; margin: 14px auto 0; }
+.gallery-grid { max-width: 1100px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
 .gcard { padding: 0; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
 .gcard-thumb { aspect-ratio: 4/3; background: var(--surface-2); display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
 .gcard-thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -1081,7 +1098,8 @@ textarea.field { resize: vertical; min-height: 90px; }
 .gcard-sub { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
 
 /* 内容库面包屑 */
-.crumb { cursor: pointer; color: var(--text-secondary); }
+.gallery-breadcrumb { margin-top: 8px; font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.crumb { cursor: pointer; color: var(--text-secondary); background: none; border: 0; padding: 0; font: inherit; }
 .crumb:hover { color: var(--accent-start); }
 .crumb-sep { color: var(--text-tertiary); margin: 0 2px; font-weight: 400; }
 
@@ -1519,6 +1537,9 @@ textarea.field { resize: vertical; min-height: 90px; }
 .profile-detail-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
 @media (max-width: 640px) {
   .profile-page { padding: 22px 18px 40px; }
+  .skills-page, .accounts-page, .gallery-page, .dash-page { padding: 22px 18px 40px; }
+  .page-head, .profile-head, .gallery-head { flex-wrap: wrap; }
+  .skill-grid, .accounts-grid { grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); }
   .profile-grid { grid-template-columns: 1fr; }
   .profile-head { flex-wrap: wrap; }
   .profile-summary { padding: 18px; }

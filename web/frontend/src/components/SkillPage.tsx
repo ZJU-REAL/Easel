@@ -152,7 +152,10 @@ export default function SkillPage({ persona }: SkillPageProps) {
                   <div
                     key={s.name}
                     className="card card-hover skill-card"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelected(s.name)}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(s.name); } }}
                   >
                     <div className="skill-card-icon" style={{ color: meta.color }}><Icon size={26} /></div>
                     <div className="skill-card-content">
