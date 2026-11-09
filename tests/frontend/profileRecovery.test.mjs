@@ -334,3 +334,20 @@ for (const outcome of ['cancel', 'success', 'network']) {
     }
   });
 }
+
+test('profile management retains a general-mode action after sidebar selector removal', async () => {
+  const selected = [];
+  const input = { ...props, onUsePersona: name => selected.push(name),
+    loadPersonas: async () => [{ name: props.persona, description: '' }] };
+  const render = mount('default');
+  render(input);
+  await drain();
+  let tree = render(input);
+  tree.props.onBack();
+  render(input);
+  await drain();
+  const button = nodes(render(input)).find(node => node.type === 'button' && node.props.children === '使用通用模式');
+  assert.ok(button);
+  button.props.onClick();
+  assert.deepEqual(selected, ['']);
+});

@@ -1502,7 +1502,7 @@ textarea.field { resize: vertical; min-height: 90px; }
 .profile-head > div:first-child { min-width: 0; }
 .profile-head .page-title { overflow-wrap: anywhere; }
 .profile-head > .btn { flex-shrink: 0; }
-.profile-mode-note { display: flex; align-items: center; gap: 12px; padding: 15px 18px; margin-top: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev); color: var(--text-secondary); font-size: 13px; }
+.profile-mode-note { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 15px 18px; margin-top: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev); color: var(--text-secondary); font-size: 13px; }
 .profile-mode-note > svg { flex-shrink: 0; color: var(--accent-start); }
 .profile-mode-note small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: 12px; }
 .profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -1523,5 +1523,4 @@ textarea.field { resize: vertical; min-height: 90px; }
   .profile-summary { padding: 18px; }
 }
 
-.persona-control .settings-select { min-height: 36px; border-radius: var(--radius); }
 .settings-overlay .thinking-controls .settings-select-wrap { width: auto; min-width: 0; }

@@ -831,10 +831,6 @@ export default function App() {
       <Sidebar
         currentPage={currentPage}
         onPageChange={setCurrentPage}
-        personas={personas}
-        selectedPersona={selectedPersona}
-        onPersonaChange={handlePersonaChange}
-        onNewProfile={() => setShowWizard(true)}
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSessionSelect={handleSessionSelect}

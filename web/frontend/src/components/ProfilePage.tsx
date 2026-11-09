@@ -122,6 +122,7 @@ export default function ProfilePage(props: ProfilePageProps) {
       <div className="profile-mode-note">
         <IconProfile size={18} />
         <span>{props.persona ? `当前对话使用「${props.persona}」` : '当前对话为通用模式'}<small>查看和编辑画像不会切换对话身份。</small></span>
+        {props.persona && <button className="btn btn-sm" onClick={() => props.onUsePersona('')}>使用通用模式</button>}
       </div>
       {notice && <p role="status">{notice}</p>}
       {loading ? <div className="loading"><div className="spinner" />加载画像…</div>
