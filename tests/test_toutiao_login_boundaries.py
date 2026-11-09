@@ -31,6 +31,7 @@ def test_backend_confirmation_requires_successful_creator_page(monkeypatch, stat
 
     page.goto = goto
     monkeypatch.setattr(tp, "_needs_phone_binding", lambda p: False)
+    monkeypatch.setattr(tp, "_backend_ui_authenticated", lambda p: True)
     assert tp._backend_authenticated(page) is expected
 
 

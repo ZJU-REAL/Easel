@@ -77,7 +77,7 @@ export default function ProfilePage(props: ProfilePageProps) {
   const { onDeleted, loadPersonas } = props;
   const handleDeleted = useCallback((name: string, alreadyMissing = false) => {
     setPersonas((list) => list.filter((p) => p.name !== name));
-    setViewedPersona('');
+    setViewedPersona((current) => current === name ? '' : current);
     setNotice(alreadyMissing ? `画像「${name}」已不存在，已更新列表。` : `已删除画像「${name}」`);
     setRevision((n) => n + 1);
     onDeleted(name);

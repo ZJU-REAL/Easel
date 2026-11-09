@@ -351,3 +351,24 @@ test('profile management retains a general-mode action after sidebar selector re
   button.props.onClick();
   assert.deepEqual(selected, ['']);
 });
+
+test('a completed deletion from the old detail cannot close the newly selected profile', async () => {
+  let catalog = [{ name: 'old', description: '' }, { name: 'current', description: '' }];
+  const loadPersonas = async () => catalog;
+  const input = { ...props, persona: 'old', loadPersonas };
+  const render = mount('default');
+  render(input);
+  await drain();
+  const oldDetail = render(input);
+  const current = { ...input, persona: 'current' };
+  render(current);
+  await drain();
+  assert.equal(render(current).props.persona, 'current');
+  catalog = catalog.filter(p => p.name !== 'old');
+  oldDetail.props.onDeleted('old');
+  render(current);
+  await drain();
+  const tree = render(current);
+  assert.equal(tree.type.name, 'ProfileDetail');
+  assert.equal(tree.props.persona, 'current');
+});

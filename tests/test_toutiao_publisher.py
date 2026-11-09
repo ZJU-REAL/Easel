@@ -209,11 +209,11 @@ def test_phone_binding_is_not_a_completed_login():
 
         def get_by_text(self, text, exact=False):
             assert text == "手机绑定" and exact
-            return type("Locator", (), {"first": Visible()})()
+            return type("Locator", (), {"first": Visible(), "all": lambda self: [Visible()]})()
 
         def locator(self, selector):
             assert "placeholder" in selector
-            return type("Locator", (), {"first": Visible()})()
+            return type("Locator", (), {"first": Visible(), "all": lambda self: [Visible()]})()
 
     page = BindingPage()
     assert tp._needs_phone_binding(page)

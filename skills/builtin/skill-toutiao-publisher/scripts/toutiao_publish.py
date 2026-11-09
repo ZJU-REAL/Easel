@@ -129,17 +129,22 @@ COVER_INPUT_SELECTORS = [
 ]
 
 # 登录页二维码元素：头条登录走字节 SSO，二维码可能在 <img> / <canvas> / 内嵌组件里，
-# 且后台改版频繁——多选择器逐个试，全不中退回整页截图（宁可给大图，也别给空图）。
+# 多选择器逐个试；只截二维码元素，不能把整页表单当成二维码。
 QR_SELECTORS = [
     "img[src*='qrcode']",
     "img[src*='qr_code']",
     "[class*='qrcode'] img",
     "[class*='qr-code'] img",
     "canvas[class*='qr']",
-    "img[src^='data:image']",
 ]
 # URL 命中这些片段 = 还在登录/SSO 流程里（未登录）。
 _LOGIN_URL_HINTS = ("login", "signin", "passport", "sso", "auth/page")
+_ACCOUNT_NAME_SELECTORS = (
+    "[class*='user-info'] [class*='user-name']",
+    "[class*='user-info'] [class*='userName']",
+    "[class*='user-info'] [class*='nickname']",
+    "header [class*='user-name']", "header [class*='userName']",
+)
 
 
 def die(msg: str, code: int = 1):
@@ -555,16 +560,41 @@ def _is_logged_in(page) -> bool:
 
 
 def _needs_phone_binding(page) -> bool:
-    """识别扫码后的平台手机号绑定页；不读取或保存手机号/验证码。"""
+    """识别可见手机号输入，不依赖绑定页标题或读取手机号/验证码。"""
+    return _visible_form(page, "input[type='tel'], input[autocomplete='tel'], "
+                         "input[placeholder*='手机'], input[aria-label*='手机']")
+
+
+def _visible_form(page, selector: str) -> bool:
     for frame in [page, *getattr(page, "frames", [])]:
         try:
-            title = frame.get_by_text("手机绑定", exact=True).first
-            phone = frame.locator("input[placeholder*='手机']").first
-            if title.is_visible() and phone.is_visible():
+            if any(element.is_visible() for element in frame.locator(selector).all()):
                 return True
         except Exception:
             continue
     return False
+
+
+def _login_form_visible(page) -> bool:
+    return _needs_phone_binding(page) or _visible_form(page,
+        "input[type='password'], input[autocomplete='one-time-code'], input[placeholder*='验证码']")
+
+
+def _backend_ui_authenticated(page) -> bool:
+    """A loaded URL alone is insufficient: require scoped session and creator UI."""
+    if not _is_logged_in(page) or _login_form_visible(page):
+        return False
+    try:
+        cookies = page.context.cookies([HOME_URL])
+        if not any(cookie.get('name') in {'sessionid', 'sessionid_ss', 'sid_tt'}
+                   and cookie.get('value') for cookie in cookies):
+            return False
+        selector = ', '.join((*_ACCOUNT_NAME_SELECTORS,
+                    "a[href^='/profile_v4/graphic/publish']",
+                    "a[href^='https://mp.toutiao.com/profile_v4/graphic/publish']"))
+        return any(element.is_visible() for element in page.locator(selector).all())
+    except Exception:
+        return False
 
 
 def _backend_authenticated(page) -> bool:
@@ -579,11 +609,12 @@ def _backend_authenticated(page) -> bool:
     except Exception:
         return False
     return (_is_logged_in(page)
-            and urlparse(page.url).path.rstrip('/') == urlparse(HOME_URL).path.rstrip('/'))
+            and urlparse(page.url).path.rstrip('/') == urlparse(HOME_URL).path.rstrip('/')
+            and _backend_ui_authenticated(page))
 
 
 def _capture_qr(page, qr_out: Path) -> bool:
-    """把登录二维码截到 qr_out。多选择器逐个试（最多 15s），全不中退回整页截图。"""
+    """只截已识别的二维码元素，未识别时交给可见窗口，不截整页。"""
     deadline = time.time() + 15
     while time.time() < deadline:
         if _needs_phone_binding(page):
@@ -598,13 +629,7 @@ def _capture_qr(page, qr_out: Path) -> bool:
             except Exception:
                 continue
         page.wait_for_timeout(500)
-    try:
-        if _needs_phone_binding(page):
-            return False
-        page.screenshot(path=str(qr_out))
-        return qr_out.is_file()
-    except Exception:
-        return False
+    return False
 
 
 def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
@@ -650,13 +675,17 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                                          "请在弹出的今日头条窗口绑定手机号并输入短信验证码")
             else:
                 if not captured:
-                    login_state.write_status(str(status_file), "error",
-                                             "未找到登录二维码（头条号后台可能已改版）")
-                    return 1
-                login_state.write_status(str(status_file), "qr_ready",
+                    if not headed:
+                        login_state.write_status(str(status_file), "error",
+                                                 "未识别登录二维码，请使用 login --headed 在浏览器中登录")
+                        return 1
+                    login_state.write_status(str(status_file), "window_login",
+                                             "未识别可单独展示的二维码，请在浏览器窗口完成登录与验证")
+                else:
+                    login_state.write_status(str(status_file), "qr_ready",
                                          "二维码已就绪，请扫码；后续验证请在浏览器窗口完成",
                                          qr=str(qr_out))
-                print(f"📱 二维码已保存：{qr_out}")
+                    print(f"📱 二维码已保存：{qr_out}")
             deadline = time.time() + max(timeout_s, 30)
             while time.time() < deadline:
                 page.wait_for_timeout(2000)
@@ -686,7 +715,7 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                     print("✅ 登录成功")
                     return 0
             login_state.write_status(str(status_file), "expired",
-                                     "手机绑定未完成，请重新登录" if binding else "二维码超时未扫")
+                                     "登录或验证未完成，请重新登录")
             return 1
         except Exception as exc:
             # 浏览器起不来（内核没装 / profile 被占用）也必须把状态写成 error：
@@ -723,9 +752,16 @@ def _probe_identity(headed: bool = False) -> dict:
                 if response is None or not 200 <= response.status < 300:
                     raise RuntimeError("头条号后台加载失败，未确认登录状态")
                 page.wait_for_timeout(2500)
-                out["loggedIn"] = _is_logged_in(page)
+                out["loggedIn"] = _backend_ui_authenticated(page)
                 if out["loggedIn"]:
                     out["name"] = _read_display_name(page)
+                elif not _login_form_visible(page):
+                    parsed = urlparse(page.url)
+                    on_login_page = (parsed.scheme == 'https' and parsed.hostname == 'mp.toutiao.com'
+                                     and any(h in parsed.path.lower() for h in _LOGIN_URL_HINTS))
+                    qr_visible = on_login_page and _visible_form(page, ', '.join(QR_SELECTORS))
+                    if not qr_visible:
+                        out['error'] = '后台页面尚未就绪，未确认账号身份，请稍后重试'
             finally:
                 ctx.close()
     except Exception as exc:
@@ -735,8 +771,7 @@ def _probe_identity(headed: bool = False) -> dict:
 
 def _read_display_name(page) -> str:
     """尽力读头条号昵称；读不到返回空串（不阻断 whoami）。"""
-    for sel in ("[class*='user-name']", "[class*='userName']", "[class*='nickname']",
-                "[class*='user-info'] span", "[class*='avatar'] + *"):
+    for sel in _ACCOUNT_NAME_SELECTORS:
         try:
             el = page.locator(sel).first
             if el.count() and el.is_visible():
