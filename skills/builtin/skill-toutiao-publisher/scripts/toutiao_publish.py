@@ -14,7 +14,7 @@
 
   # 存草稿 / 真正发布：
   python skills/builtin/skill-toutiao-publisher/scripts/toutiao_publish.py \
-      --input outputs/主题名/article.md --title "文章标题" --exec --draft
+      --input outputs/主题名/article.md --title "文章标题" --draft
   python skills/builtin/skill-toutiao-publisher/scripts/toutiao_publish.py \
       --input outputs/主题名/article.md --title "文章标题" --cover outputs/主题名/cover.png --exec
 
@@ -510,8 +510,8 @@ def login(wait_seconds: int, headed: bool = True) -> int:
         deadline = time.time() + wait_seconds
         while time.time() < deadline:
             if _backend_authenticated(page):
-                print(f"登录成功，profile 已保存到 {PROFILE_DIR}", file=sys.stderr)
                 ctx.close()
+                print(f"登录成功，profile 已保存到 {PROFILE_DIR}", file=sys.stderr)
                 return 0
             page.wait_for_timeout(2000)
         ctx.close()
@@ -609,7 +609,7 @@ def _capture_qr(page, qr_out: Path) -> bool:
 
 def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
               headed: bool = False) -> int:
-    """扫码登录：二维码落盘；手机绑定阶段转可见窗口，状态供 Web 轮询。"""
+    """扫码登录：二维码落盘；可见窗口支持手机绑定，状态供 Web 轮询。"""
     import login_state
 
     try:
@@ -766,7 +766,7 @@ def cmd_whoami(argv: list[str]) -> int:
 def publish_article(content: str, title: str, tags: list[str], cover: Path | None,
                     images: list[Path], dry_run: bool, headed: bool, as_draft: bool,
                     timeout_ms: int) -> dict:
-    """把图文发到头条号。dry_run=True 时只走到编辑器填写完成，不点发布。"""
+    """把图文发到头条号。dry_run=True 时只返回离线计划，不打开浏览器或创建远程草稿。"""
     result: dict = {"platform": "toutiao", "dry_run": dry_run, "draft": as_draft,
                     "title": title, "tags": tags,
                     "cover": str(cover) if cover else "",

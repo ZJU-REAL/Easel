@@ -6,7 +6,7 @@ import SkillDrawer from './SkillDrawer';
 import { displayName } from '../lib/skillDisplayNames';
 import { planningSkillIcons } from './skillIconsPlanning';
 import { produceSkillIcons } from './skillIconsProduce';
-import { publishSkillIcons } from './skillIconsPublish';
+import { publishSkillIcons } from '../lib/skillIconsPublish';
 import { brandSkillIcons } from './skillIconsBrand';
 import {
   IconSearch, IconCompass, IconSkills, IconSend, IconChart, IconLayers,
