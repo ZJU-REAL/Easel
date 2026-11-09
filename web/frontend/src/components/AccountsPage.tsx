@@ -15,7 +15,6 @@ type QRState = {
   message: string;
   qr: string;          // outputs 相对路径
   qrTs?: number;       // 二维码文件 mtime，作 img 缓存键：码刷新一次就变，避免看到过期旧码
-  mode?: 'qr' | 'browser';
 };
 
 const STATE_LABEL: Record<string, string> = {
@@ -226,8 +225,7 @@ export default function AccountsPage() {
     qrPlatformRef.current = a.platform;
     setQrNonce((n) => n + 1);
     setQr({ platform: a.platform, name: a.name, state: 'starting',
-            mode: a.loginMode || 'qr',
-            message: a.loginMode === 'browser' ? '正在打开平台登录浏览器…' : '正在启动浏览器并准备二维码…', qr: '' });
+            message: '正在启动浏览器并准备二维码…', qr: '' });
     try {
       const res = await startLogin(a.platform);
       if (!aliveRef.current || qrRequest.current !== sequence) return;
@@ -238,7 +236,6 @@ export default function AccountsPage() {
       }
       if (res.mode === 'credentials') { setQr(null); openCred(a); return; }
       setQr({ platform: a.platform, name: a.name, state: res.state || 'starting',
-              mode: res.mode === 'browser' ? 'browser' : 'qr',
               message: res.message || '', qr: res.qr || '', qrTs: res.qrTs });
       stopPoll();
       let polling = false;
@@ -363,7 +360,7 @@ export default function AccountsPage() {
   }, [stopPoll, runWhoami, load]);
 
   const handleLogout = useCallback(async (a: AccountItem) => {
-    if (!window.confirm(`确定退出「${a.name}」的登录？登录态将被清除，下次使用需重新登录。`)) return;
+    if (!window.confirm(`确定退出「${a.name}」的登录？登录态将被清除，下次发布需重新扫码。`)) return;
     setLogoutBusy(a.platform);
     try {
       await logoutAccount(a.platform);
@@ -502,11 +499,9 @@ export default function AccountsPage() {
             ) : qr.state === 'verifying' ? (
               <div className="loading" style={{ padding: 40 }}><div className="spinner" />正在验证验证码，登录中…</div>
             ) : qr.state === 'window_login' ? (
-              <div className="loading" style={{ padding: '28px 8px', lineHeight: 1.7, flexDirection: 'column', gap: 12 }}>
-                <div className="spinner" />
-                <div>在运行 Easel 的电脑上，切换到新打开的浏览器完成登录。</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>完成后自动保存登录状态，并更新此页面。</div>
-              </div>
+              // 无扫码平台（X）：本机弹有头浏览器窗口，用户在窗口里手动登录
+              <div className="loading" style={{ padding: 40 }}><div className="spinner" />
+                {qr.message || '请在弹出的浏览器窗口中完成登录'}</div>
             ) : qr.state === 'success' ? (
               <div style={{ fontSize: 48, padding: 40 }}>✅</div>
             ) : ['error', 'expired'].includes(qr.state) ? (
@@ -514,8 +509,7 @@ export default function AccountsPage() {
                 {qr.message || '登录失败'}<br />请根据上方具体原因排查；可关闭后重试，日志在 outputs/_login/。
               </div>
             ) : (
-              <div className="loading" style={{ padding: 40 }}><div className="spinner" />
-                {qr.mode === 'browser' ? '正在打开登录浏览器…' : '准备二维码…'}</div>
+              <div className="loading" style={{ padding: 40 }}><div className="spinner" />准备二维码…</div>
             )}
             <div style={{ marginTop: 16 }}>
               <button className="btn" onClick={closeQr}>{qr.state === 'success' ? '完成' : '关闭'}</button>

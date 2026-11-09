@@ -494,11 +494,10 @@ export interface AccountItem {
   supported: boolean;
   loggedIn: boolean;
   note: string;
-  loginMode?: 'qr' | 'browser';
 }
 
 export interface LoginStart {
-  mode: 'qr' | 'browser' | 'terminal' | 'credentials';
+  mode: 'qr' | 'terminal' | 'credentials';   // credentials = 凭证式（公众号 AppID/AppSecret）
   state?: string;       // starting | qr_ready | success | expired | error | unknown
   message?: string;
   qr?: string;          // outputs 下相对路径，用 mediaUrl() 取图
@@ -543,7 +542,7 @@ export function mpLoginStatus(platform: string): Promise<LoginStatus> {
 }
 
 export interface LoginStatus {
-  mode: 'qr' | 'browser';
+  mode: 'qr';
   state: string;
   message: string;
   qr: string;

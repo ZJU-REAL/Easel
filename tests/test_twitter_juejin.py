@@ -111,7 +111,7 @@ def test_start_login_appends_headed_for_window_platforms(login_state_tmp, monkey
 
     monkeypatch.setattr(web.subprocess, "Popen", _fake_popen)
     result = asyncio.run(web._start_login("twitter-x"))
-    assert result["mode"] == "browser"  # 窗口登录使用独立模式，避免前端提示扫码
+    assert result["mode"] == "qr"  # 前端统一走 qr 模式入口，状态值会是 window_login
     cmd = captured["cmd"]
     assert "login-qr" in cmd and "--headed" in cmd, "窗口登录平台必须带 --headed"
     assert cmd[cmd.index("--platform") + 1] == "twitter-x"
