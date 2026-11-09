@@ -9,6 +9,7 @@ import type {
 } from '../lib/api';
 import type { Page } from './Sidebar';
 import { getWhoamiCache, verifyStale } from '../lib/whoami';
+import ContentPanel from './ContentPanel';
 import {
   IconFire, IconCalendar, IconOutputs, IconChat, IconSkills, IconAccounts,
   IconIdea, IconPublish,
@@ -147,7 +148,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
   return (
     <div className="page-scroll dash-page">
       <div className="dash-hero">
-        <h1 className="page-title" style={{ fontSize: 26 }}>{greet} 👋</h1>
+        <h1 className="page-title">{greet} 👋</h1>
         <p className="page-subtitle">
           {apiDirect ? (gatewayStatus === 'connected' ? '仅聊天模式已配置，可开始对话。' : '请先配置仅聊天模式的模型 API。')
             : agentRuntime !== 'openclaw' ? (gatewayStatus === 'connected'
@@ -179,11 +180,10 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
 
       <div className="dash-grid">
         {/* 今日热点 */}
-        <div className="card dash-card">
-          <div className="dash-card-head">
+        <ContentPanel className="dash-card" label="今日热点列表" header={<div className="dash-card-head">
             <span><IconFire size={16} /> 今日热点</span>
             <button className="dash-more" onClick={() => onNavigate('trends')}>热点雷达 →</button>
-          </div>
+          </div>}>
           {trends.length === 0 && <div className="dash-empty">暂无热点，请到热点雷达查看数据源状态。</div>}
           {trends.map((g) => (
             <div key={g.platform} className="dash-trend-group">
@@ -197,14 +197,13 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
               ))}
             </div>
           ))}
-        </div>
+        </ContentPanel>
 
         {/* 选题库 */}
-        <div className="card dash-card">
-          <div className="dash-card-head">
+        <ContentPanel className="dash-card" label="待做选题列表" header={<div className="dash-card-head">
             <span><IconIdea size={16} /> 选题库 · 待做</span>
             <button className="dash-more" onClick={() => onNavigate('ideas')}>全部 →</button>
-          </div>
+          </div>}>
           {pendingIdeas.length === 0 && <div className="dash-empty">还没攒选题，去热点雷达收藏几个吧</div>}
           {pendingIdeas.slice(0, 5).map((it) => (
             <div key={it.id} className="dash-idea" onClick={() => onUseTopic(it.title)} title="点击做成内容">
@@ -212,14 +211,13 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
               {it.source && <span className="badge">{it.source}</span>}
             </div>
           ))}
-        </div>
+        </ContentPanel>
 
         {/* 近期排期 */}
-        <div className="card dash-card">
-          <div className="dash-card-head">
+        <ContentPanel className="dash-card" label="近期排期列表" header={<div className="dash-card-head">
             <span><IconCalendar size={16} /> 近期排期</span>
             <button className="dash-more" onClick={() => onNavigate('calendar')}>日历 →</button>
-          </div>
+          </div>}>
           {upcoming.length === 0 && <div className="dash-empty">暂无排期，去日历安排一条吧</div>}
           {upcoming.map((s) => (
             <div key={s.id} className="dash-sched" onClick={() => onNavigate('calendar')}>
@@ -228,14 +226,13 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
               <span className="badge">{STATUS_LABEL[s.status] || s.status}</span>
             </div>
           ))}
-        </div>
+        </ContentPanel>
 
         {/* 最近产物 */}
-        <div className="card dash-card dash-card-top">
-          <div className="dash-card-head">
+        <ContentPanel className="dash-card dash-card-top" label="最近产物列表" header={<div className="dash-card-head">
             <span><IconOutputs size={16} /> 最近产物</span>
             <button className="dash-more" onClick={() => onNavigate('outputs')}>内容库 →</button>
-          </div>
+          </div>}>
           {recent.length === 0 && <div className="dash-empty">还没有产物，去对话生成第一条吧</div>}
           {recent.map((g) => (
             <div key={g.name} className="dash-output" onClick={() => onNavigate('outputs')}>
@@ -243,16 +240,15 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
               <span className="badge">{g.meta?.platform || (g.type === 'dir' ? `${g.fileCount ?? 0} 文件` : '单文件')}</span>
             </div>
           ))}
-        </div>
+        </ContentPanel>
 
         {/* 创作数据（归因层）：选平台自动拉取登录账号的粉丝/获赞/关注 + 多窗口增长 + 近7日环比 + 最新笔记 */}
-        <div className="card dash-card dash-card-wide">
-          <div className="dash-card-head">
+        <ContentPanel className="dash-card dash-card-wide" label="创作数据" header={<div className="dash-card-head">
             <span><IconAccounts size={16} /> 创作数据</span>
             {anaSel && anaData[anaSel] && anaData[anaSel] !== 'loading' && (
               <button className="dash-more" onClick={() => runAna(anaSel)}>刷新 →</button>
             )}
-          </div>
+          </div>}>
           {(() => {
             const logged = anaPlats.filter((p) => p.loggedIn || whoamiMap[p.platform]?.loggedIn);
             if (anaPlats.length === 0) return <div className="dash-empty">加载中 / 需配置代理</div>;
@@ -369,7 +365,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
               </>
             );
           })()}
-        </div>
+        </ContentPanel>
       </div>
     </div>
   );

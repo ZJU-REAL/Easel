@@ -6,6 +6,10 @@ import { test } from 'node:test';
 
 const require = createRequire(new URL('../../web/frontend/package.json', import.meta.url));
 const ts = require('typescript');
+const personaHelpers = {};
+runInNewContext(ts.transpileModule(readFileSync(new URL('../../web/frontend/src/lib/personas.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+}).outputText, { exports: personaHelpers });
 const source = readFileSync(new URL('../../web/frontend/src/App.tsx', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('App.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const app = parsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'App');
@@ -34,6 +38,7 @@ function setup() {
     fetchPersonas: () => { const request = deferred(); requests.push(request); return request.promise; },
     fetch: async () => ({ ok: true, json: async () => ({ modelConfigured: true }) }),
     setPersonas: list => lists.push(JSON.parse(JSON.stringify(list))),
+    setPersonasLoaded: () => {}, parsePersonas: personaHelpers.parsePersonas,
     setGatewayStatus: () => {}, setApiDirect: () => {}, setAgentRuntime: () => {},
     setNeedModelSetup: () => {}, setSettingsOpen: () => {}, setShowRecommend: value => recommended.push(value),
     onboardingSeen: () => false,
@@ -90,4 +95,12 @@ test('late bootstrap callbacks cannot update an unmounted app', async () => {
   await settle();
   assert.equal(h.lists.length, 0);
   assert.equal(h.recommended.length, 0);
+});
+
+test('malformed status fallback does not become an empty authoritative catalog', async () => {
+  const h = setup();
+  h.status.resolve({ ...statusData, personas: { name: 'not a list' } });
+  h.requests[0].reject(new Error('profiles unavailable'));
+  await settle();
+  assert.equal(h.lists.length, 0);
 });

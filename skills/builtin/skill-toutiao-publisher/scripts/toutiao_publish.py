@@ -14,7 +14,7 @@
 
   # 存草稿 / 真正发布：
   python skills/builtin/skill-toutiao-publisher/scripts/toutiao_publish.py \
-      --input outputs/主题名/article.md --title "文章标题" --exec --draft
+      --input outputs/主题名/article.md --title "文章标题" --draft
   python skills/builtin/skill-toutiao-publisher/scripts/toutiao_publish.py \
       --input outputs/主题名/article.md --title "文章标题" --cover outputs/主题名/cover.png --exec
 
@@ -36,6 +36,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 # PROJECT_ROOT：优先 EASEL_ROOT env（gateway/CLI/web 注入），否则按 __file__ 上溯。
 # ⚠️ 本脚本会被 openclaw/sync.sh 拍平复制到 workspace，那里相对层级会变——故 env 兜底不可省
@@ -128,17 +129,22 @@ COVER_INPUT_SELECTORS = [
 ]
 
 # 登录页二维码元素：头条登录走字节 SSO，二维码可能在 <img> / <canvas> / 内嵌组件里，
-# 且后台改版频繁——多选择器逐个试，全不中退回整页截图（宁可给大图，也别给空图）。
+# 多选择器逐个试；只截二维码元素，不能把整页表单当成二维码。
 QR_SELECTORS = [
     "img[src*='qrcode']",
     "img[src*='qr_code']",
     "[class*='qrcode'] img",
     "[class*='qr-code'] img",
     "canvas[class*='qr']",
-    "img[src^='data:image']",
 ]
 # URL 命中这些片段 = 还在登录/SSO 流程里（未登录）。
 _LOGIN_URL_HINTS = ("login", "signin", "passport", "sso", "auth/page")
+_ACCOUNT_NAME_SELECTORS = (
+    "[class*='user-info'] [class*='user-name']",
+    "[class*='user-info'] [class*='userName']",
+    "[class*='user-info'] [class*='nickname']",
+    "header [class*='user-name']", "header [class*='userName']",
+)
 
 
 def die(msg: str, code: int = 1):
@@ -508,10 +514,9 @@ def login(wait_seconds: int, headed: bool = True) -> int:
         print(f"请在弹出的浏览器里扫码登录头条号（{wait_seconds}s 内）…", file=sys.stderr)
         deadline = time.time() + wait_seconds
         while time.time() < deadline:
-            if "login" not in page.url:
-                page.goto(HOME_URL, wait_until="domcontentloaded")
-                print(f"登录成功，profile 已保存到 {PROFILE_DIR}", file=sys.stderr)
+            if _backend_authenticated(page):
                 ctx.close()
+                print(f"登录成功，profile 已保存到 {PROFILE_DIR}", file=sys.stderr)
                 return 0
             page.wait_for_timeout(2000)
         ctx.close()
@@ -524,7 +529,7 @@ def login(wait_seconds: int, headed: bool = True) -> int:
 
 def _login_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="toutiao_publish.py login",
-                                description="扫码登录头条号（Web 端驱动，headless 抠二维码）")
+                                description="扫码登录头条号（Web 端驱动，可见窗口完成手机绑定）")
     p.add_argument("--qr-out", help="二维码截图落盘路径（默认 outputs/_login/toutiao.png）")
     p.add_argument("--status-file", help="登录状态 JSON（默认 outputs/_login/toutiao.json）")
     p.add_argument("--timeout", type=int, default=180, help="等待扫码秒数")
@@ -540,19 +545,80 @@ def _whoami_parser() -> argparse.ArgumentParser:
 
 
 def _is_logged_in(page) -> bool:
-    """URL 已离开登录/SSO 域即视为已登录。
+    """确认已离开登录流程，且没有停在手机号绑定页。
 
     优先用 URL 而不是元素选择器：未登录时头条号后台会重定向到登录页，
-    这个信号比容易随改版失效的 DOM 特征稳定得多。
+    但扫码后的手机号绑定页也可能位于头条域名，不能把它算作已登录。
     """
-    url = (page.url or "").lower()
-    return not any(h in url for h in _LOGIN_URL_HINTS)
+    try:
+        parsed = urlparse(page.url or "")
+    except ValueError:
+        return False
+    return (parsed.scheme == "https" and parsed.hostname == "mp.toutiao.com"
+            and not any(h in parsed.path.lower() for h in _LOGIN_URL_HINTS)
+            and not _needs_phone_binding(page))
+
+
+def _needs_phone_binding(page) -> bool:
+    """识别可见手机号输入，不依赖绑定页标题或读取手机号/验证码。"""
+    return _visible_form(page, "input[type='tel'], input[autocomplete='tel'], "
+                         "input[placeholder*='手机'], input[aria-label*='手机']")
+
+
+def _visible_form(page, selector: str) -> bool:
+    for frame in [page, *getattr(page, "frames", [])]:
+        try:
+            if any(element.is_visible() for element in frame.locator(selector).all()):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _login_form_visible(page) -> bool:
+    return _needs_phone_binding(page) or _visible_form(page,
+        "input[type='password'], input[autocomplete='one-time-code'], input[placeholder*='验证码']")
+
+
+def _backend_ui_authenticated(page) -> bool:
+    """A loaded URL alone is insufficient: require scoped session and creator UI."""
+    if not _is_logged_in(page) or _login_form_visible(page):
+        return False
+    try:
+        cookies = page.context.cookies([HOME_URL])
+        if not any(cookie.get('name') in {'sessionid', 'sessionid_ss', 'sid_tt'}
+                   and cookie.get('value') for cookie in cookies):
+            return False
+        selector = ', '.join((*_ACCOUNT_NAME_SELECTORS,
+                    "a[href^='/profile_v4/graphic/publish']",
+                    "a[href^='https://mp.toutiao.com/profile_v4/graphic/publish']"))
+        return any(element.is_visible() for element in page.locator(selector).all())
+    except Exception:
+        return False
+
+
+def _backend_authenticated(page) -> bool:
+    """离开扫码页后重进创作者后台，避免中途跳转被误判为登录成功。"""
+    if not _is_logged_in(page):
+        return False
+    try:
+        response = page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
+        if response is None or not 200 <= response.status < 300:
+            return False
+        page.wait_for_timeout(2500)
+    except Exception:
+        return False
+    return (_is_logged_in(page)
+            and urlparse(page.url).path.rstrip('/') == urlparse(HOME_URL).path.rstrip('/')
+            and _backend_ui_authenticated(page))
 
 
 def _capture_qr(page, qr_out: Path) -> bool:
-    """把登录二维码截到 qr_out。多选择器逐个试（最多 15s），全不中退回整页截图。"""
+    """只截已识别的二维码元素，未识别时交给可见窗口，不截整页。"""
     deadline = time.time() + 15
     while time.time() < deadline:
+        if _needs_phone_binding(page):
+            return False
         for sel in QR_SELECTORS:
             try:
                 el = page.locator(sel).first
@@ -563,16 +629,12 @@ def _capture_qr(page, qr_out: Path) -> bool:
             except Exception:
                 continue
         page.wait_for_timeout(500)
-    try:
-        page.screenshot(path=str(qr_out))
-        return qr_out.is_file()
-    except Exception:
-        return False
+    return False
 
 
 def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
               headed: bool = False) -> int:
-    """headless 抠二维码登录：二维码落盘 + 按 login_state 协议写状态，供 Web 轮询。"""
+    """扫码登录：二维码落盘；可见窗口支持手机绑定，状态供 Web 轮询。"""
     import login_state
 
     try:
@@ -594,21 +656,57 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(2500)
-            if _is_logged_in(page):
+            if _backend_authenticated(page):
+                ctx.close()
+                ctx = None
                 login_state.write_status(str(status_file), "success", "已登录")
                 print("✅ 今日头条 已登录（登录态在持久化目录）")
                 return 0
-            if not _capture_qr(page, qr_out):
-                login_state.write_status(str(status_file), "error",
-                                         "未找到登录二维码（头条号后台可能已改版）")
-                return 1
-            login_state.write_status(str(status_file), "qr_ready", "二维码已就绪，请扫码",
-                                     qr=str(qr_out))
-            print(f"📱 二维码已保存：{qr_out}")
+            binding = _needs_phone_binding(page)
+            captured = False if binding else _capture_qr(page, qr_out)
+            binding = binding or _needs_phone_binding(page)
+            if binding:
+                qr_out.unlink(missing_ok=True)
+                if not headed:
+                    login_state.write_status(str(status_file), "error",
+                                             "头条号要求绑定手机号；请用有头浏览器重新登录")
+                    return 1
+                login_state.write_status(str(status_file), "window_login",
+                                         "请在弹出的今日头条窗口绑定手机号并输入短信验证码")
+            else:
+                if not captured:
+                    if not headed:
+                        login_state.write_status(str(status_file), "error",
+                                                 "未识别登录二维码，请使用 login --headed 在浏览器中登录")
+                        return 1
+                    login_state.write_status(str(status_file), "window_login",
+                                             "未识别可单独展示的二维码，请在浏览器窗口完成登录与验证")
+                else:
+                    login_state.write_status(str(status_file), "qr_ready",
+                                         "二维码已就绪，请扫码；后续验证请在浏览器窗口完成",
+                                         qr=str(qr_out))
+                    print(f"📱 二维码已保存：{qr_out}")
             deadline = time.time() + max(timeout_s, 30)
             while time.time() < deadline:
                 page.wait_for_timeout(2000)
-                if _is_logged_in(page):
+                if _needs_phone_binding(page):
+                    if not headed:
+                        qr_out.unlink(missing_ok=True)
+                        login_state.write_status(str(status_file), "error",
+                                                 "头条号要求绑定手机号；请用有头浏览器重新登录")
+                        return 1
+                    if not binding:
+                        binding = True
+                        try:
+                            qr_out.unlink()
+                        except OSError:
+                            pass
+                        login_state.write_status(str(status_file), "window_login",
+                                                 "扫码已确认；请在弹出的今日头条窗口绑定手机号并输入短信验证码")
+                    continue
+                if _backend_authenticated(page):
+                    ctx.close()
+                    ctx = None
                     login_state.write_status(str(status_file), "success", "登录成功")
                     try:
                         qr_out.unlink()  # 成功后清掉二维码图，避免误扫过期码
@@ -616,7 +714,8 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                         pass
                     print("✅ 登录成功")
                     return 0
-            login_state.write_status(str(status_file), "expired", "二维码超时未扫")
+            login_state.write_status(str(status_file), "expired",
+                                     "登录或验证未完成，请重新登录")
             return 1
         except Exception as exc:
             # 浏览器起不来（内核没装 / profile 被占用）也必须把状态写成 error：
@@ -649,11 +748,20 @@ def _probe_identity(headed: bool = False) -> dict:
             )
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                page.goto(HOME_URL, wait_until="domcontentloaded", timeout=45000)
+                response = page.goto(HOME_URL, wait_until="domcontentloaded", timeout=45000)
+                if response is None or not 200 <= response.status < 300:
+                    raise RuntimeError("头条号后台加载失败，未确认登录状态")
                 page.wait_for_timeout(2500)
-                out["loggedIn"] = _is_logged_in(page)
+                out["loggedIn"] = _backend_ui_authenticated(page)
                 if out["loggedIn"]:
                     out["name"] = _read_display_name(page)
+                elif not _login_form_visible(page):
+                    parsed = urlparse(page.url)
+                    on_login_page = (parsed.scheme == 'https' and parsed.hostname == 'mp.toutiao.com'
+                                     and any(h in parsed.path.lower() for h in _LOGIN_URL_HINTS))
+                    qr_visible = on_login_page and _visible_form(page, ', '.join(QR_SELECTORS))
+                    if not qr_visible:
+                        out['error'] = '后台页面尚未就绪，未确认账号身份，请稍后重试'
             finally:
                 ctx.close()
     except Exception as exc:
@@ -663,8 +771,7 @@ def _probe_identity(headed: bool = False) -> dict:
 
 def _read_display_name(page) -> str:
     """尽力读头条号昵称；读不到返回空串（不阻断 whoami）。"""
-    for sel in ("[class*='user-name']", "[class*='userName']", "[class*='nickname']",
-                "[class*='user-info'] span", "[class*='avatar'] + *"):
+    for sel in _ACCOUNT_NAME_SELECTORS:
         try:
             el = page.locator(sel).first
             if el.count() and el.is_visible():
@@ -694,7 +801,7 @@ def cmd_whoami(argv: list[str]) -> int:
 def publish_article(content: str, title: str, tags: list[str], cover: Path | None,
                     images: list[Path], dry_run: bool, headed: bool, as_draft: bool,
                     timeout_ms: int) -> dict:
-    """把图文发到头条号。dry_run=True 时只走到编辑器填写完成，不点发布。"""
+    """把图文发到头条号。dry_run=True 时只返回离线计划，不打开浏览器或创建远程草稿。"""
     result: dict = {"platform": "toutiao", "dry_run": dry_run, "draft": as_draft,
                     "title": title, "tags": tags,
                     "cover": str(cover) if cover else "",

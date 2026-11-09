@@ -6,6 +6,7 @@ import {
 } from '../lib/api';
 import type { AccountItem, AccountWhoami } from '../lib/api';
 import { getWhoamiCache, setWhoamiCache, verifyStale } from '../lib/whoami';
+import { IconRefresh } from './icons';
 
 type QRState = {
   platform: string;
@@ -391,16 +392,14 @@ export default function AccountsPage() {
 
   return (
     <div className="accounts-page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <div className="page-head">
         <div>
-          <h1 className="page-title">账号登录 Accounts</h1>
-          <p className="page-subtitle">
-            用手机 App 扫码登录，登录态本地持久化，之后发布免登。<br />
-            ⚠️ 平台可能对机房/代理 IP 判风险导致二维码弹不出，需干净/家宽 IP，或在正常网络登录后拷贝登录态目录。
-          </p>
+          <h1 className="page-title">账号登录</h1>
+          <p className="page-subtitle">管理平台账号及登录状态。</p>
         </div>
-        <button className="btn btn-sm" onClick={load}>⟳ 刷新</button>
+        <button className="btn btn-sm" onClick={load}><IconRefresh size={14} /> 刷新</button>
       </div>
+      <div className="accounts-notice">按平台通过扫码或浏览器窗口登录，登录状态保存在本地。若登录页面无法显示，请检查网络或代理环境。</div>
 
       {err && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 12 }}>{err}</div>}
       {terminalMsg && (

@@ -105,7 +105,7 @@ def test_permission_failure_does_not_report_freshness(workspace,monkeypatch):
 def test_workspace_resolution_uses_existing_authoritative_resolver(monkeypatch,tmp_path):
     monkeypatch.delenv('EASEL_OPENCLAW_WORKSPACE',raising=False)
     expected=tmp_path/'configured'
-    monkeypatch.setattr(ss,'workspace_dir',lambda:expected)
+    monkeypatch.setattr(ss,'workspace_dir',lambda **kwargs:expected)
     assert ss.agent_workspace()==expected
 
 
@@ -146,6 +146,247 @@ def test_check_only_and_invalid_flags_do_not_write(workspace,monkeypatch):
 def test_copy_failure_is_not_hidden_by_fresh_files(workspace,monkeypatch):
     module=load_cli()
     workspace[2].write_text('changed')
-    def fail():raise OSError('failed copy')
+    def fail(*args):raise OSError('failed copy')
     monkeypatch.setattr(module,'synchronize_skills',fail)
     assert module.main([])==1
+
+
+@pytest.mark.parametrize('relative', [
+    'skills/builtin/demo/references/nested/rules.md',
+    'skills/builtin/demo/scripts/nested/run.py',
+    'skills/shared/scripts/nested/run.py',
+])
+@pytest.mark.parametrize('missing', [False, True])
+def test_nested_resources_are_compared_by_content_and_synced(workspace, relative, missing):
+    repo, ws, _, _ = workspace
+    source = repo / relative
+    destination = ws / relative.removeprefix('skills/').replace('builtin/', 'skills/', 1)
+    source.parent.mkdir(parents=True, exist_ok=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b'new rules')
+    if not missing:
+        destination.write_bytes(b'old rules')
+        os.utime(destination, ns=(source.stat().st_atime_ns, source.stat().st_mtime_ns))
+    # A newer unrelated file must never mask this resource's equal-mtime content change.
+    other = ws / 'skills' / 'custom.md'
+    other.write_text('local')
+    os.utime(other, (2_000_000_000, 2_000_000_000))
+    ok, detail = ss.skills_sync_state()
+    assert not ok
+    assert str(ws) in detail and str(Path(relative)) in detail
+    assert ('副本缺失' if missing else '内容不同') in detail
+    assert ss.synchronize_skills() == 1
+    assert destination.read_bytes() == source.read_bytes()
+    assert ss.skills_sync_state()[0]
+    assert ss.synchronize_skills() == 0
+
+
+def test_check_reports_stale_without_writing(workspace, monkeypatch, capsys):
+    module = load_cli()
+    workspace[2].write_text('changed')
+    monkeypatch.setattr(module, 'synchronize_skills', lambda *a: pytest.fail('check wrote files'))
+    monkeypatch.setattr(module, 'ensure_workspace_links', lambda *a: pytest.fail('check repaired links'))
+    assert module.main(['--check']) == 1
+    assert '未确认同步' in capsys.readouterr().out
+    assert workspace[3].read_text() == 'version one'
+
+
+@pytest.mark.parametrize('stale', [False, True])
+def test_cli_pins_one_workspace_and_skips_fresh_copy(workspace, monkeypatch, capsys, stale):
+    module = load_cli()
+    if stale:
+        workspace[2].write_text('version two')
+    calls = []
+    def resolve():
+        calls.append(True)
+        assert len(calls) == 1, 'one sync operation must not resolve different workspaces'
+        return workspace[1]
+    monkeypatch.setattr(module, 'agent_workspace', resolve)
+    monkeypatch.setattr(ss, 'agent_workspace', lambda: pytest.fail('workspace was resolved again'))
+    if not stale:
+        monkeypatch.setattr(module, 'synchronize_skills', lambda *a: pytest.fail('fresh files copied'))
+    assert module.main([]) == 0
+    output = capsys.readouterr().out
+    assert ('同步完成' if stale else '已是最新') in output
+    assert f'更新 {int(stale)} 个文件' in output
+    assert str(workspace[1]) in output
+
+
+def test_cli_resolution_failure_is_reported(workspace, monkeypatch, capsys):
+    module = load_cli()
+    def fail():
+        raise ValueError('bad workspace')
+    monkeypatch.setattr(module, 'agent_workspace', fail)
+    assert module.main(['--check']) == 1
+    assert '无法解析 workspace' in capsys.readouterr().err
+
+
+@pytest.fixture
+def doctor_ready(workspace, monkeypatch):
+    from easel import harnesses, local_agents
+    from easel.commands import doctor
+
+    repo, ws, source, _ = workspace
+    for relative in ('web/frontend/dist/index.html', 'agents/openclaw.json5',
+                     'scripts/gateway.ps1' if os.name == 'nt' else 'scripts/gateway.sh'):
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    monkeypatch.setattr(doctor, 'PROJECT_ROOT', repo)
+    monkeypatch.setattr(doctor, 'read_settings', lambda *a: {})
+    monkeypatch.setattr(harnesses, 'settings', lambda *a: {'runtime': 'openclaw'})
+    monkeypatch.setattr(local_agents, 'summarize_local_agents', lambda: {'installedCount': 0})
+    monkeypatch.setattr(doctor.shutil, 'which', lambda cmd: '/fake/' + cmd)
+    monkeypatch.setattr(doctor, '_openclaw_version', lambda: (2026, 9, 5))
+    for name in ('_node_version_ok', '_module_available', '_venv_available',
+                 '_chromium_available', '_env_key_valid', '_gateway_healthy'):
+        monkeypatch.setattr(doctor, name, lambda *a: True)
+    monkeypatch.setattr(doctor, '_primary_model_routable', lambda: (True, ''))
+    for name in ('_tool_loop_policy', '_context_budget_policy'):
+        monkeypatch.setattr(doctor, name, lambda: [])
+    return doctor
+
+
+@pytest.mark.parametrize('stale', [False, True])
+def test_doctor_distinguishes_presence_and_freshness(workspace, doctor_ready, capsys, stale):
+    doctor = doctor_ready
+    repo, ws, source, _ = workspace
+    if stale:
+        source.write_text('version two')
+    assert doctor.cmd_doctor(None) == int(stale)
+    output = capsys.readouterr().out
+    presence = next(line for line in output.splitlines() if 'Skills synced' in line)
+    freshness = next(line for line in output.splitlines() if 'Skills up-to-date' in line)
+    assert 'OK' in presence
+    assert ('FAIL' if stale else 'OK') in freshness
+    assert str(ws) in output
+    if stale:
+        assert 'skills' in output and 'SKILL.md' in output
+        assert 'python scripts/sync_if_stale.py' in output
+        assert load_cli().main([]) == 0
+        assert doctor.cmd_doctor(None) == 0
+    else:
+        assert '1 个现有仓库文件' in output
+
+
+@pytest.mark.parametrize('failure', ['missing', 'unresolvable'])
+def test_doctor_reports_workspace_failures(workspace, doctor_ready, monkeypatch, capsys, failure):
+    if failure == 'missing':
+        shutil.rmtree(workspace[1] / 'skills')
+    else:
+        def fail():
+            raise ValueError('bad workspace')
+        monkeypatch.setattr(ss, 'agent_workspace', fail)
+    assert doctor_ready.cmd_doctor(None) == 1
+    output = capsys.readouterr().out
+    for label in ('Skills synced', 'Skills up-to-date'):
+        assert 'FAIL' in next(line for line in output.splitlines() if label in line)
+    assert 'python scripts/sync_if_stale.py' in output
+
+
+@pytest.mark.parametrize('runtime', ['api', 'codex', 'opencode', 'acp'])
+def test_other_runtimes_never_probe_openclaw(workspace, doctor_ready, monkeypatch, capsys, runtime):
+    from easel import harnesses
+    monkeypatch.setattr(harnesses, 'settings', lambda *a: {'runtime': runtime})
+    monkeypatch.setattr(harnesses, 'describe', lambda *a: {'installed': True, 'install_hint': ''})
+    monkeypatch.setattr(doctor_ready, 'api_config', lambda *a: ('local', 'test', ''))
+    def forbidden(*a):
+        pytest.fail('other runtimes must not resolve or check OpenClaw workspace')
+    monkeypatch.setattr(ss, 'agent_workspace', forbidden)
+    monkeypatch.setattr(doctor_ready, '_skills_synced', forbidden)
+    monkeypatch.setattr(doctor_ready, '_skills_fresh', forbidden)
+    assert doctor_ready.cmd_doctor(None) == 0
+    assert 'Skills up-to-date' not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('operation', ['copy', 'replace'])
+def test_failed_atomic_copy_preserves_old_destination(workspace, monkeypatch, operation):
+    _, ws, source, target = workspace
+    source.write_text('version two')
+    if operation == 'copy':
+        def fail(source, temporary):
+            temporary.write_text('partial copy')
+            raise OSError('copy failed')
+        monkeypatch.setattr(ss.shutil, 'copy2', fail)
+    else:
+        def fail(*a):
+            raise PermissionError('replace denied')
+        monkeypatch.setattr(ss.os, 'replace', fail)
+    with pytest.raises(OSError):
+        ss.synchronize_skills()
+    assert target.read_text() == 'version one'
+    assert not list(ws.rglob('.easel-sync-*'))
+    assert not ss.skills_sync_state()[0]
+
+
+def test_all_destinations_are_validated_before_any_copy(workspace, tmp_path):
+    repo, ws, source, target = workspace
+    source.write_text('version two')
+    extra = repo / 'skills/shared/rules.md'
+    extra.write_text('new rules')
+    outside = tmp_path / 'private.md'
+    outside.write_text('private')
+    try:
+        (ws / 'shared/rules.md').symlink_to(outside)
+    except OSError:
+        pytest.skip('symlink unavailable')
+    with pytest.raises(ValueError):
+        ss.synchronize_skills()
+    assert target.read_text() == 'version one'
+    assert outside.read_text() == 'private'
+
+
+def test_source_symlink_is_not_followed(workspace, tmp_path):
+    repo, ws, _, _ = workspace
+    outside = tmp_path / 'private'
+    outside.mkdir()
+    (outside / 'private.md').write_text('private')
+    link = repo / 'skills/builtin/demo/references'
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip('symlink unavailable')
+    assert not ss.skills_sync_state()[0]
+    with pytest.raises(ValueError):
+        ss.synchronize_skills()
+    assert not (ws / 'skills/demo/references').exists()
+
+
+@pytest.mark.parametrize('failure', ['verification', 'links'])
+def test_cli_does_not_report_success_after_incomplete_sync(workspace, monkeypatch, capsys, failure):
+    module = load_cli()
+    workspace[2].write_text('version two')
+    if failure == 'verification':
+        monkeypatch.setattr(module, 'synchronize_skills', lambda *a: 0)
+    else:
+        monkeypatch.setattr(module, 'ensure_workspace_links', lambda *a: ['outputs 存在不同的副本'])
+    assert module.main([]) == 1
+    output = capsys.readouterr()
+    assert '未完成全部同步检查' in output.err
+    assert '同步完成' not in output.out
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Actual Windows junction validation')
+@pytest.mark.parametrize('relative', ['skills/shared', 'skills/builtin/demo/references/nested'])
+def test_source_junction_cannot_import_external_files(workspace, tmp_path, relative):
+    import subprocess
+    repo, ws, source, target = workspace
+    outside = tmp_path / 'private'
+    outside.mkdir()
+    (outside / 'private.md').write_text('private')
+    junction = repo / relative
+    if junction.exists():
+        junction.rmdir()  # Only the empty fixture's shared directory.
+    junction.parent.mkdir(parents=True, exist_ok=True)
+    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+    subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                    '$ErrorActionPreference="Stop"; New-Item -ItemType Junction -Path '
+                    + quote(junction) + ' -Value ' + quote(outside) + ' | Out-Null'], check=True)
+    ok, detail = ss.skills_sync_state()
+    assert not ok and '无法完整校验' in detail
+    source.write_text('version two')
+    with pytest.raises(ValueError):
+        ss.synchronize_skills()
+    assert target.read_text() == 'version one'
+    assert not list((ws / 'skills').rglob('private.md'))
+    assert (outside / 'private.md').read_text() == 'private'

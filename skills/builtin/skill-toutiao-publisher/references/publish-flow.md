@@ -20,7 +20,7 @@ mp.toutiao.com/profile_v4/graphic/publish   图文发布页
 
 **没有「存草稿」按钮**（真机）：页面上只有 预览 / 定时发布 / 预览并发布，草稿是**自动保存**的
 （页面底部提示「草稿将自动保存」，编辑过程中显示「草稿保存中...」）。
-所以「存草稿」= 填完内容就停，等平台自动保存；**dry-run 也会在草稿箱留下一份**（真机实测草稿数 3→4）。
+当前 `--draft` 会填写内容并等待平台确认保存；默认 **dry-run 是离线计划，不打开浏览器，不会在草稿箱留下一份**。早期进入编辑器的预览方式已移除。
 
 ## 二、选择器表（脚本里的常量，按顺序回退）
 
@@ -36,9 +36,9 @@ mp.toutiao.com/profile_v4/graphic/publish   图文发布页
 | 话题联想项 | `UPLOADED_THUMB_SELECTORS` 之外的 `.forum-list-item-text` | 文本与话题名**完全相等**才点 | 真机：联想项 class = `forum-list-item-text`（父 `.forum-list-item`） |
 | 话题结果判定 | `.ProseMirror a.tteditor-forum` | — | 真机：选中后生成 `<syl-inline><a class="tteditor-forum" data-name="代际">#代际#</a></syl-inline>` |
 | 话题触发 | — | 先打「#」等约 1s，再打话题名 | 真机：**一次性插「#话题」不会唤起联想**，必须分两步（真机实测：一次性 → 无联想项；分步 → 有） |
-| 草稿自动保存 | `_wait_autosave` | 页面正文含「草稿保存中」或「草稿已保存」 | 真机：平台**不显示**「已保存」，只有「草稿保存中...」；偶发短暂出现「保存失败」后重试成功 |
+| 草稿自动保存 | `_wait_receipt` / `_write_receipt` | 对应草稿写入接口的成功响应与有效文章 ID | 「草稿保存中」属于过程提示，不能证明保存完成；结果未知时先核对草稿箱，不重复创建 |
 | 封面 | `COVER_INPUT_SELECTORS` | `[class*='cover'] input[type='file']` 等 | 页面上有多个 file input，优先挑封面区的，其次挑编辑器之外的 |
-| 成功判定 | `SUCCESS_HINTS` | `发布成功` / `已发布` / `内容管理` / `草稿箱` | 点完按钮后读 `body` 全文匹配 |
+| 成功判定 | `_wait_receipt` / `_write_receipt` | 对应发布接口的成功响应与有效文章 ID | 常驻导航和普通 toast 不作成功证据；提交结果未知不重复点击 |
 
 ## 三、三个关键交互（真机踩过的坑）
 
@@ -62,14 +62,14 @@ mp.toutiao.com/profile_v4/graphic/publish   图文发布页
 因此：
 - `--draft` = 填完标题/正文/插图/话题就停，等自动保存，**绝不点「预览并发布」**
 - `--exec` = 填完之后点「预览并发布」→ 处理二次确认弹窗
-- **dry-run 也会留草稿**（真机实测）
+- **默认 dry-run 只输出离线计划，不访问远程编辑器或创建草稿**
 
 ## 四、改版了怎么修
 
-1. **先跑 dry-run 定位失败点**：`steps` 字段会告诉你 `title` / `body` / `images` / `tags` 哪个没填上；插图失败会在 `error` 里列出没能插入的图片路径。
+1. **先用离线 dry-run 校验输入**。若要定位编辑器问题，使用显式 `--draft --headed`；该操作会创建远程草稿，须遵循现有确认与出站检查边界。`steps` 字段记录标题、正文、插图和话题的执行结果，插图失败会返回 `error`。
    ```bash
    python skills/builtin/skill-toutiao-publisher/scripts/toutiao_publish.py \
-     --input outputs/主题名/article.md --title "标题" --headed \
+     --input outputs/主题名/article.md --title "标题" --draft --headed \
      --images outputs/主题名/图1.png
    ```
    `--headed` 能直接看到浏览器停在哪一步。
@@ -85,7 +85,7 @@ mp.toutiao.com/profile_v4/graphic/publish   图文发布页
 
 - profile 目录：`~/.easel-browser-profiles/ToutiaoProfile`
 - 失效表现：访问发布页被跳回 `auth/page/login`，脚本返回 `未登录头条号：先跑 --login 扫码`
-- 头条登录常要求短信验证，`--login` 时留意手机；同一 profile 长期复用可显著降低二次验证概率
+- 头条登录可能要求手机号绑定或短信验证，使用 `login --headed` 在可见浏览器完成。只展示识别到的二维码元素，未知表单不截图；登录核验需要平台会话 Cookie 与创作者界面，页面空白或加载中属于未知，不覆盖已有账号状态。
 - 别把 profile 目录提交进仓库（`.gitignore` 已排除 `~/.easel-browser-profiles` 这类 home 目录）
 
 ## 六、发布留痕

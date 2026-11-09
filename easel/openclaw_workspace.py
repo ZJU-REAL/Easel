@@ -30,7 +30,7 @@ PROFILE = "easel"
 def state_dir() -> Path:
     """profile 的 state 目录（配置/凭据所在），与 gateway_questions 同一约定。"""
     override = os.environ.get("EASEL_OPENCLAW_STATE_DIR")
-    return Path(override) if override else Path.home() / f".openclaw-{PROFILE}"
+    return Path(override).expanduser() if override else Path.home() / f".openclaw-{PROFILE}"
 
 
 def config_path() -> Path:
@@ -56,24 +56,27 @@ def _ask_openclaw() -> Path | None:
                               errors="replace", timeout=20)
         if proc.returncode != 0:
             return None
-        agents = json.loads(proc.stdout).get("agents") or {}
+        payload = json.loads(proc.stdout)
+        agents = payload.get("agents") if isinstance(payload, dict) else None
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
 
+    if not isinstance(agents, dict):
+        return None
     entries = agents.get("agents")
     if not isinstance(entries, list):
         return None
     default_id = agents.get("defaultId")
-    # 优先取默认 agent 那条；没有 defaultId 就退而取第一条带 workspaceDir 的。
-    for want_default in (True, False):
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            if want_default and entry.get("id") != default_id:
-                continue
-            wd = entry.get("workspaceDir")
-            if isinstance(wd, str) and wd.strip():
-                return Path(wd)
+    # 有明确默认 agent 时，只接受它的目录；不能用另一个 agent 的旧副本报绿。
+    # 旧版没有 defaultId 时，才兼容取第一条带 workspaceDir 的记录。
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if default_id and entry.get("id") != default_id:
+            continue
+        wd = entry.get("workspaceDir")
+        if isinstance(wd, str) and wd.strip():
+            return Path(wd)
     return None
 
 
@@ -83,20 +86,28 @@ def _from_config() -> Path | None:
         cfg = json.loads(config_path().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
-    agents = cfg.get("agents") or {}
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return None
     # 按 agent 的覆盖优先于 defaults。per-agent 条目在 2026.6.x 里是 `agents.list`（数组，
     # 见其 dist/config-utils 的 Array.isArray(cfg.agents?.list) 判定）；`agents.entries` 是
     # 另一种形态，两种都认，谁在就读谁 —— 这一级只在「连 openclaw 都调不起来」时才走到。
     per_agent = []
     listed = agents.get("list")
     if isinstance(listed, list):
-        per_agent = [e for e in listed if isinstance(e, dict) and e.get("id") == "main"]
+        per_agent = [e for e in listed if isinstance(e, dict)]
+        # OpenClaw 先选显式 default，再选列表首项；main 只是未配置 agent 时的默认 id。
+        selected = next((e for e in per_agent if e.get("default") is True),
+                        per_agent[0] if per_agent else None)
+        per_agent = [selected] if selected else []
     entries = agents.get("entries")
-    if isinstance(entries, dict) and isinstance(entries.get("main"), dict):
+    if not per_agent and isinstance(entries, dict) and isinstance(entries.get("main"), dict):
         per_agent.append(entries["main"])
-    for value in [e.get("workspace") for e in per_agent] + [(agents.get("defaults") or {}).get("workspace")]:
+    defaults = agents.get("defaults")
+    default_workspace = defaults.get("workspace") if isinstance(defaults, dict) else None
+    for value in [e.get("workspace") for e in per_agent] + [default_workspace]:
         if isinstance(value, str) and value.strip():
-            return Path(os.path.expanduser(value))
+            return Path(value.strip()).expanduser()
     return None
 
 
@@ -125,7 +136,15 @@ def _version_default() -> Path:
 
 
 @lru_cache(maxsize=1)
-def workspace_dir() -> Path:
+def _fallback_workspace() -> Path:
+    for resolver in (_ask_openclaw, _from_config, _existing_with_content):
+        got = resolver()
+        if got is not None:
+            return got
+    return _version_default()
+
+
+def workspace_dir(*, refresh: bool = False) -> Path:
     """agent 实际读取的 workspace。写入端（sync）与检查端（doctor）都必须用它。
 
     逐级退化，前面拿到就不往下走：
@@ -135,14 +154,14 @@ def workspace_dir() -> Path:
       4. 已经有内容的那个候选目录 —— 老机器原地不动，不触发"搬家"
       5. 按 openclaw 版本推默认布局
     """
+    # 诊断/同步操作可刷新运行时结果；普通调用复用昂贵的 status 探针。
+    # 环境覆盖在缓存之外读取，保证同一进程中修改覆盖也能立即生效。
+    if refresh:
+        _fallback_workspace.cache_clear()
     override = os.environ.get("EASEL_OPENCLAW_WORKSPACE")
     if override:
-        return Path(override)
-    for resolver in (_ask_openclaw, _from_config, _existing_with_content):
-        got = resolver()
-        if got is not None:
-            return got
-    return _version_default()
+        return Path(override).expanduser().resolve()
+    return _fallback_workspace().expanduser().resolve()
 
 
 if __name__ == "__main__":

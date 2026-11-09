@@ -197,6 +197,49 @@ def test_login_subcommand_defaults_to_outputs_login_dir(monkeypatch):
     assert captured["status_file"].parent.name == "_login"
 
 
+def test_phone_binding_is_not_a_completed_login():
+    """扫码后手机号绑定页位于头条域名，也不能放行发布。"""
+    class Visible:
+        def is_visible(self):
+            return True
+
+    class BindingPage:
+        url = "https://mp.toutiao.com/profile/v4/index"
+        frames = []
+
+        def get_by_text(self, text, exact=False):
+            assert text == "手机绑定" and exact
+            return type("Locator", (), {"first": Visible(), "all": lambda self: [Visible()]})()
+
+        def locator(self, selector):
+            assert "placeholder" in selector
+            return type("Locator", (), {"first": Visible(), "all": lambda self: [Visible()]})()
+
+    page = BindingPage()
+    assert tp._needs_phone_binding(page)
+    assert not tp._is_logged_in(page)
+
+
+def test_backend_confirmation_rejects_intermediate_redirect(monkeypatch):
+    """扫码后的临时跳转不能跳过后台的手机绑定要求。"""
+    class RedirectPage:
+        url = "https://mp.toutiao.com/intermediate"
+        binding = False
+
+        def goto(self, url, **kwargs):
+            assert url == tp.HOME_URL
+            self.url = url
+            self.binding = True
+
+        def wait_for_timeout(self, ms):
+            assert ms >= 2000
+
+    page = RedirectPage()
+    monkeypatch.setattr(tp, "_needs_phone_binding", lambda p: p.binding)
+    assert not tp._backend_authenticated(page)
+    assert page.binding
+
+
 def test_whoami_prints_single_json_line(monkeypatch, capsys):
     monkeypatch.setattr(tp, "_probe_identity",
                         lambda *a, **k: {"loggedIn": True, "name": "我的头条号", "avatar": ""})

@@ -2,8 +2,9 @@ import { Component, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { fetchTrendSources, fetchTrends, createIdea } from '../lib/api';
 import type { TrendGroup, TrendSource } from '../lib/api';
-import { IconFire, IconRefresh, IconBookmark, IconCheck } from './icons';
+import { IconFire, IconRefresh, IconBookmark, IconCheck, IconChat } from './icons';
 import TrendSourcesDialog from './TrendSourcesDialog';
+import ContentPanel from './ContentPanel';
 
 interface TrendsPageProps {
   onUseTopic: (title: string) => void;   // 一键做成内容 → 跳 chat
@@ -112,7 +113,7 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
         </button></div>
       </div>
 
-      <div className="trend-platforms">
+      <div className="trend-platforms trend-source-controls" role="group" aria-label="选择热点数据源">
         {sources.map((p) => (
           <button key={p.id} className={`chip ${selected.includes(p.id) ? 'active' : ''}`}
             aria-pressed={selected.includes(p.id)} onClick={() => toggle(p.id)}>{p.label}</button>
@@ -129,14 +130,13 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
 
       <div className="trend-grid">
         {groups.map((g) => (
-          <div key={g.platform} className="card trend-col">
-            <div className="trend-col-head">{g.label}<span className="trend-count">{g.items.length}</span></div>
+          <ContentPanel key={g.platform} className="trend-col" label={`${g.label}热点列表`} header={
+            <div className="trend-col-head"><span className="trend-source-label" title={g.label}>{g.label}</span><span className="trend-count">{g.items.length}</span></div>}>
             <div className="trend-source-status">
               {g.fetched_at && <span>采集于 {new Date(g.fetched_at).toLocaleString('zh-CN')}</span>}
               {g.stale && <span> · 缓存已过期</span>}
               {g.error && <div role="status">{g.error.message}{g.stale ? '，暂用上次结果' : ''}</div>}
             </div>
-            <div className="trend-list">
               {g.items.length === 0 && !loading && (
                 <div className="trend-empty">
                   {!g.ok ? '该数据源暂时不可用' : '采集成功，暂无热点'}
@@ -150,17 +150,18 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
                       title={it.title}>{it.title}</a>
                     {it.hot && <span className="trend-hot">{it.hot}</span>}
                   </div>
-                  <button className="trend-save" title={saved.has(`${g.platform}:${it.id}`) ? '已收藏到选题库' : '收藏到选题库'}
-                    aria-label={`收藏选题：${it.title}`}
-                    onClick={() => save(`${g.platform}:${it.id}`, it.title, g.label)}>
-                    {saved.has(`${g.platform}:${it.id}`) ? <IconCheck size={14} /> : <IconBookmark size={14} />}
-                  </button>
-                  <button className="trend-use" title="做成内容"
-                    onClick={() => onUseTopic(it.title)}>做内容</button>
+                  <div className="trend-item-actions">
+                    <button className="trend-save" title={saved.has(`${g.platform}:${it.id}`) ? '已收藏到选题库' : '收藏到选题库'}
+                      aria-label={`${saved.has(`${g.platform}:${it.id}`) ? '已收藏' : '收藏选题'}：${it.title}`}
+                      onClick={() => save(`${g.platform}:${it.id}`, it.title, g.label)}>
+                      {saved.has(`${g.platform}:${it.id}`) ? <IconCheck size={14} /> : <IconBookmark size={14} />}
+                    </button>
+                    <button className="trend-use" title="做成内容" aria-label={`做成内容：${it.title}`}
+                      onClick={() => onUseTopic(it.title)}><IconChat size={14} /></button>
+                  </div>
                 </div>
               ))}
-            </div>
-          </div>
+          </ContentPanel>
         ))}
       </div>
       {managerOpen && <TrendSourcesDialog onClose={() => setManagerOpen(false)} onChanged={addedId => {
