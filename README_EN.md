@@ -182,7 +182,7 @@ For faster browsing, each cover opens a lightweight preview of up to one minute.
 
 ## 🚀 Quick Start
 
-Requirements: Linux, macOS, or Windows 10/11, Python 3.10+, and Git. The installer checks Node.js 24.16+ (24.x), 26.1+ (26.x), or 27+ (25.x and 26.0 are unsupported), plus FFmpeg and Playwright/Chromium. It provides a platform-specific guide when Node.js is missing.
+Requirements: Linux, macOS, or Windows 10/11, Python 3.10+, and Git. The installer checks Node.js 24.22.1+ (24.x), 26.12.1+ (26.x), or 27+ (25.x is unsupported), plus FFmpeg and Playwright/Chromium. It provides a platform-specific guide when Node.js is missing.
 
 ```bash
 git clone git@github.com:ZJU-REAL/Easel.git

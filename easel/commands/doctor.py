@@ -41,7 +41,7 @@ def _check(label: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
-def _node_version_ok(strict: bool) -> bool:
+def _node_version_ok(strict: bool, patched: bool = False) -> bool:
     """检查 Node.js 版本。
 
     strict=True 对齐 openclaw@latest（2026.9.x）的引擎：>=24.16.0 <25 || >=26.1.0（25.x/26.0 被排除）。
@@ -58,11 +58,14 @@ def _node_version_ok(strict: bool) -> bool:
         if result.returncode != 0:
             return False
         # e.g. "v24.21.0"
-        m = re.match(r"v(\d+)\.(\d+)", result.stdout.strip())
+        m = re.match(r"v(\d+)\.(\d+)\.(\d+)", result.stdout.strip())
         if not m:
             return False
         major, minor = int(m.group(1)), int(m.group(2))
         if strict:
+            if patched:
+                patch = int(m.group(3))
+                return (major == 24 and (minor, patch) >= (22, 1)) or (major == 26 and (minor, patch) >= (12, 1)) or major >= 27
             return (major == 24 and minor >= 16) or (major == 26 and minor >= 1) or major >= 27
         return (major, minor) >= (22, 19)
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -564,9 +567,10 @@ def cmd_doctor(_args) -> int:
         # （openclaw@latest）从严要求 24.16+。
         oc_ver = _openclaw_version()
         node_strict = oc_ver is None or oc_ver >= (2026, 9, 0)
-        node_floor = "24.16" if node_strict else "22.19"
+        patched_node = oc_ver is None or (2026, 10, 8) <= oc_ver < (2026, 11, 2)
+        node_floor = "24.22.1" if patched_node else ("24.16" if node_strict else "22.19")
         has_node = shutil.which("node") is not None
-        node_ok = _node_version_ok(node_strict)
+        node_ok = _node_version_ok(node_strict, patched_node)
         node_detail = (f"请安装 Node.js >= {node_floor}: https://nodejs.org/" if not has_node
                        else f"Node.js 版本不满足当前 OpenClaw 要求，请升级到 >= {node_floor}: https://nodejs.org/")
         all_ok &= _check(f"Node.js >= {node_floor}", node_ok, node_detail)

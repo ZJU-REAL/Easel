@@ -64,8 +64,8 @@ def _fake_bin(tmp_path: Path) -> Path:
         "exit 0\n", encoding="utf-8")
     (bin_dir / "node").write_text(
         "#!/usr/bin/env bash\n"
-        'if [ "$1" = "-v" ]; then echo "v24.21.0"; exit 0; fi\n'
-        'if [ "$1" = "-p" ]; then echo "24.21.0"; exit 0; fi\n'
+        'if [ "$1" = "-v" ]; then echo "v24.22.1"; exit 0; fi\n'
+        'if [ "$1" = "-p" ]; then echo "24.22.1"; exit 0; fi\n'
         "exit 0\n", encoding="utf-8")
     (bin_dir / "npm").write_text(
         "#!/usr/bin/env bash\n"

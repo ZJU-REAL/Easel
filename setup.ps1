@@ -305,17 +305,17 @@ if ($SkipOpenClaw) {
 Step '1/8' '检查系统环境' 'Python · Node.js · Git · FFmpeg'
 Info '检查系统环境...'
 Install-RequiredCommand 'git' 'Git.Git' '请安装 Git for Windows 并加入 PATH。'
-Install-RequiredCommand 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.16+ 并加入 PATH。'
-Install-RequiredCommand 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.16+ 并加入 PATH。'
+Install-RequiredCommand 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.22.1+ 并加入 PATH。'
+Install-RequiredCommand 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.22.1+ 并加入 PATH。'
 if (-not (Get-Command python -ErrorAction SilentlyContinue) -and -not (Get-Command py -ErrorAction SilentlyContinue)) { Install-RequiredCommand 'python' 'Python.Python.3.12' '请安装 Python 3.10+ 并勾选 Add Python to PATH。' }
 Install-RequiredCommand 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH。'
-# 跟随 openclaw@latest 的引擎要求（当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0，25.x/26.0 被排除）。
+# 兼容 OpenClaw 2026.10.8 已发布的严格补丁下限，25.x 不兼容。
 $nodeParts = (& node -p 'process.versions.node').Split('.') | ForEach-Object { [int]$_ }
-$nodeOk = ($nodeParts[0] -eq 24 -and $nodeParts[1] -ge 16) -or ($nodeParts[0] -eq 26 -and $nodeParts[1] -ge 1) -or ($nodeParts[0] -ge 27)
+$nodeOk = ($nodeParts[0] -eq 24 -and ($nodeParts[1] -gt 22 -or ($nodeParts[1] -eq 22 -and $nodeParts[2] -ge 1))) -or ($nodeParts[0] -eq 26 -and ($nodeParts[1] -gt 12 -or ($nodeParts[1] -eq 12 -and $nodeParts[2] -ge 1))) -or ($nodeParts[0] -ge 27)
 if ($SkipOpenClaw) {
     $nodeOk = ($nodeParts[0] -eq 20 -and $nodeParts[1] -ge 19) -or ($nodeParts[0] -eq 22 -and $nodeParts[1] -ge 12) -or ($nodeParts[0] -ge 23)
 }
-if (-not $nodeOk) { Fail '当前 Node.js 不满足安装依赖；仅安装 Web 需要 20.19+（20.x）或 22.12+，安装 openclaw@latest 需要 24.16+（24.x）或 26.1+。' }
+if (-not $nodeOk) { Fail '当前 Node.js 不满足安装依赖；仅安装 Web 需要 20.19+（20.x）或 22.12+，安装 openclaw@latest 需要 24.22.1+（24.x）或 26.12.1+。' }
 $pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
 # 这是一次可用性探测：python 存在但跑不起来（典型是 Windows 应用商店的占位 python.exe）
 # 时要安静地换下一个候选，不能让它抛 NativeCommandError 把安装打断。
