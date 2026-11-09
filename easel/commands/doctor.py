@@ -133,28 +133,29 @@ def _gateway_healthy() -> bool:
         return False
 
 
-def _skills_synced() -> tuple[bool, str]:
+def _skills_synced(ws: Path | None = None) -> tuple[bool, str]:
     """检查 agent 真正读取的那个 workspace 里有没有 skills。
 
     这里的目标目录**不能**硬编码：OpenClaw 的默认布局在 2026.6.x / 2026.9.x 之间变过
     （见 easel/openclaw_workspace.py）。以前这里写死了旧布局，而 sync.sh 写的是新布局，
     于是同步脚本报 "synced"、doctor 报绿，agent 却读不到任何技能（issue #19）。
     """
-    from easel.openclaw_workspace import workspace_dir
+    from easel.skills_sync import agent_workspace
 
-    ws = workspace_dir()
-    skills_dir = ws / "skills"
     try:
+        ws = agent_workspace() if ws is None else ws
+        skills_dir = ws / "skills"
         ok = skills_dir.is_dir() and any(skills_dir.iterdir())
-    except OSError:
-        ok = False
-    return ok, f"agent 实际读取的 workspace 是 {ws}，其中 skills/ 为空或不存在"
+    except (OSError, ValueError, RuntimeError):
+        return False, f"无法检查 workspace {ws} 的 skills/ 目录"
+    state = "存在" if ok else "为空或不存在"
+    return ok, f"agent 实际读取的 workspace 是 {ws}，其中 skills/ {state}"
 
 
-def _skills_fresh() -> tuple[bool, str]:
+def _skills_fresh(ws: Path | None = None) -> tuple[bool, str]:
     """Check current repository skill files independently of workspace existence."""
     from easel.skills_sync import skills_sync_state
-    return skills_sync_state()
+    return skills_sync_state(ws)
 
 
 def _env_key_valid() -> bool:
@@ -642,13 +643,21 @@ def cmd_doctor(_args) -> int:
         all_ok &= _check(f"OpenClaw gateway (localhost:{resolve_gateway_port()})", gw_ok,
                           f"运行 python -m easel gateway start（端口来自 {port_source()}）")
 
-        # 5. Skills synced
-        synced, synced_detail = _skills_synced()
-        all_ok &= _check("Skills synced", synced,
-                          f"{synced_detail}；重新运行 setup.ps1（Windows）或 bash agents/sync.sh（Linux/macOS）")
-        fresh, fresh_detail = _skills_fresh()
-        all_ok &= _check("Skills up-to-date", fresh,
-                          f"{fresh_detail}；运行 python scripts/sync_if_stale.py；已有会话的缓存重载由底座决定")
+        # 5. 存在性与内容新旧分开报告，并在同一 workspace 上检查。
+        from easel.skills_sync import agent_workspace
+        try:
+            ws = agent_workspace()
+            synced, synced_detail = _skills_synced(ws)
+            fresh, fresh_detail = _skills_fresh(ws)
+        except (OSError, ValueError, RuntimeError):
+            synced = fresh = False
+            synced_detail = fresh_detail = "无法解析 agent workspace，未确认同步"
+        if not fresh and "python scripts/sync_if_stale.py" not in fresh_detail:
+            fresh_detail += "；运行 python scripts/sync_if_stale.py"
+        all_ok &= _check("Skills synced", synced, synced_detail)
+        all_ok &= _check("Skills up-to-date", fresh, fresh_detail)
+        if fresh:
+            print(f"    └─ {fresh_detail}")
 
     # 6. Key project files
     gateway_label = "scripts/gateway.ps1" if os.name == "nt" else "scripts/gateway.sh"
