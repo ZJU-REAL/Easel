@@ -28,6 +28,7 @@ else:
     import fcntl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import login_qr  # noqa: E402
 import login_state  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -212,13 +213,81 @@ def _account_identity(page):
     return identity
 
 
-def _capture_qr(page, qr_out, attempts=25, fallback=True):
-    """等二维码 img 真正渲染(complete && naturalWidth>0)后再截图。"""
+QR_IMG_SEL = "img.login__type__container__scan__qrcode"
+QR_SWITCH_SEL = "a.login__type__container__link_text"
+# 未登录时的两种登录页形态：扫码视图，或记住微账号后的「微信快捷登录」视图
+LOGIN_UI_SEL = f"{QR_IMG_SEL}, {QR_SWITCH_SEL}"
+
+
+def _qr_visible(page):
+    try:
+        el = page.query_selector(QR_IMG_SEL)
+        return bool(el and el.is_visible() and el.bounding_box())
+    except Exception:
+        return False
+
+
+def _ensure_qr_mode(page, timeout=20.0):
+    """mp 记住微信账号后会默认展示「微信快捷登录」，主文档二维码被隐藏，
+    此时只能截到整页。点「扫码登录」切回二维码模式。返回是否已看到二维码。
+
+    只能点一次：每次点击都会 startlogin 重建会话并作废旧二维码，重复点击会让
+    用户刚扫的码变成「已失效」。"""
+    deadline = time.monotonic() + timeout
+    switched = False
+    while time.monotonic() < deadline:
+        if _qr_visible(page):
+            return True
+        if not switched:
+            switched = True
+            for link in page.query_selector_all(QR_SWITCH_SEL):
+                try:
+                    text = (link.inner_text() or "").strip()
+                    if text == "扫码登录" and link.is_visible():
+                        link.click(timeout=3000)
+                        page.wait_for_timeout(1500)
+                        break
+                except Exception:
+                    break
+        page.wait_for_timeout(500)
+    return _qr_visible(page)
+
+
+def _refresh_expired_qr(page):
+    """二维码过期/加载失败后页面会停轮询并盖遮罩，点遮罩内「点击刷新」重新出码。
+    只在过期/失败遮罩上点，避免误点「扫码成功」旁的「重新扫码」取消登录。"""
+    try:
+        masks = page.query_selector_all(".login__type__container__scan_mask")
+    except Exception:
+        return False
+    for mask in masks:
+        try:
+            text = mask.inner_text() or ""
+        except Exception:
+            continue
+        if "已过期" not in text and "加载失败" not in text:
+            continue
+        try:
+            links = mask.query_selector_all("a")
+        except Exception:
+            continue
+        for link in links:
+            try:
+                if link.is_visible():
+                    link.click(timeout=3000)
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def _capture_qr(page, qr_out, attempts=25):
+    """等二维码 img 真正渲染后截图，并校验截图里确实能识别出二维码。
+    校验失败返回 False：绝不把整页/过期遮罩当二维码交给前端。"""
     Path(qr_out).parent.mkdir(parents=True, exist_ok=True)
-    sel = "img[src*='qrcode'], img.login__type__container__scan__qrcode, .login__type__container__scan img"
     for _ in range(attempts):
         try:
-            el = page.query_selector(sel)
+            el = page.query_selector(QR_IMG_SEL)
             if el:
                 box = el.bounding_box()
                 loaded = False
@@ -227,19 +296,13 @@ def _capture_qr(page, qr_out, attempts=25, fallback=True):
                 except Exception:
                     loaded = bool(box and box["width"] > 80)
                 if loaded and box and box["width"] > 80:
-                    el.screenshot(path=str(qr_out))
-                    return True
+                    shot = el.screenshot(timeout=15000)
+                    if login_qr.save_qr(shot, Path(qr_out)):
+                        return True
         except Exception:
             pass
         page.wait_for_timeout(1000)
-    if not fallback:
-        return False
-    # 兜底：整页截（仍可能白，但至少给个东西）
-    try:
-        page.screenshot(path=str(qr_out), timeout=15000)
-        return True
-    except Exception:
-        return False
+    return False
 
 
 def cmd_login(a):
@@ -279,8 +342,11 @@ def _run_login(a):
                 login_state.write_status(status, "success", "已登录（复用会话）")
                 print("already logged in, token acquired")
                 return 0
+            # 默认可能是「微信快捷登录」视图（二维码在 iframe 里或直接隐藏），先切回扫码
+            if not _ensure_qr_mode(page):
+                raise RuntimeError("未找到登录二维码（页面停留在快捷登录/账号页）")
             if not _capture_qr(page, qr_out):
-                raise RuntimeError("二维码截图失败")
+                raise RuntimeError("未识别到登录二维码")
             if a.headed:
                 login_state.write_status(
                     status, "window_login",
@@ -300,10 +366,12 @@ def _run_login(a):
                     # outputs/_login/wechat-oa-mp.log，避免敏感值明文落盘。
                     print("login success, token acquired")
                     return 0
-                # 二维码可能刷新，定期重截
+                # 二维码过期/加载失败时点遮罩里的「点击刷新」再重截；
+                # 不要重复点「扫码登录」——那会重建会话并作废用户正在扫的二维码。
                 try:
                     if time.monotonic() >= next_capture and not _extract_token(page.url):
-                        _capture_qr(page, qr_out, attempts=1, fallback=False)
+                        _refresh_expired_qr(page)
+                        _capture_qr(page, qr_out, attempts=1)
                         next_capture = time.monotonic() + 5
                 except Exception:
                     pass
@@ -799,12 +867,12 @@ def cmd_whoami(a):
                         out.update(loggedIn=True, **_account_identity(page))
                         if out["name"] and out["avatar"]:
                             break
-                    elif page.query_selector("img.login__type__container__scan__qrcode, img[src*='qrcode']"):
+                    elif page.query_selector(f"img[src*='qrcode'], {LOGIN_UI_SEL}"):
                         break
                     page.wait_for_timeout(500)
                 out["loggedIn"] = bool(_extract_token(page.url))
                 if not out["loggedIn"] and not page.query_selector(
-                        "img.login__type__container__scan__qrcode, img[src*='qrcode']"):
+                        f"img[src*='qrcode'], {LOGIN_UI_SEL}"):
                     out["error"] = "公众号账号页面尚未就绪，请稍后重试"
             finally:
                 ctx.close()
