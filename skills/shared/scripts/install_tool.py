@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,13 +59,59 @@ def _pip_chain(*pkgs: str, timeout: int = 1200) -> list[tuple]:
 
 WHISPER_MODEL_PY = (
     "import os;os.environ.setdefault('HF_ENDPOINT','https://hf-mirror.com');"
+    "os.environ['HF_HUB_DISABLE_XET']='1';"
     "from huggingface_hub import snapshot_download;"
     "print(snapshot_download('Systran/faster-whisper-large-v3',"
     "local_dir=os.path.expanduser('~/models/whisper-large-v3')))"
 )
 
+FW_CHECK_PY = """
+import io, wave
+import faster_whisper
+from faster_whisper.audio import decode_audio
+audio = io.BytesIO()
+with wave.open(audio, 'wb') as wav:
+    wav.setnchannels(1)
+    wav.setsampwidth(2)
+    wav.setframerate(16000)
+    wav.writeframes(b'\\x00\\x00' * 16000)
+audio.seek(0)
+samples = decode_audio(audio, sampling_rate=16000)
+if len(samples) != 16000:
+    raise RuntimeError('one-second audio decode failed')
+print(getattr(faster_whisper, '__version__', 'ok'))
+"""
 
-def _pyfn_check_cft() -> tuple[bool, str]:
+BROWSER_CHECK_PY = """
+import sys
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+with sync_playwright() as pw:
+    executable = sys.argv[1] if len(sys.argv) > 1 else pw.chromium.executable_path
+    if not Path(executable).is_file():
+        raise RuntimeError('Playwright Chromium executable is missing')
+    browser = pw.chromium.launch(executable_path=executable, headless=True, timeout=15000)
+    try:
+        print(browser.version)
+    finally:
+        browser.close()
+"""
+
+RM_DEPS_CHECK_PY = """
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+package = json.loads((root / 'package.json').read_text(encoding='utf-8'))
+names = set(package.get('dependencies', {})) | set(package.get('devDependencies', {}))
+names.add('@remotion/renderer')
+missing = [name for name in names if not (root / 'node_modules' / name / 'package.json').is_file()]
+if missing:
+    raise RuntimeError('Missing project packages: ' + ', '.join(sorted(missing)))
+print('Remotion project dependencies present')
+"""
+
+
+def _pyfn_check_cft(python: str | None = None) -> tuple[bool, str]:
     import glob
     la = os.environ.get("LOCALAPPDATA", "")
     pf, pf86 = os.environ.get("PROGRAMFILES", ""), os.environ.get("PROGRAMFILES(X86)", "")
@@ -78,16 +125,67 @@ def _pyfn_check_cft() -> tuple[bool, str]:
     w = shutil.which("chrome")
     if w:
         cands.append(w)
-    if cands:
-        return True, Path(sorted(cands)[-1]).parent.parent.name or "已装"
+    for candidate in sorted(cands, reverse=True):
+        if Path(candidate).is_file():
+            try:
+                result = _run([python or sys.executable, '-c', BROWSER_CHECK_PY, candidate], timeout=30)
+                if result.returncode == 0:
+                    return True, (result.stdout or result.stderr).strip()
+            except (OSError, subprocess.SubprocessError):
+                pass
     return False, ""
 
 
 def _pyfn_check_model() -> tuple[bool, str]:
     d = Path(os.path.expanduser("~/models/whisper-large-v3"))
-    if d.is_dir() and any(d.iterdir()):
-        return True, "模型目录已就绪"
-    return False, ""
+    try:
+        weights = d / 'model.bin'
+        if not weights.is_file() or weights.stat().st_size < 2_500_000_000:
+            return False, 'large-v3 权重缺失或下载不完整'
+        for name in ('config.json', 'tokenizer.json'):
+            json.loads((d / name).read_text(encoding='utf-8'))
+        return True, 'large-v3 权重与配置文件齐全'
+    except (OSError, ValueError):
+        return False, 'large-v3 配置或分词器缺失/损坏'
+
+
+def _default_remotion_dir() -> str | None:
+    root = os.environ.get('EASEL_ROOT')
+    if not root:
+        parents = Path(__file__).resolve().parents
+        if len(parents) < 4:
+            return None
+        root = str(parents[3])
+    directory = Path(root) / 'skills/builtin/video-production/vendor/video-pipeline-sdk/deps/remotion'
+    return str(directory) if (directory / 'package.json').is_file() else None
+
+
+def _check_shell(directory: str) -> tuple[bool, str]:
+    cache = Path(directory) / 'node_modules/.remotion/chrome-headless-shell'
+    try:
+        version = (cache / 'VERSION').read_text().strip()
+        if not re.fullmatch(r'\d+\.\d+\.\d+\.\d+', version):
+            return False, '浏览器下载未完成（版本记录无效）'
+        renderer_metadata = Path(directory) / 'node_modules/@remotion/renderer/dist/browser/get-chrome-download-url.js'
+        with renderer_metadata.open(encoding='utf-8') as source:
+            expected = re.search(r"TESTED_VERSION\s*=\s*['\"]([0-9.]+)['\"]", source.read(128 * 1024))
+        if not expected or expected.group(1) != version:
+            return False, '浏览器缓存版本与已安装的 Remotion 不一致'
+        machine = platform.machine().lower()
+        platform_id = ('win64' if sys.platform == 'win32' else
+                       ('mac-arm64' if machine in ('arm64', 'aarch64') else 'mac-x64') if sys.platform == 'darwin' else
+                       ('linux-arm64' if machine in ('arm64', 'aarch64') else 'linux64'))
+        folder = cache / platform_id / f'chrome-headless-shell-{platform_id}'
+        names = ('chrome-headless-shell.exe',) if sys.platform == 'win32' else ('chrome-headless-shell', 'headless_shell')
+        for name in names:
+            executable = folder / name
+            if executable.is_file() and executable.stat().st_size:
+                result = _run([str(executable), '--version'], timeout=15)
+                if result.returncode == 0 and version in (result.stdout or result.stderr):
+                    return True, version
+        return False, '浏览器可执行文件缺失或不可运行'
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False, '浏览器缓存未完成，请安装 Chrome Headless Shell'
 
 
 _PYFN = {"cft": _pyfn_check_cft, "model": _pyfn_check_model}
@@ -112,8 +210,8 @@ TOOLS: list[Tool] = [
            ["winget", "install", "-e", "--id", "Python.Python.3.13",
             "--accept-source-agreements", "--accept-package-agreements"], 900)]),
     Tool("fw", "faster-whisper", "rm", "GPU 转录（cu121）",
-         ["{python}", "-c", "import faster_whisper as f;print(getattr(f,'__version__','ok'))"],
-         _pip_chain("faster-whisper", timeout=1800)),
+         ["{python}", "-c", FW_CHECK_PY],
+         _pip_chain("faster-whisper", "av<19", timeout=1800)),
     Tool("model", "Whisper large-v3 模型", "rm", "约 3.1GB · hf-mirror 直拉 · 不入包",
          ["@pyfn:model"],
          _pip_chain("huggingface_hub", timeout=600)
@@ -121,7 +219,7 @@ TOOLS: list[Tool] = [
          big=True),
     Tool("rmdeps", "Remotion 工程依赖", "rm", "蓝本内置 · npm ci 还原（镜像加速）",
          ["{python}", "-c",
-          "import os,sys;sys.exit(0 if os.path.isdir(os.path.join(sys.argv[1],'node_modules')) else 1)",
+          RM_DEPS_CHECK_PY,
           "{dir}"],
          [("npm ci · npmmirror 镜像", ["npm", "ci", "--registry=https://registry.npmmirror.com"], 1800)],
          needs_dir=True),
@@ -131,10 +229,10 @@ TOOLS: list[Tool] = [
          needs_dir=True),
     # ── 发布链 ──
     Tool("biliup", "biliup", "pub", "B站投稿 CLI · python 包装",
-         ["biliup", "--version"],
+         ["{python}", "-m", "biliup", "--version"],
          _pip_chain("biliup", timeout=1800)),
     Tool("pw", "Playwright Chromium", "pub", "小红书 / 快手 / 知乎 发布链浏览器",
-         ["{python}", "-c", "import playwright;print('playwright ok')"],
+         ["{python}", "-c", BROWSER_CHECK_PY],
          _pip_chain("playwright")
          + [("下载 Chromium", ["{python}", "-m", "playwright", "install", "chromium"], 1800)]),
     Tool("cft", "Chrome for Testing", "pub", "登录态浏览器 · 平台登录用",
@@ -205,6 +303,8 @@ def _python_version(python: str) -> tuple:
 def resolve_python() -> str:
     """选目标解释器；结果缓存。可选 --python 覆盖（见 main）。"""
     global _PY_LIST
+    if sys.prefix != getattr(sys, 'base_prefix', sys.prefix) or hasattr(sys, 'real_prefix'):
+        return sys.executable
     if _PY_LIST:
         return _PY_LIST[0]
     path_env = os.environ.get("PATH", "").lower()
@@ -309,19 +409,26 @@ def _run(argv: list[str], *, cwd: str | None = None, timeout: int = 600):
 def check_tool(tool: Tool, python: str, dir_: str | None = None) -> dict:
     """单个体检 → {"id","state","version","detail"}；state: ok | missing | no_dir"""
     if tool.needs_dir and not dir_:
+        dir_ = _default_remotion_dir()
+    if tool.needs_dir and not dir_:
         return {"id": tool.id, "state": "no_dir", "version": None, "detail": "需要 --dir（工程目录）"}
     try:
         if tool.check[0].startswith("@pyfn:"):
             name = tool.check[0].split(":", 1)[1]
             if name == "shell":  # 依赖工程目录（无 dir 已在前面返回 no_dir）
-                import glob
-                g = glob.glob(os.path.join(dir_, "node_modules", ".remotion", "**",
-                                           "chrome-headless-shell*"), recursive=True)
-                return {"id": tool.id, "state": "ok" if g else "missing",
-                        "version": "已缓存" if g else None, "detail": None}
+                ok, detail = _check_shell(dir_)
+                return {"id": tool.id, "state": "ok" if ok else "missing",
+                        "version": detail if ok else None, "detail": None if ok else detail}
+            if name == 'cft':
+                ok, detail = _pyfn_check_cft(python)
+                if not ok:
+                    result = _run([python, '-c', BROWSER_CHECK_PY], timeout=30)
+                    ok, detail = result.returncode == 0, (result.stdout or result.stderr).strip()
+                return {"id": tool.id, "state": "ok" if ok else "missing",
+                        "version": detail if ok else None, "detail": None if ok else detail}
             ok, detail = _PYFN[name]()
             return {"id": tool.id, "state": "ok" if ok else "missing",
-                    "version": detail if ok else None, "detail": None}
+                    "version": detail if ok else None, "detail": None if ok else detail}
         argv = _fill(tool.check, python, dir_)
         if not os.path.isabs(argv[0]):
             found = _find_cli(argv[0], python)
@@ -332,7 +439,7 @@ def check_tool(tool: Tool, python: str, dir_: str | None = None) -> dict:
             first = (proc.stdout or proc.stderr or "").strip().splitlines()
             return {"id": tool.id, "state": "ok",
                     "version": (first[0].strip()[:70] if first else "已装"), "detail": None}
-        return {"id": tool.id, "state": "missing", "version": None, "detail": None}
+        return {"id": tool.id, "state": "missing", "version": None, "detail": _err_tail(proc) or None}
     except FileNotFoundError:
         return {"id": tool.id, "state": "missing", "version": None, "detail": None}
     except Exception as e:  # noqa: BLE001
@@ -406,9 +513,18 @@ def _ensure_user_path(d: str) -> str:
 def install_tool(tool: Tool, python: str, dir_: str | None = None) -> dict:
     """一键装：策略链依次尝试 → 装完重跑 check，认到才算成。"""
     if tool.needs_dir and not dir_:
+        dir_ = _default_remotion_dir()
+    if tool.needs_dir and not dir_:
         _die(f"{tool.id} 需要 --dir <工程目录>（{tool.desc}）", 3)
     if tool.needs_dir and not (Path(dir_) / "package.json").is_file():
         _die(f"{dir_} 里没有 package.json，不是 Remotion 工程目录", 3)
+    if tool.id == 'shell':
+        dependencies = next(t for t in TOOLS if t.id == 'rmdeps')
+        if check_tool(dependencies, python, dir_)['state'] != 'ok':
+            result = install_tool(dependencies, python, dir_)
+            if result['state'] != 'ok':
+                return {'id': tool.id, 'state': 'fail', 'version': None, 'strategy': None,
+                        'detail': 'Remotion 工程依赖未就绪，浏览器安装未启动'}
 
     pre = check_tool(tool, python, dir_)
     if pre["state"] == "ok":
@@ -454,6 +570,9 @@ def _ensure_cli_visible(tool: Tool, python: str) -> str:
     if not found:
         return ""
     d = os.path.dirname(found)
+    if (sys.prefix != getattr(sys, 'base_prefix', sys.prefix) or hasattr(sys, 'real_prefix')):
+        if Path(d).resolve().is_relative_to(Path(sys.prefix).resolve()):
+            return ''
     r = _ensure_user_path(d)
     if r == "changed":
         return f"（已把 {d} 追加进用户 PATH，新进程生效）"

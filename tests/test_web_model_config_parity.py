@@ -47,6 +47,24 @@ def test_anthropic_provider_declares_api(oc_cfg):
     assert prov["apiKey"] == "sk-test-key"
 
 
+def test_explicit_bearer_headers_are_synced_even_when_base_and_key_are_unchanged(oc_cfg):
+    app._sync_anthropic_provider('https://example.test/v1', 'example-key')
+    app._sync_anthropic_provider('https://example.test/v1', 'example-key', {'Authorization': 'Bearer example-key'})
+    provider = json.loads(oc_cfg.read_text())['models']['providers']['anthropic']
+    assert provider['headers']['Authorization'] == 'Bearer example-key'
+
+
+def test_rotating_key_updates_matching_headers_and_preserves_unrelated_values(oc_cfg):
+    config = {'models': {'providers': {'anthropic': {
+        'api': 'anthropic-messages', 'baseUrl': 'https://example.test/v1', 'apiKey': 'old-example-key',
+        'headers': {'Authorization': 'Bearer old-example-key', 'api-key': 'old-example-key', 'X-Request-Mode': 'keep'},
+        'models': []}}}}
+    oc_cfg.write_text(json.dumps(config))
+    app._sync_anthropic_provider('https://example.test/v1', 'new-example-key')
+    provider = json.loads(oc_cfg.read_text())['models']['providers']['anthropic']
+    assert provider['headers'] == {'Authorization': 'Bearer new-example-key', 'api-key': 'new-example-key', 'X-Request-Mode': 'keep'}
+
+
 def test_incomplete_existing_provider_gets_repaired(oc_cfg):
     """早退判据要把 api 算进去，否则缺 api 的残缺 provider 永远修不回来。"""
     oc_cfg.write_text(json.dumps({"models": {"providers": {"anthropic": {

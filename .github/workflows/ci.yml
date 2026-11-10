@@ -87,12 +87,15 @@ jobs:
           done
 
       - name: ShellCheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: '.'
-          severity: warning
-          # 技能自带的 vendor 脚本不在本仓库维护范围内
-          ignore_paths: skills/builtin/video-production/vendor
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck --version
+          # 仅检查本仓库维护的脚本；Ubuntu runner 使用现有工具，避免外部 action 下载空包。
+          git ls-files -z -- '*.sh' ':!:skills/builtin/video-production/vendor/**' |
+            xargs -0 --no-run-if-empty shellcheck --severity=warning --format=gcc
 
       # PowerShell 侧：解析 + 静态分析。作者的开发机是 Linux，改 setup.ps1 没法本地验证，
       # 这里是唯一的把关点，所以 Error 级别直接判失败。

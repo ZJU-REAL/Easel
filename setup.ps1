@@ -215,6 +215,40 @@ for key, value in updates.items():
     }
 }
 
+function Set-OpenClawNativeDefaults {
+    $code = @'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from easel.commands.doctor import _openclaw_config_path
+from easel.direct_api import read_settings
+from easel.openclaw_defaults import updates
+try:
+    path = _openclaw_config_path()
+    config = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
+    env = read_settings(Path(sys.argv[1]) / '.env')
+    plan = updates(config, utility=env.get('EASEL_OPENCLAW_UTILITY_MODEL', ''))
+except (OSError, ValueError):
+    sys.exit(1)
+for key, value in plan.items():
+    print(key + '=' + json.dumps(value, ensure_ascii=False))
+'@
+    $plan = $code | & $Python - $Root
+    if ($LASTEXITCODE -ne 0) {
+        Add-Warning '后台通知与辅助模型' '配置不可解析，已保留现状' 'easel doctor'
+        return
+    }
+    foreach ($line in $plan) {
+        if ($line -match '^(tools\.exec\.notifyOnExit|tools\.loopDetection\.enabled|agents\.defaults\.(?:compaction\.maxActiveTranscriptBytes|utilityModel))=(.+)$') {
+            $key = $matches[1]
+            $value = $matches[2]
+            if ($key -match '^agents\.') {
+                Set-OpenClawConfig $key ($value | ConvertFrom-Json) -Label '后台通知与辅助模型'
+            } else { Set-OpenClawConfig $key $value -Json -Label '后台通知与辅助模型' }
+        }
+    }
+}
+
 function Set-OpenClawConfigQuiet([string]$Key, $Value, [switch]$Json) {
     $arguments = @('--profile','easel','config','set',$Key,$Value)
     if ($Json) { $arguments += '--strict-json' }
@@ -264,13 +298,15 @@ function Set-OpenClawConfigBatch($Operations, [string]$Label = 'OpenClaw 配置'
 # 原子写入 anthropic provider。部分 OpenClaw 版本（如 2026.3.x）的 schema 要求 provider 一次性带齐
 # baseUrl + models，逐字段 config set 会因中间态缺字段而整体校验失败（baseUrl/models: received undefined）。
 # 用 venv Python 生成 JSON，避开 ConvertTo-Json 对空数组的序列化坑；整块替换也会顺带清掉旧的残留 header。
-function Write-AnthropicProvider($BaseUrl, $ApiKey, $ApiKeyHeader, $AnthropicVersion) {
+function Write-AnthropicProvider($BaseUrl, $ApiKey, $ApiKeyHeader, $AnthropicVersion, $ApiKeyPrefix = '') {
     $env:A_BASE_URL = $BaseUrl
     $env:A_API_KEY = $ApiKey
     $env:A_HDR = $ApiKeyHeader
     $env:A_VER = $AnthropicVersion
+    $env:A_PREFIX = $ApiKeyPrefix
     $seed = @'
 import json, os
+from easel.model_config import api_headers
 # api 必须显式写死：不写时 OpenClaw 2026.2.x 会把这个 provider 当成 openai-responses，
 # 请求打到 /responses，上游报错被 gateway 当正常回复塞进 choices[0].message.content
 # → Web 对话静默显示「（无输出）」。与 setup.sh 的 oc_write_anthropic 对齐。
@@ -280,15 +316,12 @@ import json, os
 # 于是首次安装能过、第二次重跑必失败（不可重入）。折进种子后这个问题从根上消失。
 p = {"baseUrl": os.environ["A_BASE_URL"], "apiKey": os.environ["A_API_KEY"],
      "api": "anthropic-messages", "timeoutSeconds": 600, "models": []}
-hdr = os.environ.get("A_HDR"); ver = os.environ.get("A_VER")
-if hdr or ver:
-    h = {}
-    if hdr: h[hdr] = os.environ["A_API_KEY"]
-    if ver: h["anthropic-version"] = ver
-    p["headers"] = h
+headers = api_headers(os.environ["A_API_KEY"], os.environ.get("A_HDR", ""),
+                      os.environ.get("A_PREFIX", ""), os.environ.get("A_VER", ""))
+if headers: p["headers"] = headers
 print(json.dumps(p))
 '@ | & $Python -
-    Remove-Item Env:A_BASE_URL, Env:A_API_KEY, Env:A_HDR, Env:A_VER -ErrorAction SilentlyContinue
+    Remove-Item Env:A_BASE_URL, Env:A_API_KEY, Env:A_HDR, Env:A_VER, Env:A_PREFIX -ErrorAction SilentlyContinue
     Set-OpenClawConfigBatch @(@{ path = 'models.providers.anthropic'; value = ($seed | ConvertFrom-Json) })
 }
 
@@ -305,17 +338,17 @@ if ($SkipOpenClaw) {
 Step '1/8' '检查系统环境' 'Python · Node.js · Git · FFmpeg'
 Info '检查系统环境...'
 Install-RequiredCommand 'git' 'Git.Git' '请安装 Git for Windows 并加入 PATH。'
-Install-RequiredCommand 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.16+ 并加入 PATH。'
-Install-RequiredCommand 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.16+ 并加入 PATH。'
+Install-RequiredCommand 'node' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.22.1+ 并加入 PATH。'
+Install-RequiredCommand 'npm' 'OpenJS.NodeJS.LTS' '请安装 Node.js 24.22.1+ 并加入 PATH。'
 if (-not (Get-Command python -ErrorAction SilentlyContinue) -and -not (Get-Command py -ErrorAction SilentlyContinue)) { Install-RequiredCommand 'python' 'Python.Python.3.12' '请安装 Python 3.10+ 并勾选 Add Python to PATH。' }
 Install-RequiredCommand 'ffmpeg' 'Gyan.FFmpeg' '请安装 FFmpeg 并加入 PATH。'
-# 跟随 openclaw@latest 的引擎要求（当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0，25.x/26.0 被排除）。
+# 兼容 OpenClaw 2026.10.8 已发布的严格补丁下限，25.x 不兼容。
 $nodeParts = (& node -p 'process.versions.node').Split('.') | ForEach-Object { [int]$_ }
-$nodeOk = ($nodeParts[0] -eq 24 -and $nodeParts[1] -ge 16) -or ($nodeParts[0] -eq 26 -and $nodeParts[1] -ge 1) -or ($nodeParts[0] -ge 27)
+$nodeOk = ($nodeParts[0] -eq 24 -and ($nodeParts[1] -gt 22 -or ($nodeParts[1] -eq 22 -and $nodeParts[2] -ge 1))) -or ($nodeParts[0] -eq 26 -and ($nodeParts[1] -gt 12 -or ($nodeParts[1] -eq 12 -and $nodeParts[2] -ge 1))) -or ($nodeParts[0] -ge 27)
 if ($SkipOpenClaw) {
     $nodeOk = ($nodeParts[0] -eq 20 -and $nodeParts[1] -ge 19) -or ($nodeParts[0] -eq 22 -and $nodeParts[1] -ge 12) -or ($nodeParts[0] -ge 23)
 }
-if (-not $nodeOk) { Fail '当前 Node.js 不满足安装依赖；仅安装 Web 需要 20.19+（20.x）或 22.12+，安装 openclaw@latest 需要 24.16+（24.x）或 26.1+。' }
+if (-not $nodeOk) { Fail '当前 Node.js 不满足安装依赖；仅安装 Web 需要 20.19+（20.x）或 22.12+，安装 openclaw@latest 需要 24.22.1+（24.x）或 26.12.1+。' }
 $pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
 # 这是一次可用性探测：python 存在但跑不起来（典型是 Windows 应用商店的占位 python.exe）
 # 时要安静地换下一个候选，不能让它抛 NativeCommandError 把安装打断。
@@ -534,7 +567,8 @@ if ((Test-UsableKey $envValues['OPENAI_MAAS_API_KEY']) -and $envValues.ContainsK
     # 原子写入整块 provider（含 header 与 anthropic-version）；整块替换会顺带清掉旧的专用 header。
     $hdr = if ($envValues.ContainsKey('EASEL_LLM_API_KEY_HEADER')) { $envValues['EASEL_LLM_API_KEY_HEADER'] } else { 'api-key' }
     $ver = if ($envValues.ContainsKey('EASEL_LLM_ANTHROPIC_VERSION')) { $envValues['EASEL_LLM_ANTHROPIC_VERSION'] } else { '2023-06-01' }
-    Write-AnthropicProvider $envValues['EASEL_LLM_BASE_URL'] $envValues['EASEL_LLM_API_KEY'] $hdr $ver
+    $prefix = if ($envValues.ContainsKey('EASEL_LLM_API_KEY_PREFIX')) { $envValues['EASEL_LLM_API_KEY_PREFIX'] } else { '' }
+    Write-AnthropicProvider $envValues['EASEL_LLM_BASE_URL'] $envValues['EASEL_LLM_API_KEY'] $hdr $ver $prefix
     Set-OpenClawConfig 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })
 } elseif ((Test-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and $envValues.ContainsKey('ANTHROPIC_BASE_URL')) {
     Write-AnthropicProvider $envValues['ANTHROPIC_BASE_URL'] $envValues['ANTHROPIC_AUTH_TOKEN'] '' ''
@@ -547,6 +581,7 @@ if ((Test-UsableKey $envValues['OPENAI_MAAS_API_KEY']) -and $envValues.ContainsK
     Write-AnthropicProvider $baseUrl $envValues['ANTHROPIC_API_KEY'] '' ''
     Set-OpenClawConfig 'agents.defaults.model.primary' $(if ($envValues.ContainsKey('CLAUDE_MODEL')) { $envValues['CLAUDE_MODEL'] } else { 'anthropic/claude-sonnet-4-6' })
 }
+Set-OpenClawNativeDefaults
 $embeddingKeyNames = @('EASEL_EMBEDDING_API_KEY', 'EASEL_EMBEDDINGS_API_KEY', 'OPENAI_EMBEDDING_API_KEY', 'EMBEDDING_API_KEY', 'EMBEDDINGS_API_KEY')
 $embeddingUrlNames = @('EASEL_EMBEDDING_BASE_URL', 'EASEL_EMBEDDINGS_BASE_URL', 'OPENAI_EMBEDDING_BASE_URL', 'EMBEDDING_BASE_URL', 'EMBEDDINGS_BASE_URL')
 $embeddingModelNames = @('EASEL_EMBEDDING_MODEL', 'EASEL_EMBEDDINGS_MODEL', 'OPENAI_EMBEDDING_MODEL', 'EMBEDDING_MODEL', 'EMBEDDINGS_MODEL')

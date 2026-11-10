@@ -294,6 +294,35 @@ PY
     done <<< "$plan"
 }
 
+oc_configure_native_defaults() {
+    local plan key value
+    if ! plan="$(python3 - "$PROJECT_ROOT" "${1:-}" <<'PY'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from easel.commands.doctor import _openclaw_config_path
+from easel.direct_api import read_settings
+from easel.openclaw_defaults import updates
+try:
+    path = _openclaw_config_path()
+    config = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
+    env = read_settings(Path(sys.argv[1]) / '.env')
+    plan = updates(config, sys.argv[2], env.get('EASEL_OPENCLAW_UTILITY_MODEL', ''))
+except (OSError, ValueError):
+    sys.exit(1)
+for key, value in plan.items():
+    print(key + '=' + json.dumps(value, ensure_ascii=False))
+PY
+)"; then
+        warn_collect '后台通知与辅助模型' '配置不可解析，已保留现状' 'easel doctor'
+        return 0
+    fi
+    while IFS='=' read -r key value; do
+        [ -n "$key" ] || continue
+        oc_set '后台通知与辅助模型' "$key" "$value" --json
+    done <<< "$plan"
+}
+
 # ---- 安装报告 ----
 # 把本次安装的遗留问题落盘，供 `easel doctor` 复述。这样「装完还差什么」不依赖用户
 # 记住十几分钟前滚过去的终端输出。
@@ -381,23 +410,23 @@ else
     echo -e "\n${DIM}  Easel 会使用独立 profile ~/.openclaw-${PROFILE}/，不会覆盖已有 OpenClaw。${NC}\n"
 fi
 
-# ---- 1. Node.js >= 24.16 ----
-# 跟随 openclaw@latest 的引擎要求：当前 2026.9.x 需要 Node >=24.16.0 <25 || >=26.1.0
-# （注意 25.x 与 26.0 被排除）。setup 默认安装 openclaw@latest，故 Node 下限对齐到 24.16。
+# ---- 1. Node.js >= 24.22.1 ----
+# 安装器使用已发布的严格引擎下限，兼容 OpenClaw 2026.10.8；25.x 不兼容。
+# 2026.11.2 的 engines 已回落到 24.16/26.1，仍选择同样兼容的较新 LTS 补丁。
 # 默认先走国内镜像再回落 nodejs.org：实测同一个包 nodejs.org ~20KB/s（20 分钟都下不完），
 # 阿里云 ~590KB/s（53 秒）。EASEL_NODE_MIRROR 可覆盖，镜像目录结构需与 nodejs.org/dist 一致。
 NODE_MIRROR_DEFAULT="https://mirrors.aliyun.com/nodejs-release"
 step "1/8" "检查系统环境" "Python · Node.js · Git · FFmpeg"
 info "检查 Node.js..."
-node_version_ok() {  # $1=major $2=minor
+node_version_ok() {  # $1=major $2=minor $3=patch
     if [ "$CHAT_MODE" = api ]; then
         { [ "$1" -eq 20 ] && [ "$2" -ge 19 ]; } \
             || { [ "$1" -eq 22 ] && [ "$2" -ge 12 ]; } \
             || [ "$1" -ge 23 ]
         return
     fi
-    { [ "$1" -eq 24 ] && [ "$2" -ge 16 ]; } \
-        || { [ "$1" -eq 26 ] && [ "$2" -ge 1 ]; } \
+    { [ "$1" -eq 24 ] && { [ "$2" -gt 22 ] || { [ "$2" -eq 22 ] && [ "${3:-0}" -ge 1 ]; }; }; } \
+        || { [ "$1" -eq 26 ] && { [ "$2" -gt 12 ] || { [ "$2" -eq 12 ] && [ "${3:-0}" -ge 1 ]; }; }; } \
         || [ "$1" -ge 27 ]
 }
 NODE_OK=false
@@ -405,7 +434,8 @@ if command -v node &>/dev/null; then
     NODE_VER=$(node -v | sed 's/v//')
     NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
     NODE_MINOR=$(echo "$NODE_VER" | cut -d. -f2)
-    if node_version_ok "$NODE_MAJOR" "$NODE_MINOR"; then
+    NODE_PATCH=$(echo "$NODE_VER" | cut -d. -f3)
+    if node_version_ok "$NODE_MAJOR" "$NODE_MINOR" "$NODE_PATCH"; then
         NODE_OK=true
     fi
 fi
@@ -424,11 +454,11 @@ else
             BREW_NODE24_PREFIX="$(brew --prefix node@24)"
             export PATH="$BREW_NODE24_PREFIX/bin:$PATH"
         else
-            echo "macOS 未找到 Homebrew。请先安装 Node.js 24.16+（Homebrew: brew install node@24），再重新运行 setup.sh。" >&2
+            echo "macOS 未找到 Homebrew。请先安装 Node.js 24.22.1+（Homebrew: brew install node@24），再重新运行 setup.sh。" >&2
             exit 1
         fi
     else
-        NODE_TARGET="v24.21.0"
+        NODE_TARGET="v24.22.1"
         NODE_DIR="node-${NODE_TARGET}-linux-x64"
         # 已有 nvm 就装进用户目录：不需要 root，也不覆盖系统 node。
         if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
@@ -453,7 +483,7 @@ else
                 warn "从 $base 下载 Node 失败，尝试下一个源"
             done
             if [ "$NODE_OK_DL" != true ]; then
-                echo "Node.js ${NODE_TARGET} 下载失败。请手动安装 Node 24.16+ 后重新运行，或用" >&2
+                echo "Node.js ${NODE_TARGET} 下载失败。请手动安装 Node 24.22.1+ 后重新运行，或用" >&2
                 echo "  EASEL_NODE_MIRROR=<镜像地址> bash setup.sh   指定可用镜像。" >&2
                 exit 1
             fi
@@ -464,7 +494,7 @@ else
                 if command -v sudo >/dev/null 2>&1; then
                     NODE_SUDO="sudo"
                 else
-                    echo "需要 root 才能写入 /usr/local，且未找到 sudo。请手动安装 Node 24.16+ 后重试。" >&2
+                    echo "需要 root 才能写入 /usr/local，且未找到 sudo。请手动安装 Node 24.22.1+ 后重试。" >&2
                     exit 1
                 fi
             fi
@@ -803,19 +833,17 @@ fi
 # 用法：oc_write_anthropic <baseUrl> <apiKey> [apiKeyHeader] [anthropicVersion]
 oc_write_anthropic() {
     local seed
-    seed="$(A_BASE_URL="$1" A_API_KEY="$2" A_HDR="${3:-}" A_VER="${4:-}" python3 -c '
+    seed="$(A_BASE_URL="$1" A_API_KEY="$2" A_HDR="${3:-}" A_VER="${4:-}" A_PREFIX="${5:-}" python3 -c '
 import json, os
+from easel.model_config import api_headers
 # api 必须显式写死：不写时 OpenClaw 2026.2.x 会把这个 provider 当成 openai-responses，
 # 请求打到 /responses，上游只报「does not support the responses interface」，而 gateway
 # 把它当正常回复塞进 choices[0].message.content → Web 对话静默显示「（无输出）」。
 p = {"baseUrl": os.environ["A_BASE_URL"], "apiKey": os.environ["A_API_KEY"],
      "api": "anthropic-messages", "models": []}
-hdr = os.environ.get("A_HDR"); ver = os.environ.get("A_VER")
-if hdr or ver:
-    h = {}
-    if hdr: h[hdr] = os.environ["A_API_KEY"]
-    if ver: h["anthropic-version"] = ver
-    p["headers"] = h
+headers = api_headers(os.environ["A_API_KEY"], os.environ.get("A_HDR", ""),
+                      os.environ.get("A_PREFIX", ""), os.environ.get("A_VER", ""))
+if headers: p["headers"] = headers
 print(json.dumps(p))')"
     # 2026.9.x 起，--json 整块写入若会删掉 provider 下已存在的子键会被直接拒绝
     # （"Refusing to replace ...; it would remove existing entries: timeoutSeconds"）。
@@ -1051,7 +1079,7 @@ PYGEMINI
 elif usable_key "${EASEL_LLM_API_KEY:-}" && [ -n "${EASEL_LLM_BASE_URL:-}" ]; then
     # 原子写入整块 provider（含 header 与 anthropic-version）；整块替换会顺带清掉旧的 CodeWiz 专用 header。
     oc_write_anthropic "$EASEL_LLM_BASE_URL" "$EASEL_LLM_API_KEY" \
-        "${EASEL_LLM_API_KEY_HEADER:-api-key}" "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}"
+        "${EASEL_LLM_API_KEY_HEADER:-api-key}" "${EASEL_LLM_ANTHROPIC_VERSION:-2023-06-01}" "${EASEL_LLM_API_KEY_PREFIX:-}"
     ANTHROPIC_PROVIDER_SYNCED=true
     ok "自定义 Anthropic 兼容 MaaS 认证已同步"
 elif usable_key "${ANTHROPIC_AUTH_TOKEN:-}" && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
@@ -1080,12 +1108,14 @@ fi
 if [ "$AUTH_CONFIGURED" = true ]; then
     oc_set '主模型路由' agents.defaults.model.primary \
         "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}" '' high
+    oc_configure_native_defaults "${CLAUDE_MODEL:-$DEFAULT_PRIMARY_MODEL}"
 else
     # 上面一个 provider 都没写。这时还去写 primary 只会把 agent 指向一个不存在的
     # provider（CLAUDE_MODEL 直接来自 .env），对话时报 "No route-compatible
     # authentication source is configured for <provider>" —— 比「没配置」更难查。
     # 保持不动：既不造假配置，也不覆盖用户上一次跑成功时留下的可用 primary。
     warn "未写入 agents.defaults.model.primary；openclaw 中已有的模型设置保持不变"
+    oc_configure_native_defaults
 fi
 # 整个 agent run 的总时长上限。制作层任务（OpenClaw 自执行短剧/长稿/多镜）很久 → 给足。
 oc_set 'agent 总超时' agents.defaults.timeoutSeconds 7200

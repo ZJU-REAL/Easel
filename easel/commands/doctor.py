@@ -41,7 +41,7 @@ def _check(label: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
-def _node_version_ok(strict: bool) -> bool:
+def _node_version_ok(strict: bool, patched: bool = False) -> bool:
     """检查 Node.js 版本。
 
     strict=True 对齐 openclaw@latest（2026.9.x）的引擎：>=24.16.0 <25 || >=26.1.0（25.x/26.0 被排除）。
@@ -58,11 +58,14 @@ def _node_version_ok(strict: bool) -> bool:
         if result.returncode != 0:
             return False
         # e.g. "v24.21.0"
-        m = re.match(r"v(\d+)\.(\d+)", result.stdout.strip())
+        m = re.match(r"v(\d+)\.(\d+)\.(\d+)", result.stdout.strip())
         if not m:
             return False
         major, minor = int(m.group(1)), int(m.group(2))
         if strict:
+            if patched:
+                patch = int(m.group(3))
+                return (major == 24 and (minor, patch) >= (22, 1)) or (major == 26 and (minor, patch) >= (12, 1)) or major >= 27
             return (major == 24 and minor >= 16) or (major == 26 and minor >= 1) or major >= 27
         return (major, minor) >= (22, 19)
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -186,7 +189,7 @@ def _env_key_valid() -> bool:
     # 认证变量 → 是否已填入非占位值
     auth_vars: dict[str, str] = {}
     try:
-        for line in env_file.read_text(encoding="utf-8").splitlines():
+        for line in env_file.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if line.startswith("#") or "=" not in line:
                 continue
@@ -240,11 +243,16 @@ def _primary_model_cli_available() -> tuple[bool, str]:
     if not cfg_path.is_file():
         return False, ""
     try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return False, ""
-    primary = (((cfg.get("agents") or {}).get("defaults") or {})
-               .get("model") or {}).get("primary") or ""
+    try:
+        model = ((cfg.get('agents') or {}).get('defaults') or {}).get('model')
+        primary = model if isinstance(model, str) else (model or {}).get('primary', '')
+        from easel.model_config import validate_model_ref
+        validate_model_ref(primary)
+    except (AttributeError, TypeError, ValueError) as error:
+        return False, str(error) if isinstance(error, ValueError) else '主模型配置结构无效'
     backend = _cli_backend(primary)
     if not backend:
         return False, ""
@@ -281,12 +289,17 @@ def _primary_model_routable() -> tuple[bool, str]:
     if not cfg_path.is_file():
         return False, f"{cfg_path} 不存在 — 先跑 bash setup.sh（Windows: setup.ps1）"
     try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         return False, f"{cfg_path} 读不出来（{exc}）"
 
-    primary = (((cfg.get("agents") or {}).get("defaults") or {})
-               .get("model") or {}).get("primary") or ""
+    try:
+        model = ((cfg.get('agents') or {}).get('defaults') or {}).get('model')
+        primary = model if isinstance(model, str) else (model or {}).get('primary', '')
+        from easel.model_config import validate_model_ref
+        validate_model_ref(primary)
+    except (AttributeError, TypeError, ValueError) as error:
+        return False, str(error) if isinstance(error, ValueError) else '主模型配置结构无效'
     if not primary:
         return False, "未设置 agents.defaults.model.primary — 重新跑 setup 脚本"
     if "/" not in primary:
@@ -306,12 +319,39 @@ def _primary_model_routable() -> tuple[bool, str]:
         return False, (f"primary 是 {primary}，但 models.providers.{provider} 不存在 —— "
                        "在 .env 填好真实 key 后重新跑 setup 脚本")
     # apiKey / 本地适配器 / OAuth 任一即可。字段名随 OpenClaw 版本变过，这里从宽认。
-    has_auth = bool(str(entry.get("apiKey") or "").strip()) or bool(entry.get("localService")) \
+    api_key = entry.get('apiKey')
+    key_present = bool(api_key)
+    if isinstance(api_key, str):
+        key_present = bool(api_key.strip()) and not re.search(r'replace_me|your[-_]?api[-_]?key|^<.*>$|^\.{3}$|^xxx+$', api_key.strip(), re.I)
+    has_auth = key_present or bool(entry.get("localService")) \
         or any(k for k, v in entry.items() if "oauth" in k.lower() and v)
     if not has_auth:
         return False, (f"models.providers.{provider} 没有 apiKey —— "
                        "在 .env 填好真实 key 后重新跑 setup 脚本")
     return True, ""
+
+
+def _background_exec_policy() -> list[str]:
+    """Read saved notification and compaction choices without printing secrets."""
+    try:
+        cfg = json.loads(_openclaw_config_path().read_text(encoding='utf-8-sig'))
+        tools = cfg.get('tools') or {}
+        defaults = (cfg.get('agents') or {}).get('defaults') or {}
+        notify = (tools.get('exec') or {}).get('notifyOnExit')
+        compaction = (defaults.get('compaction') or {}).get('maxActiveTranscriptBytes')
+        utility = defaults.get('utilityModel')
+    except (OSError, ValueError, AttributeError, TypeError):
+        return ['无法确认后台完成通知与辅助模型配置']
+    notify_state = ('显式开启，后台完成通知可能唤醒模型' if notify is True else
+                    '显式关闭，后台完成不自动触发续跑' if notify is False else
+                    '未设置，行为由所装 OpenClaw 决定' if notify is None else '格式异常')
+    byte_state = (str(compaction) if type(compaction) is int and compaction >= 0 else
+                  compaction if isinstance(compaction, str) and re.fullmatch(r'\d+(?:\.\d+)?(?:[kmg]b?)?', compaction, re.I) else
+                  '未设置' if compaction is None else '格式异常')
+    utility_state = '已显式配置' if isinstance(utility, str) and utility.strip() else '未设置（所装版本可能不支持该字段或推导其它模型）'
+    return [f'tools.exec.notifyOnExit：{notify_state}',
+            f'agents.defaults.compaction.maxActiveTranscriptBytes：{byte_state}',
+            f'agents.defaults.utilityModel：{utility_state}']
 
 
 def _tool_loop_policy() -> list[str]:
@@ -564,9 +604,10 @@ def cmd_doctor(_args) -> int:
         # （openclaw@latest）从严要求 24.16+。
         oc_ver = _openclaw_version()
         node_strict = oc_ver is None or oc_ver >= (2026, 9, 0)
-        node_floor = "24.16" if node_strict else "22.19"
+        patched_node = oc_ver is None or (2026, 10, 8) <= oc_ver < (2026, 11, 2)
+        node_floor = "24.22.1" if patched_node else ("24.16" if node_strict else "22.19")
         has_node = shutil.which("node") is not None
-        node_ok = _node_version_ok(node_strict)
+        node_ok = _node_version_ok(node_strict, patched_node)
         node_detail = (f"请安装 Node.js >= {node_floor}: https://nodejs.org/" if not has_node
                        else f"Node.js 版本不满足当前 OpenClaw 要求，请升级到 >= {node_floor}: https://nodejs.org/")
         all_ok &= _check(f"Node.js >= {node_floor}", node_ok, node_detail)
@@ -629,6 +670,8 @@ def cmd_doctor(_args) -> int:
             print(f"    └─ {line}")
         print("    未设置不等于关闭；继承、默认值和运行时支持由 OpenClaw 版本决定。")
         print("    已保存配置不证明网关已加载，也不代表每任务工具调用预算。")
+        for line in _background_exec_policy():
+            print(f"    └─ {line}")
         print("  OpenClaw 上下文预算（只读配置诊断，不计入环境就绪结果）")
         for line in _context_budget_policy():
             print(f"    └─ {line}")
