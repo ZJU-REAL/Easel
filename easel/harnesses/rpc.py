@@ -20,11 +20,12 @@ MAX_CLIENT_REQUESTS = 64
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 
 
-async def close_sessions(session_key: str | None = None):
+async def close_sessions(session_key: str | None = None, *, runtime: str | None = None):
     loop = asyncio.get_running_loop()
     pool = _POOLS.get(loop, {})
     selected = [(key, entry) for key, entry in list(pool.items())
-                if session_key is None or key[1] == session_key]
+                if (session_key is None or key[1] == session_key)
+                and (runtime is None or entry["rpc"].request.env.get("EASEL_AGENT_RUNTIME") == runtime)]
     for key, entry in selected:
         pool.pop(key, None)
         if entry["timer"]:
@@ -46,7 +47,7 @@ async def connection(request: RunRequest, command: list[str], notify, respond, *
     key = (acp, request.session_key)
     signature = hashlib.sha256(json.dumps([
         str(request.cwd.resolve()), sorted(request.env.items()), command,
-        request.model, request.sandbox, harness_instructions(request),
+        request.model, request.sandbox, request.codex_effort, harness_instructions(request),
     ], ensure_ascii=False).encode("utf-8")).hexdigest()
     entry = pool.get(key)
     previous = None
@@ -131,6 +132,7 @@ class RPC:
         self.reader_error = None
         self.initialized = None
         self.native_id = ""
+        self.stderr_hint = ""
 
     async def __aenter__(self):
         env = {**self.request.env, "EASEL_ROOT": str(self.request.cwd.resolve()),
@@ -237,14 +239,23 @@ class RPC:
             failure = error if isinstance(error, HarnessError) else HarnessError(
                 f"Agent 协议读取失败（{type(error).__name__}）")
         finally:
+            if self.stderr_hint and str(failure).startswith("Agent 协议连接已断开"):
+                failure = HarnessError(self.stderr_hint)
             self.reader_error = failure
             for future in self.pending.values():
                 if not future.done():
                     future.set_exception(failure)
 
     async def _drain_stderr(self):
-        while await self.process.stderr.read(8192):
-            pass
+        tail = ""
+        while chunk := await self.process.stderr.read(8192):
+            if self.request.env.get("EASEL_AGENT_RUNTIME") == "codex":
+                from .codex_diagnostics import failure
+                tail = (tail + chunk.decode("utf-8", errors="replace"))[-16384:]
+                detail = failure(tail)
+                if detail["code"] != "unknown":
+                    # Keep only an allowlisted hint. Never log or return raw stderr.
+                    self.stderr_hint = detail["message"]
 
     async def wait_notification(self, future: asyncio.Future):
         finished, _ = await asyncio.wait((future, self.reader), return_when=asyncio.FIRST_COMPLETED)

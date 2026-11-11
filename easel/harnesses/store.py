@@ -10,6 +10,7 @@ from pathlib import Path
 from .base import HarnessError
 
 IDS = ("api", "openclaw", "opencode", "codex", "acp")
+CODEX_EFFORTS = ("", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 
 def read_json(path: Path) -> dict:
@@ -61,8 +62,11 @@ def settings(outputs: Path, env: dict[str, str]) -> dict:
     auto_approve = data.get("codex_auto_approve", False)
     if not isinstance(auto_approve, bool):
         raise HarnessError("Codex 自动授权设置必须为开关")
+    effort = data.get("codex_effort", "")
+    if effort not in CODEX_EFFORTS:
+        raise HarnessError("Codex 推理强度设置无效")
     return {"runtime": runtime, "models": models, "sandbox": sandbox,
-            "codex_auto_approve": auto_approve}
+            "codex_auto_approve": auto_approve, "codex_effort": effort}
 
 
 def binding_path(sessions: Path, key: str) -> Path:

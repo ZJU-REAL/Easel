@@ -35,6 +35,8 @@ class RunRequest:
     command: tuple[str, ...] = ()
     session_key: str = ""
     codex_auto_approve: bool = False
+    codex_effort: str = ""
+    images: tuple[str, ...] = ()
 
 
 class Adapter(Protocol):

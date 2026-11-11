@@ -41,7 +41,7 @@ interface DashboardProps {
 
 const STATUS_LABEL: Record<string, string> = { idea: '选题', draft: '草稿', scheduled: '待发', published: '已发' };
 
-export default function DashboardPage({ persona, gatewayStatus, apiDirect, agentRuntime, onNavigate, onUseTopic }: DashboardProps) {
+export default function DashboardPage({ persona, onNavigate, onUseTopic }: DashboardProps) {
   const [trends, setTrends] = useState<TrendGroup[]>([]);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [outputs, setOutputs] = useState<OutputNode[]>([]);
@@ -150,12 +150,7 @@ export default function DashboardPage({ persona, gatewayStatus, apiDirect, agent
       <div className="dash-hero">
         <h1 className="page-title">{greet} 👋</h1>
         <p className="page-subtitle">
-          {apiDirect ? (gatewayStatus === 'connected' ? '仅聊天模式已配置，可开始对话。' : '请先配置仅聊天模式的模型 API。')
-            : agentRuntime !== 'openclaw' ? (gatewayStatus === 'connected'
-            ? `${agentRuntime} CLI 已安装；原生登录及模型可用性请发送消息验证。`
-            : `请先在服务器安装并配置 ${agentRuntime} CLI。`)
-            : gatewayStatus === 'connected' ? '一切就绪。' : '⚠ 网关未连接。'}
-          {persona ? ` 当前画像「${persona}」。` : ' 通用模式——指定画像效果更好。'}
+          {persona ? `围绕「${persona}」，开始今天的创作。` : '把灵感变成作品，开始今天的创作。'}
           从热点到发布，一站式搞定今天的内容。
         </p>
         <div className="dash-quick">

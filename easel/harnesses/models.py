@@ -46,6 +46,16 @@ async def available_models(runtime: str, request: RunRequest) -> list[dict]:
                         models.append({"id": identifier,
                                        "label": label if _valid_id(label) else identifier,
                                        "default": bool(item.get("isDefault"))})
+                        if isinstance(item.get("supportedReasoningEfforts"), list):
+                            from .store import CODEX_EFFORTS
+                            models[-1]["efforts"] = list(dict.fromkeys(
+                                option["reasoningEffort"] for option in item["supportedReasoningEfforts"]
+                                if isinstance(option, dict) and option.get("reasoningEffort")
+                                and option.get("reasoningEffort") in CODEX_EFFORTS))
+                            models[-1]["defaultEffort"] = item.get("defaultReasoningEffort", "")
+                        if isinstance(item.get("inputModalities"), list):
+                            models[-1]["inputModalities"] = [value for value in item["inputModalities"]
+                                                             if value in ("text", "image")]
                 following = response.get("nextCursor")
                 if not following or following == cursor:
                     break
