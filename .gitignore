@@ -94,3 +94,6 @@ skills/builtin/video-production/vendor/**/node_modules/
 skills/builtin/video-production/vendor/**/.remotion/
 skills/builtin/video-production/vendor/**/models/
 skills/builtin/video-production/vendor/**/*large-v3*
+
+# 故障评估报告运行产物（issue #108，CI 与本地 pytest --junitxml 输出）
+reports/
