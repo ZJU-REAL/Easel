@@ -66,7 +66,7 @@ export default function HarnessSettings({ onChange, onSelect }: {
     setBusy(true);
     setNote('');
     try {
-      const value = await saveHarnessSettings(runtime, model, sandbox, runtime === 'codex' ? autoApprove : undefined);
+      const value = await saveHarnessSettings(runtime, model, sandbox, (runtime === 'codex' || runtime === 'antigravity') ? autoApprove : undefined);
       setSettings(value);
       onChange(value.runtime);
       setNote('已保存，请新建对话；旧对话仍保留在原底座，不迁移历史。');
@@ -133,7 +133,7 @@ export default function HarnessSettings({ onChange, onSelect }: {
           <div className="settings-field">
             <label className="settings-field-label" htmlFor="harness-model">模型覆盖</label>
             <div className="settings-field-body">
-              {(runtime === 'codex' || runtime === 'opencode') && (
+              {(runtime === 'codex' || runtime === 'opencode' || runtime === 'antigravity') && (
                 <div className="settings-native-models">
                   <SettingsSelect label="原生模型" value={model} disabled={busy || settings?.locked}
                     options={[
@@ -149,16 +149,16 @@ export default function HarnessSettings({ onChange, onSelect }: {
               )}
               <input id="harness-model" className="mock" value={model} disabled={busy || settings?.locked} maxLength={240}
               onChange={(event) => setModel(event.target.value)}
-              placeholder={runtime === 'codex' ? '留空使用 Codex 原生配置' : 'provider/model；留空使用原生配置'} />
+              placeholder={runtime === 'codex' ? '留空使用 Codex 原生配置' : runtime === 'antigravity' ? '留空使用默认 Gemini 3.8 Flash' : 'provider/model；留空使用原生配置'} />
               <p className="desc">可从原生 CLI 列表选择，也可手动填写；留空沿用原生默认模型，不修改其它底座的供应商配置。
                 模型是否可用仍取决于当前账号、供应商和原生 CLI 支持。</p>
               {modelNote && <p className="desc" role="status">{modelNote}</p>}
             </div>
           </div>
-          {runtime === 'codex' && (
+          {(runtime === 'codex' || runtime === 'antigravity') && (
             <>
             <div className="settings-field">
-              <span className="settings-field-label">Codex 沙箱</span>
+              <span className="settings-field-label">{runtime === 'antigravity' ? '运行沙箱' : 'Codex 沙箱'}</span>
               <div className="settings-field-body">
                 <SettingsSelect label="Codex 沙箱" value={sandbox} disabled={busy || settings?.locked}
                   options={[
