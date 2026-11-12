@@ -291,7 +291,7 @@ def test_mp_identity_only_uses_visible_current_account_card():
 def test_mp_periodic_qr_capture_is_bounded_and_never_screens_entire_page(tmp_path):
     page = account_page(weixin_mp_stats.MP_HOME)
     page.screenshot = Mock()
-    assert not weixin_mp_stats._capture_qr(page, tmp_path / "qr.png", attempts=1, fallback=False)
+    assert not weixin_mp_stats._capture_qr(page, tmp_path / "qr.png", attempts=1)
     page.wait_for_timeout.assert_called_once_with(1000)
     page.screenshot.assert_not_called()
 
@@ -535,6 +535,7 @@ def test_mp_runner_releases_profile_before_success(tmp_path, monkeypatch, reused
     manager.__exit__ = Mock(return_value=False)
     monkeypatch.setattr(sync_api, "sync_playwright", lambda: manager)
     monkeypatch.setattr(weixin_mp_stats, "_launch", lambda *args: context)
+    monkeypatch.setattr(weixin_mp_stats, "_ensure_qr_mode", Mock(return_value=True))
     monkeypatch.setattr(weixin_mp_stats, "_capture_qr", Mock(return_value=True))
     tokens = iter(["own" if reused else "", "own"])
     monkeypatch.setattr(weixin_mp_stats, "_extract_token", lambda url: next(tokens))
