@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from easel import __version__
 
@@ -10,18 +11,54 @@ from .commands import base_command
 from .permissions import can_auto_approve
 from .rpc import connection
 from .workspace import harness_instructions
+from .codex_diagnostics import failure
+from .store import CODEX_EFFORTS
 
 
 class CodexAdapter:
     descriptor = Descriptor("codex", "Codex", "app-server", "npm install -g @openai/codex；codex login")
 
     async def run(self, request: RunRequest, emit, ask, bind):
+        try:
+            return await self._run(request, emit, ask, bind)
+        except HarnessError as error:
+            detail = failure(str(error))
+            if detail["code"] != "unknown" or str(error).startswith("Agent 协议错误："):
+                raise HarnessError(detail["message"]) from error
+            raise
+
+    async def _run(self, request: RunRequest, emit, ask, bind):
         if request.sandbox not in ("read-only", "workspace-write"):
             raise HarnessError("Codex 只允许只读或工作区写入权限")
+        if request.codex_effort not in CODEX_EFFORTS:
+            raise HarnessError("Codex 推理强度设置无效")
         completion = asyncio.get_running_loop().create_future()
         thread_id = request.native_id
         turn_id = ""
         streamed: set[str] = set()
+        usage = {}
+
+        def safe_detail(value):
+            text = str(value)
+            for key, secret in request.env.items():
+                if len(secret) >= 4 and any(marker in key.upper() for marker in (
+                        "KEY", "TOKEN", "SECRET", "PASSWORD", "COOKIE")):
+                    text = text.replace(secret, "***")
+            return re.sub(r"sk-[A-Za-z0-9_-]{12,}|Bearer\s+\S+", "***", text, flags=re.I)
+
+        def activity(item, completed=False):
+            kind = item.get("type", "tool")
+            status = "完成" if completed else "开始"
+            if kind == "commandExecution":
+                command = safe_detail(item.get("command") or "命令")[:600]
+                result = f" · 退出码 {item['exitCode']}" if completed and item.get("exitCode") is not None else ""
+                emit("activity", f"{status}执行：{command}{result}")
+            elif kind == "fileChange":
+                paths = [safe_detail(change.get("path", "")) for change in (item.get("changes") or [])[:12]
+                         if isinstance(change, dict)]
+                emit("activity", f"{status}修改文件：{'、'.join(paths)[:1000]}（{item.get('status', '')}）")
+            elif kind not in ("agentMessage", "reasoning", "userMessage"):
+                emit("activity", f"{status}工具：{kind}")
 
         def notify(method, params):
             def _thread_scoped() -> bool:
@@ -38,7 +75,7 @@ class CodexAdapter:
                 if params.get("willRetry", False) or not _thread_scoped():
                     return
                 if not completion.done():
-                    completion.set_exception(HarnessError("Codex 执行失败，请检查原生登录与模型配置"))
+                    completion.set_exception(HarnessError(failure(params.get("error"))["message"]))
                 return
 
             if not turn_id or params.get("threadId") != thread_id or params.get("turnId", turn_id) != turn_id:
@@ -50,22 +87,40 @@ class CodexAdapter:
                 emit("thinking", params.get("delta", ""))
             elif method == "item/started":
                 item = params.get("item") or {}
-                if item.get("type") not in ("agentMessage", "reasoning", "userMessage"):
-                    emit("activity", f"工具：{item.get('type', 'tool')}")
+                activity(item)
             elif method == "item/completed":
                 item = params.get("item") or {}
                 if item.get("type") == "agentMessage" and item.get("id") not in streamed:
                     emit("token", item.get("text", ""))
+                activity(item, completed=True)
+            elif method == "thread/tokenUsage/updated":
+                current = params.get("tokenUsage") or {}
+                if isinstance(current, dict):
+                    usage.update(current)
+            elif method == "turn/plan/updated":
+                for step in (params.get("plan") or [])[:12]:
+                    if isinstance(step, dict):
+                        label = {"pending": "待执行", "inProgress": "进行中", "completed": "已完成"}.get(step.get("status"), "计划")
+                        emit("activity", f"{label}：{safe_detail(step.get('step', ''))[:500]}")
             elif method == "turn/completed":
                 turn = params.get("turn") or {}
                 if turn.get("id") != turn_id or completion.done():
                     return
                 if turn.get("status") == "completed":
+                    total = usage.get("total") or {}
+                    if not isinstance(total, dict):
+                        total = {}
+                    counts = {key: value for key, value in total.items()
+                              if isinstance(value, int) and not isinstance(value, bool) and value >= 0}
+                    if "totalTokens" in counts:
+                        emit("activity", f"会话累计用量：{counts['totalTokens']} tokens"
+                             f"（输入 {counts.get('inputTokens', 0)}，输出 {counts.get('outputTokens', 0)}，"
+                             f"缓存输入 {counts.get('cachedInputTokens', 0)}）")
                     completion.set_result(None)
                 else:
                     error = turn.get("error") or {}
                     completion.set_exception(HarnessError(
-                        str(error.get("message") or f"Codex 本轮未完成：{turn.get('status')}")))
+                        failure(error)["message"] if error else f"Codex 本轮未完成：{turn.get('status')}"))
 
         async def respond(method, params):
             if params.get("threadId") != thread_id or (
@@ -78,7 +133,7 @@ class CodexAdapter:
                 detail = params.get("command") or params.get("reason") or params.get("itemId", "")
                 answers = await ask([{
                     "questionId": "permission", "header": "执行授权",
-                    "question": f"Codex 请求额外权限（仅本次）：{str(detail)[:3000]}" + (
+                    "question": f"Codex 请求额外权限（仅本次）：{safe_detail(detail)[:3000]}" + (
                         "\n此操作不属于可自动批准的普通操作，请确认风险。" if request.codex_auto_approve else ""),
                     "options": [{"label": "允许本次"}, {"label": "拒绝"}],
                 }])
@@ -123,6 +178,9 @@ class CodexAdapter:
                 "networkAccess": False}
             params = {"threadId": thread_id, "input": [{"type": "text", "text": request.prompt}],
                       "approvalPolicy": "on-request", "sandboxPolicy": policy}
+            params["input"].extend({"type": "localImage", "path": path} for path in request.images)
+            if request.codex_effort:
+                params["effort"] = request.codex_effort
             if request.model:
                 params["model"] = request.model
             early: list[tuple[str, dict]] = []

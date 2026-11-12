@@ -60,6 +60,22 @@ def test_missing_cli_is_never_usable(monkeypatch):
         assert a["usableWithoutKey"] is False
 
 
+def test_codex_native_entry_does_not_claim_openclaw_or_authenticated_access(monkeypatch):
+    monkeypatch.setattr(la.shutil, "which", lambda c: "/usr/bin/codex" if c == "codex" else None)
+    monkeypatch.setattr(la, "_configured_providers", lambda: {"openai"})
+    agents = {a["id"]: a for a in la.detect_local_agents()}
+    codex = agents["codex"]
+    assert codex["installed"] is True
+    assert codex["nativeRuntime"] == "codex"
+    assert codex["supported"] is False
+    assert codex["configured"] is False
+    assert codex["usableWithoutKey"] is False
+    assert codex["openclawProvider"] is None
+    assert codex["models"] == []
+    assert "codex login" in codex["loginHint"]
+    assert agents["copilot-cli"]["nativeRuntime"] is None
+
+
 def test_configured_reflects_openclaw_json(monkeypatch, tmp_path):
     """openclaw.json 里已有 anthropic provider → configured 为真（cli 已接入）。"""
     cfg = tmp_path / "openclaw.json"

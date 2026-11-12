@@ -337,7 +337,7 @@ Ordered by priority — contributions welcome; feel free to claim or add items v
 - [ ] **1. Windows support** — Complete native Windows compatibility across installation, paths/encoding, and browser publishing.
 - [ ] **2. Simpler installation** — Lower the barrier to entry with fewer manual steps and a smoother one-click setup.
 - [ ] **3. Better in-app Agent UX** — Improve the Web workbench's chat interaction, loading logic, and streaming feedback.
-- [ ] **4. More Agent harnesses** — Support agent runtimes beyond OpenClaw, e.g. Claude Code, DeepSeek harness, Codex.
+- [ ] **4. More Agent harnesses** — Improve the existing Codex / OpenCode integrations and support additional runtimes such as Claude Code and DeepSeek harness. See [Agent harness integration](docs/agent-harnesses.md) for switching between existing engines.
 
 ## 🙏 Acknowledgments
 

@@ -66,6 +66,7 @@ function setup({ runtime = 'openclaw', locked = false, installed = true, saveErr
       createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat() }),
     },
     SettingsSelect: 'settings-select',
+    CodexConnection: 'codex-connection',
     useState: initial => {
       const index = cursor++;
       if (!(index in state)) state[index] = initial;
@@ -93,10 +94,11 @@ function setup({ runtime = 'openclaw', locked = false, installed = true, saveErr
     fetchHarnessModels: async runtime => {
       modelRequests.push(runtime);
       if (modelError) throw new Error(modelError);
-      return { runtime, models: [{ id: 'another-model', label: 'Another model', default: true }] };
+      return { runtime, models: [{ id: 'another-model', label: 'Another model', default: true, efforts: ['low', 'high'] }] };
     },
-    saveHarnessSettings: async (runtime, model, sandbox, codexAutoApprove) => {
-      saves.push({ runtime, model, sandbox, ...(codexAutoApprove !== undefined ? { codexAutoApprove } : {}) });
+    saveHarnessSettings: async (runtime, model, sandbox, codexAutoApprove, codexEffort) => {
+      saves.push({ runtime, model, sandbox, ...(codexAutoApprove !== undefined ? { codexAutoApprove } : {}),
+        ...(codexEffort ? { codexEffort } : {}) });
       if (saveError) throw new Error(saveError);
       return { ...settings, runtime, models: { ...settings.models, [runtime]: model }, sandbox,
         codex_auto_approve: codexAutoApprove ?? false };
@@ -104,16 +106,20 @@ function setup({ runtime = 'openclaw', locked = false, installed = true, saveErr
   });
   const onChange = value => changes.push(value);
   const onSelect = value => selections.push(value);
+  let previewRequest;
+  const onPreviewHandled = () => { previewRequest = undefined; };
   return {
     changes,
     saves,
     selections,
     modelRequests,
     settingsRequests,
+    preview(runtime) { previewRequest = { runtime }; },
+    pendingPreview() { return previewRequest; },
     render() {
       cursor = 0;
       effectCursor = 0;
-      const tree = component({ onChange, onSelect });
+      const tree = component({ onChange, onSelect, previewRequest, onPreviewHandled });
       return tree;
     },
   };
@@ -132,6 +138,77 @@ function text(tree) {
   if (!tree || typeof tree !== 'object') return '';
   return (tree.children || []).map(text).join('');
 }
+
+test('Codex efforts come from the selected model and reset when the model changes', async () => {
+  const view = setup({ runtime: 'codex' });
+  view.render();
+  await settle();
+  let tree = view.render();
+  nodes(tree, 'button').find(node => text(node) === '拉取模型').props.onClick();
+  await settle();
+  tree = view.render();
+  nodes(tree, 'settings-select').find(node => node.props.label === '原生模型').props.onChange('another-model');
+  tree = view.render();
+  const selector = nodes(tree, 'settings-select').find(node => node.props.label === 'Codex 推理强度');
+  assert.deepEqual(Array.from(selector.props.options, option => option.value), ['', 'low', 'high']);
+  selector.props.onChange('high');
+  tree = view.render();
+  assert.equal(nodes(tree, 'codex-connection')[0].props.effort, 'high');
+  nodes(tree, 'button')[0].props.onClick();
+  await settle();
+  assert.equal(view.saves.at(-1).codexEffort, 'high');
+  tree = view.render();
+  nodes(tree, 'input')[0].props.onChange({ target: { value: 'different-model' } });
+  assert.equal(nodes(view.render(), 'codex-connection')[0].props.effort, '');
+});
+
+test('local Codex entry previews saved settings without saving or claiming authentication', async () => {
+  const view = setup();
+  view.render();
+  await settle();
+  view.render();
+  view.preview('codex');
+  view.render();
+  let tree = view.render();
+  assert.equal(nodes(tree, 'settings-select')[0].props.value, 'codex');
+  assert.equal(nodes(tree, 'input')[0].props.value, 'codex-model');
+  assert.match(text(tree), /测试连接.*确认模型可用/);
+  assert.deepEqual(view.saves, []);
+  assert.deepEqual(view.changes, ['openclaw']);
+  assert.equal(view.pendingPreview(), undefined, 'consumed previews must not replay when the settings tab remounts');
+  nodes(tree, 'button')[0].props.onClick();
+  await settle();
+  tree = view.render();
+  assert.equal(view.saves[0].runtime, 'codex');
+  assert.match(text(tree), /已保存，请新建对话/);
+  nodes(tree, 'settings-select')[0].props.onChange('openclaw');
+  tree = view.render();
+  assert.equal(nodes(tree, 'settings-select')[0].props.value, 'openclaw');
+  view.preview('codex');
+  view.render();
+  assert.equal(nodes(view.render(), 'settings-select')[0].props.value, 'codex');
+});
+
+test('local CLI preview respects an environment lock and missing installations', async () => {
+  const locked = setup({ locked: true });
+  locked.render();
+  await settle();
+  locked.preview('codex');
+  locked.render();
+  const tree = locked.render();
+  assert.equal(nodes(tree, 'settings-select')[0].props.value, 'openclaw');
+  assert.deepEqual(locked.saves, []);
+  assert.match(text(tree), /启动环境已固定底座/);
+  const missing = setup({ installed: false });
+  missing.preview('codex');
+  missing.render();
+  await settle();
+  missing.render();
+  const preview = missing.render();
+  assert.equal(nodes(preview, 'settings-select')[0].props.value, 'codex');
+  assert.equal(nodes(preview, 'button')[0].props.disabled, true);
+  assert.deepEqual(missing.saves, []);
+});
 
 test('changing harness is local until save and retains its model override', async () => {
   const view = setup();

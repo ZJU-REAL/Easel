@@ -574,6 +574,7 @@ async def _lifespan(_app: FastAPI):
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
     from easel.harnesses.rpc import close_sessions
+    await _CODEX_LOGIN.close()
     await close_sessions()
     _HARNESS_LOOP = None
     _stop_mp_login_on_shutdown()
@@ -1865,6 +1866,7 @@ class HarnessSettingsRequest(BaseModel):
     model: str = Field(default="", max_length=240)
     sandbox: str = "workspace-write"
     codex_auto_approve: StrictBool | None = None
+    codex_effort: str | None = Field(default=None, max_length=16)
 
 
 @app.get("/api/settings/harness")
@@ -1883,6 +1885,8 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
         raise HTTPException(400, "请选择只读或工作区写入权限")
     if any(ord(character) < 32 for character in req.model):
         raise HTTPException(400, "模型名称不能包含控制字符")
+    if req.codex_effort is not None and req.codex_effort not in harness_store.CODEX_EFFORTS:
+        raise HTTPException(400, "请选择模型支持的推理强度")
     if "EASEL_AGENT_RUNTIME" in read_settings(ENV_FILE):
         raise HTTPException(409, "启动环境固定了底座，请修改 EASEL_AGENT_RUNTIME 后重启")
     if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS:
@@ -1898,11 +1902,103 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
     config["sandbox"] = req.sandbox
     if req.runtime == "codex" and req.codex_auto_approve is not None:
         config["codex_auto_approve"] = req.codex_auto_approve
+    if req.runtime == "codex" and req.codex_effort is not None:
+        config["codex_effort"] = req.codex_effort
     config["models"] = {**config["models"], req.runtime: req.model.strip()}
     harness_store.write_json(OUTPUTS_DIR / "_harness" / "config.json", config)
     from easel.harnesses.rpc import close_sessions
     await close_sessions()
     return await api_harness_settings()
+
+
+class CodexProbeRequest(BaseModel):
+    model: str = Field(default="", max_length=240)
+    effort: str = Field(default="", max_length=16)
+
+
+_CODEX_PROBE_RUNNING = False
+from easel.harnesses.codex_login import CodexLogin
+_CODEX_LOGIN = CodexLogin()
+
+
+class CodexLoginRequest(BaseModel):
+    method: str = "browser"
+
+
+class CodexLoginCancelRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+
+
+@app.get("/api/settings/harness/codex/login")
+async def api_codex_login_state():
+    return JSONResponse(_CODEX_LOGIN.snapshot(), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/settings/harness/codex/login")
+async def api_codex_login_start(req: CodexLoginRequest):
+    if req.method not in ("browser", "device"):
+        raise HTTPException(400, "请选择浏览器登录或验证码登录")
+    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS or _CODEX_PROBE_RUNNING:
+        raise HTTPException(409, "请等待当前任务完成后登录")
+    try:
+        result = await _CODEX_LOGIN.start(_codex_diagnostic_request(), req.method)
+    except HarnessError as error:
+        raise HTTPException(409, str(error)) from error
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/settings/harness/codex/login/cancel")
+async def api_codex_login_cancel(req: CodexLoginCancelRequest):
+    try:
+        result = await _CODEX_LOGIN.cancel(req.id)
+    except HarnessError as error:
+        raise HTTPException(409, str(error)) from error
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/settings/harness/codex/logout")
+async def api_codex_logout():
+    if _CODEX_LOGIN.pending:
+        raise HTTPException(409, "请先完成或取消当前登录")
+    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS or _CODEX_PROBE_RUNNING:
+        raise HTTPException(409, "请等待当前任务完成后退出 Codex")
+    try:
+        result = await _CODEX_LOGIN.logout(_codex_diagnostic_request())
+    except HarnessError as error:
+        raise HTTPException(409, str(error)) from error
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+def _codex_diagnostic_request(model="", effort=""):
+    if any(ord(character) < 32 for character in model) or effort not in harness_store.CODEX_EFFORTS:
+        raise HTTPException(400, "模型名称或推理强度无效")
+    if not harnesses.describe("codex")["installed"]:
+        raise HTTPException(409, "未检测到 Codex CLI，请先安装并执行 codex login")
+    return RunRequest("", PROJECT_ROOT, {
+        **read_settings(ENV_FILE), **_proxy_env(), "EASEL_ROOT": str(PROJECT_ROOT),
+        "EASEL_AGENT_RUNTIME": "codex"}, model=model, sandbox="read-only", codex_effort=effort)
+
+
+@app.get("/api/settings/harness/codex/status")
+async def api_codex_status():
+    from easel.harnesses.codex_diagnostics import account_status
+    return await account_status(_codex_diagnostic_request())
+
+
+@app.post("/api/settings/harness/codex/probe")
+async def api_codex_probe(req: CodexProbeRequest):
+    global _CODEX_PROBE_RUNNING
+    from easel.harnesses.codex_diagnostics import probe
+    request = _codex_diagnostic_request(req.model.strip(), req.effort)
+    if _CODEX_LOGIN.pending:
+        raise HTTPException(409, "请先完成或取消登录，再测试连接")
+    if _CODEX_PROBE_RUNNING:
+        raise HTTPException(409, "连接测试正在运行，请稍后重试")
+    _CODEX_PROBE_RUNNING = True
+    try:
+        return await probe(request)
+    finally:
+        _CODEX_PROBE_RUNNING = False
 
 
 @app.post("/api/settings/chat/transport")
@@ -2855,6 +2951,21 @@ def _chat_message(req: ChatRequest) -> str:
     return _publishing_message(chat_turn_message(message, req.persona))
 
 
+def _codex_images(req: ChatRequest) -> tuple[str, ...]:
+    _attachment_context(req)
+    # Other formats remain in the attachment manifest for skill/tool handling.
+    images = []
+    scope_root = OUTPUTS_DIR.resolve() / "_inbox" / _attachment_scope(req.sessionId or "")
+    for item in req.attachments:
+        if Path(item.path).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            continue
+        path = _safe_output_target(item.path)
+        if scope_root not in path.parents:
+            raise HTTPException(403, "图片附件链接超出当前会话范围")
+        images.append(str(path))
+    return tuple(dict.fromkeys(images))
+
+
 def _direct_chat_content(req: ChatRequest) -> tuple[str | list, str]:
     _attachment_context(req)  # Reuse ownership/path validation before reading any attachment.
     message = req.message.strip()
@@ -3212,6 +3323,8 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
             raise HarnessError("此会话正在另一个窗口运行，请稍后再试")
         if _chat_backend(sk) != runtime:
             raise HarnessError("底座已切换，请使用新对话重试")
+        if runtime == "codex" and _CODEX_LOGIN.pending:
+            raise HarnessError("请先在设置中完成或取消 Codex 登录，再发送消息")
         record = harness_store.binding(SESSIONS_DIR, sk)
         native_id = record.get("native_id", "")
         harness_store.bind(SESSIONS_DIR, sk, runtime, native_id)
@@ -3224,7 +3337,9 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
                "EASEL_ROOT": str(PROJECT_ROOT)}
         request = RunRequest(message, PROJECT_ROOT, env, native_id,
                              config["models"].get(runtime, ""), config["sandbox"], timeout,
-                             session_key=sk, codex_auto_approve=config.get("codex_auto_approve", False))
+                             session_key=sk, codex_auto_approve=config.get("codex_auto_approve", False),
+                             codex_effort=config.get("codex_effort", ""),
+                             images=_codex_images(req) if runtime == "codex" else ())
         await asyncio.wait_for(harnesses.adapter(runtime).run(
             request, receive, ask,
             lambda identifier: harness_store.bind(SESSIONS_DIR, sk, runtime, identifier)), timeout)

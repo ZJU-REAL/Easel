@@ -49,6 +49,7 @@ export interface HarnessSettingsResponse {
   models: Record<string, string>;
   sandbox: string;
   codex_auto_approve: boolean;
+  codex_effort?: string;
   locked: boolean;
   agents: { id: string; label: string; protocol: string; installed: boolean; install_hint: string }[];
 }
@@ -61,17 +62,70 @@ export interface HarnessModel {
   id: string;
   label: string;
   default: boolean;
+  efforts?: string[];
+  defaultEffort?: string;
+  inputModalities?: string[];
 }
 
 export function fetchHarnessModels(runtime: string): Promise<{ runtime: string; models: HarnessModel[] }> {
   return request(`/api/settings/harness/models/${encodeURIComponent(runtime)}`, { method: 'POST' });
 }
 
-export function saveHarnessSettings(runtime: string, model: string, sandbox: string, codexAutoApprove?: boolean): Promise<HarnessSettingsResponse> {
+export function saveHarnessSettings(runtime: string, model: string, sandbox: string, codexAutoApprove?: boolean, codexEffort?: string): Promise<HarnessSettingsResponse> {
   return request('/api/settings/harness', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runtime, model, sandbox, codex_auto_approve: codexAutoApprove }),
+    body: JSON.stringify({ runtime, model, sandbox, codex_auto_approve: codexAutoApprove, codex_effort: codexEffort }),
+  });
+}
+
+export interface CodexStatus {
+  state: 'authenticated' | 'unauthenticated' | 'external' | 'unknown';
+  authType?: string;
+  windows: { window: string; usedPercent: number; windowDurationMins?: number; resetsAt?: number }[];
+  quotaNote?: string;
+  error?: { code: string; message: string };
+}
+
+export function fetchCodexStatus(): Promise<CodexStatus> {
+  return request('/api/settings/harness/codex/status');
+}
+
+export interface CodexLoginState {
+  id?: string;
+  state: 'idle' | 'starting' | 'pending' | 'success' | 'failed' | 'expired' | 'cancelled';
+  method?: 'browser' | 'device';
+  authUrl?: string;
+  userCode?: string;
+  message?: string;
+}
+
+export function fetchCodexLogin(): Promise<CodexLoginState> {
+  return request('/api/settings/harness/codex/login');
+}
+
+export function startCodexLogin(method: 'browser' | 'device'): Promise<CodexLoginState> {
+  return request('/api/settings/harness/codex/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method }),
+  });
+}
+
+export function cancelCodexLogin(id: string): Promise<CodexLoginState> {
+  return request('/api/settings/harness/codex/login/cancel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+  });
+}
+
+export function logoutCodex(): Promise<CodexLoginState> {
+  return request('/api/settings/harness/codex/logout', { method: 'POST' });
+}
+
+export function probeCodex(model: string, effort: string): Promise<{
+  ok: boolean; model?: string; elapsedMs?: number; error?: { code: string; message: string };
+}> {
+  return request('/api/settings/harness/codex/probe', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, effort }),
   });
 }
 
@@ -1029,6 +1083,8 @@ export interface LocalAgentInfo {
   openclawProvider: string | null;
   configProvider?: string | null;
   supported: boolean;
+  /** Independent execution engine; supported/configured still refer to OpenClaw providers. */
+  nativeRuntime?: string | null;
   configured: boolean;
   usableWithoutKey: boolean;
   loginHint: string;

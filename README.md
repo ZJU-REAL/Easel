@@ -399,7 +399,7 @@ Easel 使用独立的 `easel` OpenClaw profile，不会覆盖你本机已有的 
 - [ ] **1. 适配 Windows 系统** —— 完善原生 Windows 下安装、路径与编码、浏览器发布等全链路兼容。
 - [ ] **2. 安装简易化** —— 降低上手门槛，减少手动步骤，提供更顺滑的一键安装体验。
 - [ ] **3. 优化页面 Agent 交互** —— 改进 Web 工作台的对话交互、加载逻辑与流式反馈等体验细节。
-- [ ] **4. 适配更多 Agent Harness** —— 支持 OpenClaw 之外的更多 Agent 运行框架，例如 Claude Code、DeepSeek harness、Codex 等。
+- [ ] **4. 适配更多 Agent Harness** —— 完善现有 Codex / OpenCode 接入，并适配 Claude Code、DeepSeek harness 等更多运行框架。已有引擎的切换方式见 [Agent 底座接入](docs/agent-harnesses.md)。
 
 ## 🙏 致谢
 
