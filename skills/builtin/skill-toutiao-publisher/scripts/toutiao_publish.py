@@ -580,6 +580,16 @@ def _login_form_visible(page) -> bool:
         "input[type='password'], input[autocomplete='one-time-code'], input[placeholder*='验证码']")
 
 
+def _qr_visible(page) -> bool:
+    """登录页二维码是否可见。
+
+    头条登录页同时渲染二维码与手机号登录表单（真机 2026-11 实测：tel 输入框
+    可见时二维码也在页面上），所以「见到手机输入」本身不代表绑定墙——只有
+    手机输入可见且二维码不在页面上时，才是扫码后的绑定手机号环节。
+    """
+    return _visible_form(page, ', '.join(QR_SELECTORS))
+
+
 def _backend_ui_authenticated(page) -> bool:
     """A loaded URL alone is insufficient: require scoped session and creator UI."""
     if not _is_logged_in(page) or _login_form_visible(page):
@@ -617,7 +627,7 @@ def _capture_qr(page, qr_out: Path) -> bool:
     """只截已识别的二维码元素，未识别时交给可见窗口，不截整页。"""
     deadline = time.time() + 15
     while time.time() < deadline:
-        if _needs_phone_binding(page):
+        if _needs_phone_binding(page) and not _qr_visible(page):
             return False
         for sel in QR_SELECTORS:
             try:
@@ -662,9 +672,18 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                 login_state.write_status(str(status_file), "success", "已登录")
                 print("✅ 今日头条 已登录（登录态在持久化目录）")
                 return 0
-            binding = _needs_phone_binding(page)
+            # 二维码 img 由前端异步注入 wrapper（真机 2026-11 实测约 5-8s 才出现），
+            # 而手机号登录表单是同页常驻可见的。等二维码出现（或确认等不到）再做
+            # 绑定墙判定，否则加载窗口内必然误判成「要求绑定手机号」。
+            binding = True
+            qr_deadline = time.time() + 12
+            while time.time() < qr_deadline:
+                binding = _needs_phone_binding(page) and not _qr_visible(page)
+                if not binding:
+                    break
+                page.wait_for_timeout(800)
             captured = False if binding else _capture_qr(page, qr_out)
-            binding = binding or _needs_phone_binding(page)
+            binding = binding or (_needs_phone_binding(page) and not _qr_visible(page))
             if binding:
                 qr_out.unlink(missing_ok=True)
                 if not headed:
@@ -689,7 +708,7 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
             deadline = time.time() + max(timeout_s, 30)
             while time.time() < deadline:
                 page.wait_for_timeout(2000)
-                if _needs_phone_binding(page):
+                if _needs_phone_binding(page) and not _qr_visible(page):
                     if not headed:
                         qr_out.unlink(missing_ok=True)
                         login_state.write_status(str(status_file), "error",
