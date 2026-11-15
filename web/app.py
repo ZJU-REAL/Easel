@@ -341,6 +341,7 @@ LOGIN_PROCESSES: dict[str, subprocess.Popen] = {}
 
 # whoami 真校验（起 headless 浏览器，数秒）的进程内缓存：避免账号页 + 工作台重复起浏览器。
 WHOAMI_TTL = 600  # 秒
+WHOAMI_FAILURE_TTL = 120  # 秒——校验失败（风控/超时）的短缓存，防止前端开页反复起浏览器触发 IP 风控
 _WHOAMI_CACHE: dict[str, tuple[float, dict]] = {}
 _WHOAMI_LOCK = threading.Lock()
 _WHOAMI_TASKS: dict[str, asyncio.Task] = {}
@@ -592,7 +593,10 @@ _LOCAL_PORTS = _local_ports(os.environ.get('EASEL_PORT', ''))
 _LOCAL_ORIGINS = [f'http://{host}:{port}'
                   for host in ('127.0.0.1', 'localhost') for port in _LOCAL_PORTS]
 _LOCAL_ORIGINS += [o.strip() for o in os.environ.get('EASEL_EXTRA_ORIGINS', '').split(',') if o.strip()]
-_EXTRA_HOSTS = [h.strip() for h in os.environ.get('EASEL_EXTRA_HOSTS', '').split(',') if h.strip()]
+# starlette 的 TrustedHostMiddleware 按「去端口后的主机名」比对 Host 头，条目里带 ":端口"
+# 会永不匹配、反代域名一律 400 且无提示。这里顺手剥掉端口，允许按 URL 习惯写完整 host:port。
+_EXTRA_HOSTS = [h.strip().rsplit(':', 1)[0]
+                for h in os.environ.get('EASEL_EXTRA_HOSTS', '').split(',') if h.strip()]
 
 # VSCode/code-server 等远程开发环境常通过 VSCODE_PROXY_URI 这个反代域名访问 Easel
 # （真实连接仍是本机回环，代理在同一台机器上转发）；不识别这个域名会让通过代理
@@ -4808,8 +4812,11 @@ async def _check_account_whoami(platform: str, force: bool = False):
     initial_marker = marker_version()
     with _WHOAMI_LOCK:
         hit = _WHOAMI_CACHE.get(platform)
-    cache_ttl = (min(WHOAMI_TTL, 60) if hit and hit[1].get('loggedIn')
-                 and (not hit[1].get('name') or not hit[1].get('avatar')) else WHOAMI_TTL)
+    cache_ttl = WHOAMI_TTL
+    if hit and hit[1].get('verifyError'):
+        cache_ttl = WHOAMI_FAILURE_TTL  # 失败缓存短 TTL，到期后前端重读会重新真校验
+    elif hit and hit[1].get('loggedIn') and (not hit[1].get('name') or not hit[1].get('avatar')):
+        cache_ttl = min(WHOAMI_TTL, 60)
     if (not force and hit and (time.time() - hit[0]) < cache_ttl
             and hit[1]['loggedIn'] == _account_logged_in(platform, cfg)):
         return hit[1]
@@ -4851,6 +4858,13 @@ async def _check_account_whoami(platform: str, force: bool = False):
             or (current_process is not None and current_process.poll() is None)):
         return {'loggedIn': _account_logged_in(platform, cfg), 'name': '', 'avatar': ''}
     if not confident:
+        # 失败也短暂入缓存（verifyError 标记 + 短 TTL）。此前失败不缓存，前端每次开页都会
+        # 重新起 headless 浏览器打平台，高频时触发平台 IP 风控（实测小红书 300012，二维码
+        # 都拿不到）；登录态标记变化时上面的等式检查会自动失效重验。
+        with _WHOAMI_LOCK:
+            _WHOAMI_CACHE[platform] = (time.time(),
+                                       {'loggedIn': _account_logged_in(platform, cfg),
+                                        'name': '', 'avatar': '', 'verifyError': True})
         raise HTTPException(502, '未能确认当前账号身份，请稍后重试校验；原登录状态和账号资料保持不变')
     verified_logged_in = data['loggedIn']
     if backend == 'wechat-oa' and not verified_logged_in and _wechat_has_credentials():
