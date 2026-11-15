@@ -4,12 +4,13 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from dataclasses import replace
 
 from easel import __version__
 
 from .base import HarnessError, RunRequest
 from .commands import base_command
-from .rpc import RPC
+from .rpc import RPC, connection
 
 
 def _valid_id(value):
@@ -18,7 +19,38 @@ def _valid_id(value):
 
 
 async def available_models(runtime: str, request: RunRequest) -> list[dict]:
-    if runtime == "codex":
+    if runtime == "hermes":
+        from .commands import hermes_command
+        from .hermes import HermesAdapter
+
+        async def reject(method, params):
+            raise HarnessError("读取模型列表时不允许执行工具")
+
+        command = list(hermes_command(profile="easel"))
+        profile_request = replace(request, env=HermesAdapter._profile_env(request.env), command=())
+        async with connection(profile_request, command, lambda method, params: None, reject, acp=True) as rpc:
+            initialized = await rpc.call("initialize", {
+                "protocolVersion": 1, "clientInfo": {"name": "easel", "version": __version__},
+                "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False},
+                                       "terminal": False}}, timeout=15)
+            if initialized.get("protocolVersion") != 1:
+                raise HarnessError("Hermes 不支持 ACP v1")
+            await rpc.send({"method": "initialized"})
+            result = await rpc.call("session/new", {"cwd": str(request.cwd), "mcpServers": []}, timeout=30)
+            models_result = result.get("models") or {}
+            available = models_result.get("availableModels") or []
+            current = models_result.get("currentModelId")
+            models = []
+            for item in available:
+                if not isinstance(item, dict):
+                    continue
+                identifier = item.get("modelId") or item.get("id")
+                if _valid_id(identifier):
+                    label = item.get("name") or item.get("displayName") or identifier
+                    models.append({"id": identifier,
+                                   "label": label if _valid_id(label) else identifier,
+                                   "default": identifier == current})
+    elif runtime == "codex":
         async def reject(method, params):
             raise HarnessError("读取模型列表时不允许执行工具")
 
