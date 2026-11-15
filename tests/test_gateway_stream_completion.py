@@ -13,7 +13,8 @@ import web.app as web
 @pytest.mark.parametrize("parts", [["complete"], ["开始", "中间", "结束"], ["a" * 8192, "tail"]])
 @pytest.mark.parametrize("buffered", [True, False])
 @pytest.mark.parametrize("raw_failure", [False, True])
-def test_gateway_stream_preserves_every_token(tmp_path, monkeypatch, parts, buffered, raw_failure):
+@pytest.mark.parametrize("ending", ["done", "truncated", "error"])
+def test_gateway_stream_preserves_every_token(tmp_path, monkeypatch, parts, buffered, raw_failure, ending):
     monkeypatch.setattr(web, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(web, "DEBUG_DIR", tmp_path / "debug")
     monkeypatch.setattr(web, "SHARED_RAW_STREAM", tmp_path / "absent-raw.jsonl")
@@ -35,7 +36,11 @@ def test_gateway_stream_preserves_every_token(tmp_path, monkeypatch, parts, buff
     events = [{"choices": [{"delta": {"reasoning_content": "thinking"}}]}]
     events.extend({"choices": [{"delta": {"content": part}}]} for part in parts)
     events.append({"choices": [{"delta": {}, "finish_reason": "stop"}]})
-    payload = "".join("data: " + json.dumps(event) + "\n\n" for event in events) + "data: [DONE]\n\n"
+    if ending == "error":
+        events.append({"error": {"message": "upstream failed after partial output"}})
+    payload = "".join("data: " + json.dumps(event) + "\n\n" for event in events)
+    if ending != "truncated":
+        payload += "data: [DONE]\n\n"
 
     raw_failed = threading.Event()
 
@@ -98,5 +103,24 @@ def test_gateway_stream_preserves_every_token(tmp_path, monkeypatch, parts, buff
         assert replay[-1]["event"] == "done"
         assert not web._RUNNING_CHAT
         assert not web._session_lock("buffered").locked()
+        status = await web.api_chat_job_status("buffered-turn")
+        assert status["backend"] == "openclaw"
+        assert status["state"] == ("succeeded" if ending == "done" else "unknown")
+        assert bool(status["finished_at"]) == (ending == "done")
+        if buffered and not raw_failure:
+            from fastapi import HTTPException
+            request = web.ChatRequest(message="test", sessionId="nonstream", turnId="nonstream-turn")
+            if ending == "done":
+                result = await web.api_chat(request)
+                assert result == {"response": "".join(parts), "sessionKey": "nonstream",
+                                  "turnId": "nonstream-turn"}
+            else:
+                with pytest.raises(HTTPException) as caught:
+                    await web.api_chat(request)
+                assert caught.value.status_code == 502
+            assert (await web.api_chat_job_status("nonstream-turn"))["state"] == status["state"]
+            with pytest.raises(HTTPException) as duplicate:
+                await web.api_chat(request)
+            assert duplicate.value.status_code == 409
 
     asyncio.run(scenario())
