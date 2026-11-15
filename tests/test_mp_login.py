@@ -61,6 +61,9 @@ class FakeMask:
     def inner_text(self):
         return self._text
 
+    def is_visible(self):
+        return True
+
     def query_selector_all(self, selector):
         return self._links if selector == 'a' else []
 
@@ -76,6 +79,8 @@ class FakePage:
         return self.qr
 
     def query_selector_all(self, selector):
+        if 'qrcode' in selector:
+            return [self.qr]
         if selector.endswith('link_text'):
             return self.links
         if selector == '.login__type__container__scan_mask':

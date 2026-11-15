@@ -213,7 +213,8 @@ def _account_identity(page):
     return identity
 
 
-QR_IMG_SEL = "img.login__type__container__scan__qrcode"
+QR_IMG_SEL = ("img.login__type__container__scan__qrcode, img[src*='qrcode'], "
+              ".login__type__container__scan img")
 QR_SWITCH_SEL = "a.login__type__container__link_text"
 # 未登录时的两种登录页形态：扫码视图，或记住微账号后的「微信快捷登录」视图
 LOGIN_UI_SEL = f"{QR_IMG_SEL}, {QR_SWITCH_SEL}"
@@ -221,8 +222,9 @@ LOGIN_UI_SEL = f"{QR_IMG_SEL}, {QR_SWITCH_SEL}"
 
 def _qr_visible(page):
     try:
-        el = page.query_selector(QR_IMG_SEL)
-        return bool(el and el.is_visible() and el.bounding_box())
+        return any(el.is_visible() and el.bounding_box()
+                   and page.evaluate("(e)=>e.complete && e.naturalWidth>10", el)
+                   for el in page.query_selector_all(QR_IMG_SEL))
     except Exception:
         return False
 
@@ -239,11 +241,12 @@ def _ensure_qr_mode(page, timeout=20.0):
         if _qr_visible(page):
             return True
         if not switched:
-            switched = True
             for link in page.query_selector_all(QR_SWITCH_SEL):
                 try:
                     text = (link.inner_text() or "").strip()
                     if text == "扫码登录" and link.is_visible():
+                        # Set before clicking: an uncertain click must not be replayed.
+                        switched = True
                         link.click(timeout=3000)
                         page.wait_for_timeout(1500)
                         break
@@ -262,10 +265,12 @@ def _refresh_expired_qr(page):
         return False
     for mask in masks:
         try:
+            if not mask.is_visible():
+                continue
             text = mask.inner_text() or ""
         except Exception:
             continue
-        if "已过期" not in text and "加载失败" not in text:
+        if "扫码成功" in text or ("已过期" not in text and "加载失败" not in text):
             continue
         try:
             links = mask.query_selector_all("a")
@@ -273,7 +278,7 @@ def _refresh_expired_qr(page):
             continue
         for link in links:
             try:
-                if link.is_visible():
+                if link.is_visible() and (link.inner_text() or "").strip() == "点击刷新":
                     link.click(timeout=3000)
                     return True
             except Exception:
@@ -287,8 +292,9 @@ def _capture_qr(page, qr_out, attempts=25):
     Path(qr_out).parent.mkdir(parents=True, exist_ok=True)
     for _ in range(attempts):
         try:
-            el = page.query_selector(QR_IMG_SEL)
-            if el:
+            for el in page.query_selector_all(QR_IMG_SEL):
+                if not el.is_visible():
+                    continue
                 box = el.bounding_box()
                 loaded = False
                 try:
@@ -296,7 +302,7 @@ def _capture_qr(page, qr_out, attempts=25):
                 except Exception:
                     loaded = bool(box and box["width"] > 80)
                 if loaded and box and box["width"] > 80:
-                    shot = el.screenshot(timeout=15000)
+                    shot = el.screenshot(timeout=3000)
                     if login_qr.save_qr(shot, Path(qr_out)):
                         return True
         except Exception:

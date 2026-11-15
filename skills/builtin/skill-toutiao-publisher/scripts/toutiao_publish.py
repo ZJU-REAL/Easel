@@ -47,6 +47,7 @@ if str(_SHARED_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SHARED_SCRIPTS))
 
 import content_guard  # noqa: E402  出站内容安全闸门
+import login_qr  # noqa: E402
 import output_paths  # noqa: E402  产物路径规约
 
 PROFILE_DIR = Path.home() / ".easel-browser-profiles" / "ToutiaoProfile"
@@ -587,7 +588,17 @@ def _qr_visible(page) -> bool:
     可见时二维码也在页面上），所以「见到手机输入」本身不代表绑定墙——只有
     手机输入可见且二维码不在页面上时，才是扫码后的绑定手机号环节。
     """
-    return _visible_form(page, ', '.join(QR_SELECTORS))
+    for frame in [page, *getattr(page, "frames", [])]:
+        try:
+            for element in frame.locator(', '.join(QR_SELECTORS)).all():
+                if element.is_visible() and element.evaluate(
+                    "e => e.tagName === 'CANVAS' ? e.width > 48 && e.height > 48 : "
+                    "e.complete && e.naturalWidth > 10"
+                ):
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 def _backend_ui_authenticated(page) -> bool:
@@ -623,21 +634,29 @@ def _backend_authenticated(page) -> bool:
             and _backend_ui_authenticated(page))
 
 
-def _capture_qr(page, qr_out: Path) -> bool:
-    """只截已识别的二维码元素，未识别时交给可见窗口，不截整页。"""
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        if _needs_phone_binding(page) and not _qr_visible(page):
-            return False
+def _capture_qr_once(page, qr_out: Path) -> bool:
+    """只保存通过图案检测的二维码，覆盖 iframe，不截手机号表单。"""
+    for frame in [page, *getattr(page, "frames", [])]:
         for sel in QR_SELECTORS:
             try:
-                el = page.locator(sel).first
-                if el.count() and el.is_visible():
-                    el.screenshot(path=str(qr_out))
-                    if qr_out.is_file() and qr_out.stat().st_size > 500:
-                        return True
+                elements = frame.locator(sel).all()
             except Exception:
                 continue
+            for el in elements:
+                try:
+                    if el.is_visible() and login_qr.save_qr(el.screenshot(timeout=3000), qr_out):
+                        return True
+                except Exception:
+                    continue
+    return False
+
+
+def _capture_qr(page, qr_out: Path) -> bool:
+    """等异步二维码出现；手机号登录表单可以同页存在，不提前退出。"""
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if _capture_qr_once(page, qr_out):
+            return True
         page.wait_for_timeout(500)
     return False
 
@@ -675,15 +694,8 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
             # 二维码 img 由前端异步注入 wrapper（真机 2026-11 实测约 5-8s 才出现），
             # 而手机号登录表单是同页常驻可见的。等二维码出现（或确认等不到）再做
             # 绑定墙判定，否则加载窗口内必然误判成「要求绑定手机号」。
-            binding = True
-            qr_deadline = time.time() + 12
-            while time.time() < qr_deadline:
-                binding = _needs_phone_binding(page) and not _qr_visible(page)
-                if not binding:
-                    break
-                page.wait_for_timeout(800)
-            captured = False if binding else _capture_qr(page, qr_out)
-            binding = binding or (_needs_phone_binding(page) and not _qr_visible(page))
+            captured = _capture_qr(page, qr_out)
+            binding = _needs_phone_binding(page) and not _qr_visible(page)
             if binding:
                 qr_out.unlink(missing_ok=True)
                 if not headed:
@@ -706,9 +718,16 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                                          qr=str(qr_out))
                     print(f"📱 二维码已保存：{qr_out}")
             deadline = time.time() + max(timeout_s, 30)
+            qr_missing_since = None
+            next_capture = time.time() + 5
             while time.time() < deadline:
                 page.wait_for_timeout(2000)
                 if _needs_phone_binding(page) and not _qr_visible(page):
+                    # 换码时图片会短暂消失；持续缺码才交给手机号验证。
+                    if qr_missing_since is None:
+                        qr_missing_since = time.time()
+                    if time.time() - qr_missing_since < 12:
+                        continue
                     if not headed:
                         qr_out.unlink(missing_ok=True)
                         login_state.write_status(str(status_file), "error",
@@ -723,6 +742,7 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                         login_state.write_status(str(status_file), "window_login",
                                                  "扫码已确认；请在弹出的今日头条窗口绑定手机号并输入短信验证码")
                     continue
+                qr_missing_since = None
                 if _backend_authenticated(page):
                     ctx.close()
                     ctx = None
@@ -733,6 +753,9 @@ def _qr_login(profile: Path, qr_out: Path, status_file: Path, timeout_s: int,
                         pass
                     print("✅ 登录成功")
                     return 0
+                if time.time() >= next_capture:
+                    _capture_qr_once(page, qr_out)
+                    next_capture = time.time() + 5
             login_state.write_status(str(status_file), "expired",
                                      "登录或验证未完成，请重新登录")
             return 1

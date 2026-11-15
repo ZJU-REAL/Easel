@@ -4,6 +4,15 @@ This page tracks known issues relevant to using Easel, along with recommended wo
 
 ---
 
+## QR login on WeChat Official Accounts and Toutiao
+
+- **WeChat Official Accounts show a full-page image or an invalidated QR code**: remembered accounts may open the quick-login view. Easel waits for the scan-login control and switches at most once per login attempt, then saves only a detected QR pattern. It clicks the explicit refresh link only in an expired or failed QR overlay; a successful scan is left awaiting confirmation.
+- **Toutiao reports phone binding before showing a QR code**: the phone-login form and QR code can coexist, and the code may load asynchronously or in an iframe. Easel waits for and validates the QR image and updates it during polling. A brief gap during code rotation does not immediately end login. Persistent phone verification still requires the account owner to finish in the visible browser window.
+
+Scanning alone does not establish a saved login session. These fixes do not bypass administrator confirmation, phone verification, network failures, or platform risk controls.
+
+---
+
 ## Duplicate reply after an "ask_user" prompt in the CLI chat
 
 - **Scope**: `easel chat` (terminal chat) only. **The Web workspace is unaffected.**

@@ -90,7 +90,12 @@ def test_failed_identity_probe_preserves_unknown_state(browser_stub):
 
 def test_phone_binding_during_qr_capture_is_never_screenshotted(tmp_path, monkeypatch):
     monkeypatch.setattr(tp, "_needs_phone_binding", lambda p: True)
-    page = SimpleNamespace(locator=lambda s: pytest.fail("binding form is not a QR"),
+    def locator(selector):
+        assert selector in tp.QR_SELECTORS
+        return SimpleNamespace(all=lambda: [])
+    clock = count(step=10)
+    monkeypatch.setattr(tp.time, "time", lambda: next(clock))
+    page = SimpleNamespace(locator=locator, wait_for_timeout=lambda ms: None,
                            screenshot=lambda **k: pytest.fail("do not screenshot phone inputs"))
     assert not tp._capture_qr(page, tmp_path / "qr.png")
 
