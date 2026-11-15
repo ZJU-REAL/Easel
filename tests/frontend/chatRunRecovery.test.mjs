@@ -23,6 +23,7 @@ function harness(initial, mutate = async () => initial) {
         if (!(index in states)) states[index] = value;
         return [states[index], next => { states[index] = next; }];
       },
+      useRef(value) { const index = cursor++; return states[index] ??= { current: value }; },
       useEffect(effect) { if (!mounted) effects.push(effect); },
     } : name === '../lib/api' ? {
       fetchChatRun: async id => { calls.push(['read', id]); return current; },
@@ -46,7 +47,7 @@ function harness(initial, mutate = async () => initial) {
   return { render, flush, buttons, calls, setCurrent: value => { current = value; } };
 }
 
-for (const backend of ['direct_api', 'openclaw', 'codex', 'opencode', 'acp'])
+for (const backend of ['direct_api', 'openclaw', 'codex', 'opencode', 'acp', 'hermes'])
 for (const [state, action, label] of [
   ['queued', 'cancel-queued', '取消排队'], ['running', 'reconcile', '核验执行状态'],
 ]) {

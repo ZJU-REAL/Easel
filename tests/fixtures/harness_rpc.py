@@ -82,6 +82,10 @@ while True:
             result["models"] = {"availableModels": [
                 {"modelId": "provider/alpha", "name": "Alpha"},
                 {"modelId": "provider/beta"}], "currentModelId": "provider/alpha"}
+        if method == "session/load" and mode == "null-resume":
+            result = None
+        elif method == "session/load" and mode == "empty-resume":
+            result = {}
         reply(message, result)
     elif method in ("session/set_config_option", "session/set_model"):
         reply(message, {})

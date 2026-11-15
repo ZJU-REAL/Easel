@@ -2,13 +2,13 @@
 
 `easel.run_store.RunStore` 保存每轮 Agent 任务的身份、执行状态和产物引用，
 为 [#106](https://github.com/ZJU-REAL/Easel/issues/106) 的状态恢复提供基础。
-API 直连、OpenClaw、Codex、OpenCode 与 ACP 的流式与非流式聊天入口已接入，现有 JSON 快照与 JSONL 回放保持原样。
+API 直连、OpenClaw、Codex、OpenCode、Hermes 与 ACP 的流式与非流式聊天入口已接入，现有 JSON 快照与 JSONL 回放保持原样。
 创建账本或重新打开数据库不会启动 Agent，也不会自动恢复或重复执行工具。
 
 ## 记录与状态
 
 - `turn_id` 唯一标识一轮任务；与 `session_id` 按原始字符串存储，不做文件名替换。
-- `backend` 为 `openclaw`、`direct_api`、`codex`、`opencode` 或 `acp`。
+- `backend` 为 `openclaw`、`direct_api`、`codex`、`opencode` 、`acp` 或 `hermes`。
 - `version` 从 1 开始，每次成功状态迁移加 1；调用者必须提供预期版本。
 - `owner_id` 是执行者的关联标识；进入 `running` 时必填，结束时必须匹配。
   它不是认证凭证，也不能阻止外部工具执行。
@@ -80,7 +80,7 @@ SQLite `user_version` 管理数据库结构版本，和每条记录的 `version`
 
 ## 后续接入
 
-当前接入范围是 `POST /api/chat/stream` 和 `POST /api/chat` 的全部五种后端。请求先持久化 `queued`，
+当前接入范围是 `POST /api/chat/stream` 和 `POST /api/chat` 的全部六种后端。请求先持久化 `queued`，
 持有会话双锁后保存 `running`，成功、失败或取消时再保存结束状态。
 同一任务 ID 重复提交返回 409，既有事件文件也不能被新请求覆盖。
 新任务 ID 限定为 1–160 个小写字母、数字、下划线或连字符，排除 Windows 设备名，
@@ -113,7 +113,7 @@ SQLite `user_version` 管理数据库结构版本，和每条记录的 `version`
 该操作表示用户撤回排队请求，不推断进程死亡，也不终止已经启动的远端请求。
 
 先读取任务状态及 `version`，再调用 `POST /api/chat/jobs/{turn_id}/reconcile`，
-请求体为 `{"expected_version": 2}`。该接口处理五种聊天后端的 `running` 记录，只核验本地执行锁。
+请求体为 `{"expected_version": 2}`。该接口处理六种聊天后端的 `running` 记录，只核验本地执行锁。
 它尝试取得与执行器相同的进程内锁和跨进程锁，在持锁期间重新读取记录并校验版本，
 随后将记录改为 `unknown`。返回 `reconciliation=marked_unknown`、
 `live_status=session_lock_acquired` 和 `can_resume=false`。
@@ -145,10 +145,10 @@ OpenClaw HTTP 必须收到 `[DONE]` 且没有错误事件，CLI 必须正常退�
 才记录成功。部分正文会保留在事件日志和原有快照中，但不能据此宣称任务已完成。
 锁持有期间完成终态写入；快照写入失败也会释放锁和清理执行器登记。
 
-结构版本 2 扩展原生后端枚举；从版本 1 升级时，在一个 SQLite 写事务中重建约束，
+结构版本 3 纳入 Hermes 原生后端；从版本 1 或 2 升级时，在一个 SQLite 写事务中重建约束，
 原样保留任务标识、版本、所有者、时间、产物引用及运行中会话唯一索引。
 复制或提交失败会回滚整个升级，不删除旧库、不重新执行旧任务。
-旧版进程会拒绝结构版本 2，部署时应先停止旧服务，避免新旧代码混用。
+旧版进程会拒绝结构版本 3，部署时应先停止旧服务，避免新旧代码混用。
 
 普通聊天返回 `turnId` 与 `sessionKey`，可使用相同状态查询接口；任务 ID 在两个聊天入口间共享，
 不能通过切换入口重复提交。OpenClaw 普通聊天使用相同的流式执行器收集正文，

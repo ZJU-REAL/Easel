@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from easel.harnesses.base import HarnessError
@@ -23,11 +24,19 @@ def profile_home(root: Path | None = None) -> Path:
             return base
         return base / "profiles" / "easel"
 
-    home_root = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser().resolve()
-    profiles = home_root / "profiles"
-    expected = profiles / "easel"
-    if profiles.is_symlink() or expected.is_symlink():
-        raise RuntimeError("Hermes easel profile path contains a symlink; refusing to sync skills.")
+    roots = [(Path.home() / ".hermes").resolve()]
+    if sys.platform == "win32":
+        local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        roots.insert(0, (local / "hermes").expanduser().resolve())
+    configured = os.environ.get("HERMES_HOME", "").strip()
+    if configured:
+        home = Path(os.path.expandvars(configured)).expanduser().resolve()
+        native = next((root for root in roots if home == root or root in home.parents), None)
+        roots = [native or (home.parent.parent if home.parent.name == "profiles" else home)]
+    expected_homes = [root / "profiles" / "easel" for root in roots]
+    for expected in expected_homes:
+        if expected.parent.is_symlink() or expected.is_symlink():
+            raise RuntimeError("Hermes easel profile path contains a symlink; refusing to sync skills.")
 
     try:
         command = hermes_command(profile="easel")
@@ -54,15 +63,19 @@ def profile_home(root: Path | None = None) -> Path:
     config = Path(config_path.strip().strip('"').strip("'")).expanduser()
     if not config.is_absolute() or config.name not in {"config.yaml", "config.yml"}:
         raise RuntimeError("Hermes returned an unexpected config path for the easel profile.")
-    if profiles.is_symlink() or expected.is_symlink():
-        raise RuntimeError("Hermes easel profile path contains a symlink; refusing to sync skills.")
-    if config.parent.resolve() != expected.resolve():
+    expected = next((home for home in expected_homes if config.parent.resolve() == home.resolve()), None)
+    if expected is None:
         raise RuntimeError("Hermes returned an unexpected config path for the easel profile.")
+    if expected.parent.is_symlink() or expected.is_symlink():
+        raise RuntimeError("Hermes easel profile path contains a symlink; refusing to sync skills.")
     return expected
 
 
 def _ignore_symlinks(directory: str, names: list[str]) -> set[str]:
-    return {name for name in names if (Path(directory) / name).is_symlink()}
+    private = {".env", "cookies.json", "cookie.json", "wechat-publisher.yaml", "wechat-publisher.yml",
+               ".git", "node_modules", "__pycache__"}
+    return {name for name in names if (Path(directory) / name).is_symlink()
+            or name in private or (name.startswith(".env.") and name != ".env.example")}
 
 
 def sync_skills(*, source: Path = SKILLS_DIR, root: Path | None = None) -> tuple[list[str], list[str]]:
@@ -81,13 +94,40 @@ def sync_skills(*, source: Path = SKILLS_DIR, root: Path | None = None) -> tuple
     copied: list[str] = []
     skipped: list[str] = []
     for skill in sorted(source.iterdir()):
-        if not skill.is_dir() or skill.is_symlink() or not (skill / "SKILL.md").is_file():
+        if (not skill.is_dir() or skill.is_symlink() or not (skill / "SKILL.md").is_file()
+                or (skill / "SKILL.md").is_symlink()):
             continue
         target = destination / skill.name
         if target.exists() or target.is_symlink():
             skipped.append(skill.name)
             continue
-        shutil.copytree(skill, target, symlinks=False, ignore=_ignore_symlinks)
+        with tempfile.TemporaryDirectory(dir=destination, prefix=".easel-skill-") as temporary:
+            staged = Path(temporary) / skill.name
+            shutil.copytree(skill, staged, symlinks=False, ignore=_ignore_symlinks)
+            if not (staged / "SKILL.md").is_file():
+                raise RuntimeError("Skill entry changed while copying; no incomplete skill was installed.")
+            if os.name == "nt":
+                try:
+                    staged.rename(target)  # Windows rename refuses every existing destination.
+                except FileExistsError:
+                    skipped.append(skill.name)
+                    continue
+                copied.append(skill.name)
+                continue
+            try:
+                # Reserve the destination without overwriting a concurrently created path.
+                target.mkdir()
+            except FileExistsError:
+                skipped.append(skill.name)
+                continue
+            try:
+                staged.replace(target)
+            except BaseException:
+                try:
+                    target.rmdir()  # only our empty reservation; preserve external additions
+                except OSError:
+                    pass
+                raise
         copied.append(skill.name)
     return copied, skipped
 
@@ -95,7 +135,7 @@ def sync_skills(*, source: Path = SKILLS_DIR, root: Path | None = None) -> tuple
 def main() -> int:
     try:
         copied, skipped = sync_skills()
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     print(f"Hermes easel profile: copied {len(copied)} missing skills; preserved {len(skipped)} existing skills.")

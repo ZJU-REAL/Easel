@@ -27,18 +27,22 @@ async def available_models(runtime: str, request: RunRequest) -> list[dict]:
             raise HarnessError("读取模型列表时不允许执行工具")
 
         command = list(hermes_command(profile="easel"))
-        profile_request = replace(request, env=HermesAdapter._profile_env(request.env), command=())
+        profile_request = replace(request, env=HermesAdapter._profile_env(request.env), command=(),
+                                  session_key="", native_id="")
         async with connection(profile_request, command, lambda method, params: None, reject, acp=True) as rpc:
             initialized = await rpc.call("initialize", {
                 "protocolVersion": 1, "clientInfo": {"name": "easel", "version": __version__},
                 "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False},
                                        "terminal": False}}, timeout=15)
-            if initialized.get("protocolVersion") != 1:
+            if not isinstance(initialized, dict) or initialized.get("protocolVersion") != 1:
                 raise HarnessError("Hermes 不支持 ACP v1")
-            await rpc.send({"method": "initialized"})
             result = await rpc.call("session/new", {"cwd": str(request.cwd), "mcpServers": []}, timeout=30)
+            if not isinstance(result, dict) or not isinstance(result.get("models"), dict):
+                raise HarnessError("Hermes 未返回有效的原生模型列表，请检查 profile 和 ACP 版本")
             models_result = result.get("models") or {}
             available = models_result.get("availableModels") or []
+            if not isinstance(available, list) or len(available) > 2000:
+                raise HarnessError("Hermes 返回了无效或过大的原生模型列表")
             current = models_result.get("currentModelId")
             models = []
             for item in available:

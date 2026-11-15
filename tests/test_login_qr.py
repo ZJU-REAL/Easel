@@ -855,7 +855,7 @@ def test_web_login_sets_child_utf8_without_changing_parent_env(tmp_path, monkeyp
     env.update(LOGIN_RUNNERS={"zhihu": {"backend": "web", "wp": "zhihu"}},
                LOGIN_PROCESSES={}, LOGIN_DIR=tmp_path, SHARED_SCRIPTS=SCRIPTS,
                PROJECT_ROOT=ROOT, LOGIN_TIMEOUT=180, _WHOAMI_LOCK=threading.Lock(),
-               _WHOAMI_CACHE={}, _proxy_env=lambda: original.copy(),
+               _WHOAMI_CACHE={}, _WHOAMI_FAILURES={}, WHOAMI_FAILURE_TTL=120, _proxy_env=lambda: original.copy(),
                _login_status=lambda platform: {"state": "qr_ready", "qr": ""},
                asyncio=SimpleNamespace(sleep=sleep, Lock=asyncio.Lock))
     asyncio.run(env["api_login_start"]("zhihu"))

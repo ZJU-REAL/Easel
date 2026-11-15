@@ -12,7 +12,7 @@ import sys
 import pytest
 import segno
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'skills/shared/scripts'))
@@ -34,8 +34,21 @@ def browser():
         if not Path(pw.chromium.executable_path).is_file():
             pytest.skip('requires Playwright Chromium')
         browser = pw.chromium.launch(headless=True)
-        yield browser
-        browser.close()
+        try:
+            # A browser can serve DOM operations while its compositor cannot
+            # capture frames (for example on a headless host without a working
+            # rendering clock). Detect that prerequisite before pixel checks.
+            probe = browser.new_page()
+            try:
+                probe.set_content('<main style="width:32px;height:32px;background:black"></main>')
+                probe.screenshot(timeout=2000, animations='disabled')
+            except PlaywrightTimeoutError as error:
+                pytest.skip(f'Chromium frame capture unavailable ({type(error).__name__}); requires a working renderer')
+            finally:
+                probe.close()
+            yield browser
+        finally:
+            browser.close()
 
 
 @pytest.fixture

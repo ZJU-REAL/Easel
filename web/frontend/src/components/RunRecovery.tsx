@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchChatRun, updateChatRun, type ChatRun } from '../lib/api';
 
 const labels: Record<ChatRun['state'], string> = {
@@ -6,37 +6,47 @@ const labels: Record<ChatRun['state'], string> = {
   failed: '执行失败', cancelled: '已取消', interrupted: '已中断', unknown: '结果未知',
 };
 
+type RecoveryState = { turnId: string; run: ChatRun | null; busy: boolean; error: string };
+
 /** Recovery reads saved state; no action here sends the original prompt again. */
 export default function RunRecovery({ turnId }: { turnId: string }) {
-  const [run, setRun] = useState<ChatRun | null>(null);
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState('');
+  const [snapshot, setSnapshot] = useState<RecoveryState>({ turnId, run: null, busy: true, error: '' });
+  const generation = useRef(0);
+  const { run, busy, error } = snapshot.turnId === turnId
+    ? snapshot : { run: null, busy: true, error: '' };
+
   useEffect(() => {
+    const epoch = ++generation.current;
     const controller = new AbortController();
-    void fetchChatRun(turnId, controller.signal).then(setRun).catch((e: Error) => {
-      if (!controller.signal.aborted) setError(e.message);
-    }).finally(() => {
-      if (!controller.signal.aborted) setBusy(false);
+    void fetchChatRun(turnId, controller.signal).then(value => {
+      if (generation.current === epoch && !controller.signal.aborted) {
+        setSnapshot({ turnId, run: value, busy: false, error: '' });
+      }
+    }).catch((e: Error) => {
+      if (generation.current === epoch && !controller.signal.aborted) {
+        setSnapshot({ turnId, run: null, busy: false, error: e.message });
+      }
     });
-    return () => controller.abort();
+    return () => { ++generation.current; controller.abort(); };
   }, [turnId]);
 
   const inspect = async (action?: 'reconcile' | 'cancel-queued') => {
     if (busy) return;
-    setBusy(true);
-    setError('');
+    const epoch = generation.current;
+    const current = () => generation.current === epoch;
+    setSnapshot({ turnId, run, busy: true, error: '' });
     try {
-      if (action && run?.tracking === 'persisted' && run.version) {
-        setRun(await updateChatRun(turnId, action, run.version));
-      } else {
-        setRun(await fetchChatRun(turnId));
-      }
+      const value = action && run?.tracking === 'persisted' && run.version
+        ? await updateChatRun(turnId, action, run.version)
+        : await fetchChatRun(turnId);
+      if (current()) setSnapshot({ turnId, run: value, busy: false, error: '' });
     } catch (e) {
-      setError(e instanceof Error ? e.message : '任务状态暂不可读取');
+      if (!current()) return;
+      const message = e instanceof Error ? e.message : '任务状态暂不可读取';
+      let value = run;
       // Refresh stale revisions, but never retry a mutation automatically.
-      try { setRun(await fetchChatRun(turnId)); } catch { /* keep last known state */ }
-    } finally {
-      setBusy(false);
+      try { value = await fetchChatRun(turnId); } catch { /* keep last known state */ }
+      if (current()) setSnapshot({ turnId, run: value, busy: false, error: message });
     }
   };
 

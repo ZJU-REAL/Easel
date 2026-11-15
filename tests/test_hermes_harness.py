@@ -36,9 +36,10 @@ def audit(tmp_path):
     return [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
 
 
-def test_hermes_is_registered_and_profile_is_explicit():
+def test_hermes_is_registered_and_profile_is_explicit(monkeypatch):
     from easel.harnesses import adapter
 
+    monkeypatch.setattr("easel.harnesses.commands.shutil.which", lambda name: "/fake/hermes")
     assert "hermes" in store.IDS
     assert isinstance(adapter("hermes"), HermesAdapter)
     assert HermesAdapter().launch_command()[1:] == ("--profile", "easel", "acp")
@@ -85,7 +86,7 @@ def test_hermes_model_catalog_comes_from_session_new_and_ignores_request_command
         {"id": "provider/beta", "label": "provider/beta", "default": False},
     ]
     assert [item.get("method") for item in audit(tmp_path)] == [
-        "initialize", "initialized", "session/new"]
+        "initialize", "session/new"]
 
 
 def test_hermes_session_continues_with_session_load_and_same_identity(tmp_path):
@@ -344,3 +345,95 @@ def test_hermes_skill_sync_rejects_symlinked_skills_directory(monkeypatch, tmp_p
     with pytest.raises(RuntimeError, match="symlink"):
         hermes_skills.sync_skills(source=source)
     assert not (outside_skills / "managed-skill").exists()
+
+
+def test_hermes_does_not_dispatch_after_null_session_load(tmp_path):
+    async def reject(_questions):
+        raise AssertionError('No permission expected')
+    bound=[]
+    with pytest.raises(HarnessError, match='续接|载入'):
+        asyncio.run(HermesAdapter().run(request_for(tmp_path,'null-resume',native_id='original'),
+                                       lambda *_:None,reject,bound.append))
+    assert not bound
+    assert not any(item.get('method')=='session/prompt' for item in audit(tmp_path))
+
+
+def test_hermes_accepts_a_valid_empty_acp_load_response(tmp_path):
+    async def reject(_questions):
+        raise AssertionError('No permission expected')
+    bound=[]
+    asyncio.run(HermesAdapter().run(request_for(tmp_path,'empty-resume',native_id='original'),
+                                   lambda *_:None,reject,bound.append))
+    assert bound==['original']
+    assert any(item.get('method')=='session/prompt' for item in audit(tmp_path))
+
+
+def test_hermes_skill_copy_failure_leaves_no_partial_target(tmp_path, monkeypatch):
+    from easel.commands import hermes_skills
+    source=tmp_path/'source'; skill=source/'skill-a'; skill.mkdir(parents=True)
+    (skill/'SKILL.md').write_text('managed',encoding='utf-8')
+    home=tmp_path/'hermes'/'profiles'/'easel'; home.mkdir(parents=True)
+    copy=hermes_skills.shutil.copytree
+    def fail_copy(*args,**kwargs):
+        copy(*args,**kwargs)
+        raise OSError('injected copy failure')
+    monkeypatch.setattr(hermes_skills.shutil,'copytree',fail_copy)
+    with pytest.raises(OSError,match='copy failure'):
+        hermes_skills.sync_skills(source=source,root=tmp_path/'hermes')
+    assert not (home/'skills'/'skill-a').exists()
+    assert list((home/'skills').iterdir())==[]
+
+
+def test_hermes_skill_sync_never_copies_runtime_credentials(tmp_path):
+    from easel.commands import hermes_skills
+    skill=tmp_path/'source'/'skill-a'; skill.mkdir(parents=True)
+    for name in ('SKILL.md','.env','cookies.json','wechat-publisher.yaml','.env.example'):
+        (skill/name).write_text('synthetic fixture',encoding='utf-8')
+    home=tmp_path/'hermes'/'profiles'/'easel'; home.mkdir(parents=True)
+    assert hermes_skills.sync_skills(source=tmp_path/'source',root=tmp_path/'hermes')[0]==['skill-a']
+    target=home/'skills'/'skill-a'
+    assert (target/'SKILL.md').is_file() and (target/'.env.example').is_file()
+    assert not any((target/name).exists() for name in ('.env','cookies.json','wechat-publisher.yaml'))
+
+
+def test_hermes_skill_sync_rejects_a_symlinked_skill_entry(tmp_path):
+    from easel.commands import hermes_skills
+    skill=tmp_path/'source'/'skill-a'; skill.mkdir(parents=True)
+    outside=tmp_path/'outside.md'; outside.write_text('external',encoding='utf-8')
+    try: (skill/'SKILL.md').symlink_to(outside)
+    except OSError: pytest.skip('symlinks unavailable')
+    home=tmp_path/'hermes'/'profiles'/'easel'; home.mkdir(parents=True)
+    copied,_=hermes_skills.sync_skills(source=tmp_path/'source',root=tmp_path/'hermes')
+    assert not copied
+    assert not (home/'skills'/'skill-a').exists()
+
+
+def test_hermes_skill_sync_accepts_native_windows_profile_root(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    from easel.commands import hermes_skills
+    monkeypatch.delenv('HERMES_HOME',raising=False)
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'/'Local'))
+    monkeypatch.setattr(hermes_skills.sys,'platform','win32')
+    monkeypatch.setattr(hermes_skills,'hermes_command',lambda **k:('/fake/hermes','--profile','easel','acp'))
+    path=tmp_path/'AppData'/'Local'/'hermes'/'profiles'/'easel'/'config.yaml'
+    monkeypatch.setattr(hermes_skills.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=str(path)))
+    assert hermes_skills.profile_home()==path.parent
+
+
+def test_hermes_skill_sync_from_another_selected_profile_uses_the_root(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    from easel.commands import hermes_skills
+    root=tmp_path/'custom-hermes'
+    monkeypatch.setenv('HERMES_HOME',str(root/'profiles'/'creator'))
+    monkeypatch.setattr(hermes_skills,'hermes_command',lambda **k:('/fake/hermes','--profile','easel','acp'))
+    path=root/'profiles'/'easel'/'config.yaml'
+    monkeypatch.setattr(hermes_skills.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=str(path)))
+    assert hermes_skills.profile_home()==path.parent
+
+
+def test_hermes_keeps_easel_operational_policy_but_not_provider_credentials():
+    policy={'EASEL_PUBLISH_MODE':'manual','EASEL_CALENDAR_AUTORECORD':'0',
+            'EASEL_MAX_SKILLS_IN_PROMPT':'200','EASEL_MAX_SKILLS_PROMPT_CHARS':'80000'}
+    env=HermesAdapter._profile_env({**policy,'OPENAI_API_KEY':'synthetic-provider-key',
+                                  'EASEL_LLM_API_KEY':'synthetic-gateway-key'})
+    assert env==policy

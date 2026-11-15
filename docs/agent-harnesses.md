@@ -123,7 +123,7 @@ Easel 只以 Hermes CLI 的 `--profile easel` 启动 `acp` 和 `acp --check`，�
 python -m easel.commands.hermes_skills
 ```
 
-脚本通过 `hermes --profile easel config path` 解析当前系统和 Hermes 配置对应的准确 profile 目录，只有在 `easel` profile 已存在时才创建 `skills/` 并复制缺失技能；不会硬编码 Linux/macOS/Windows 默认目录，也不会创建一个不完整 profile。遇到同名技能目录会保留原文件并跳过，不删除额外技能。如需更新某个 Easel 副本，先自行备份并移走那个目录，再运行同步命令。
+脚本通过 `hermes --profile easel config path` 确认 profile 目录，并校验它属于所选的 Hermes 根目录。支持显式 `HERMES_HOME`、Linux/macOS 的 `~/.hermes`，以及 Windows 的 `%LOCALAPPDATA%/hermes` 与传统 `~/.hermes` 布局；已有 `HERMES_HOME` 指向另一 profile 时，仍在同一根目录选择 `easel`。只有在 `easel` profile 已存在时才复制缺失技能；复制先完成到临时目录，中途失败不留下半截技能，不复制运行时 `.env`、Cookie 或公众号凭据文件，也不会创建不完整 profile。遇到同名技能目录会保留原文件并跳过，不删除额外技能。如需更新某个 Easel 副本，先自行备份并移走那个目录，再运行同步命令。
 
 CLI 需要在 Web 的 PATH 中。`easel web` 在非交互启动遗漏 PATH 时，会补充当前服务器账户下
 常见的 npm、nvm、fnm、Volta、用户本地与 OpenCode 安装目录，包括自定义 npm 前缀、
@@ -191,7 +191,7 @@ Web 不提供任意命令输入。内容是 JSON argv 数组，不走 shell。�
   仅预览不会更改当前引擎、密钥或模型。
 - Codex、OpenCode 和 Hermes 的“模型覆盖”提供下拉框，点击“拉取模型”才启动原生 CLI
   读取列表，不在打开设置时自动读取。Codex 使用 `model/list`，OpenCode 使用 `opencode models`，
-  Hermes 从 ACP `session/new.models.availableModels` 读取；Hermes 查询会创建短暂 ACP 会话但不发送提示词。
+  Hermes 从 ACP `session/new.models.availableModels` 读取；Hermes 查询使用独立的短暂 ACP 进程和会话，不发送提示词或复用聊天进程。
   列表由原生配置提供，不代表每个模型都已授权可用。
 - 可选择其它 GPT 模型或 OpenCode 供应商模型，也可手动填写模型 ID；
   留空沿用原生 CLI 默认模型。保存后请新建对话，原有历史仍绑定原底座与会话。
@@ -253,3 +253,5 @@ Windows 启动入口通过单元测试验证，尚未在真实 Windows 系统做
   实际 App 扫码与确认仍需用户验收，不承诺解除平台维护或服务器出口风控。
 - 完整 Python 回归 881 项通过、9 项跳过；前端 33 项测试通过，生产构建成功。
   lint 保留两条已有警告，构建有 bundle 体积提示。README 未修改，未提交或推送。
+
+持久化聊天状态与恢复见 [任务恢复说明](agent-run-store.md)。API 直连及所有执行引擎均只恢复已保存的状态与结果；结果未知时不会自动重新发送提示词或重放工具。Hermes 的 `session/load` 失败时不会自动创建替代会话。

@@ -93,6 +93,7 @@ def login_state_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "LOGIN_DIR", tmp_path)
     monkeypatch.setattr(web, "LOGIN_PROCESSES", {})
     monkeypatch.setattr(web, "_WHOAMI_CACHE", {})
+    monkeypatch.setattr(web, "_WHOAMI_FAILURES", {})
     monkeypatch.setattr(web, "_WHOAMI_LOCK", threading.Lock())
     return tmp_path
 

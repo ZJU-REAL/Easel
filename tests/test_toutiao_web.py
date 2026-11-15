@@ -40,6 +40,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "LOGIN_PROCESSES", {})
     with web._WHOAMI_LOCK:
         web._WHOAMI_CACHE.clear()
+        web._WHOAMI_FAILURES.clear()
     # TrustedHostMiddleware 只放行 localhost/127.0.0.1（TestClient 默认的 testserver 会被判
     # Invalid host header），local_write_guard 又会把非本机来源的写请求判 403——三件套都要给。
     local = "http://127.0.0.1:7860"

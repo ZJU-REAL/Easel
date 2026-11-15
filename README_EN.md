@@ -320,6 +320,8 @@ Easel/
 
 Easel uses an isolated `easel` OpenClaw profile and does not overwrite an existing OpenClaw setup. The Web workspace defaults to port `7860`; the gateway port is chosen by OpenClaw (non-default profiles get a hashed port — `easel` → `37289`, not `18789`) and is resolved automatically by Easel.
 
+Hermes Agent is also available in **Settings → Agent runtime**, through its native ACP server and a separate `easel` profile. Credentials stay in Hermes; the default OpenClaw setup remains available. See [the Harness guide](docs/agent-harnesses.md).
+
 ## 📑 Documentation
 
 - [Trend collectors: Python scripts / HTTP services / RSS feeds (Chinese)](docs/trend-collectors.md)

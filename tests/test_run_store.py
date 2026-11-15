@@ -41,17 +41,18 @@ def test_duplicate_turn_cannot_overwrite_identity_or_progress(store):
     assert store.get("turn") == queued
 
 
-@pytest.mark.parametrize("backend", ["codex", "opencode", "acp"])
+@pytest.mark.parametrize("backend", ["codex", "opencode", "acp", "hermes"])
 def test_native_backend_survives_reopen(store, backend):
     record = store.create("native", "session", backend)
     assert RunStore(store.path).get("native") == record
 
 
+@pytest.mark.parametrize("legacy_version", [1, 2])
 @pytest.mark.parametrize("fail_copy", [False, True])
-def test_v1_upgrade_preserves_rows_and_rolls_back_on_failure(tmp_path, monkeypatch, fail_copy):
+def test_legacy_upgrade_preserves_rows_and_rolls_back_on_failure(tmp_path, monkeypatch, fail_copy, legacy_version):
     path = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(path) as db:
-        db.executescript("""
+        schema = """
             CREATE TABLE runs (
                 turn_id TEXT PRIMARY KEY NOT NULL, session_id TEXT NOT NULL,
                 backend TEXT NOT NULL CHECK (backend IN ('openclaw', 'direct_api')),
@@ -66,7 +67,15 @@ def test_v1_upgrade_preserves_rows_and_rolls_back_on_failure(tmp_path, monkeypat
             INSERT INTO runs VALUES ('old', 'session', 'direct_api', 'running', 2,
                 'owner', 'created', 'updated', 'started', NULL, '[]');
             PRAGMA user_version=1;
-        """)
+        """
+        if legacy_version == 2:
+            schema = schema.replace("('openclaw', 'direct_api')",
+                                    "('openclaw', 'direct_api', 'codex', 'opencode', 'acp')")
+            schema = schema.replace("user_version=1", "user_version=2")
+        db.executescript(schema)
+        if legacy_version == 2:
+            db.execute("INSERT INTO runs VALUES ('old-native', 'native-session', 'codex', 'queued', 1, "
+                       "NULL, 'created', 'updated', NULL, NULL, '[]')")
         before = db.execute("SELECT * FROM runs").fetchall()
     connect = sqlite3.connect
 
@@ -82,13 +91,13 @@ def test_v1_upgrade_preserves_rows_and_rolls_back_on_failure(tmp_path, monkeypat
             with pytest.raises(sqlite3.OperationalError, match="copy failure"):
                 RunStore(path)
         with connect(path) as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+            assert db.execute("PRAGMA user_version").fetchone()[0] == legacy_version
             assert db.execute("SELECT * FROM runs").fetchall() == before
-            assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='runs_v1'").fetchone()
+            assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='runs_previous'").fetchone()
     upgraded = RunStore(path)
     with connect(path) as db:
         assert db.execute("SELECT * FROM runs").fetchall() == before
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == run_store.SCHEMA_VERSION
     upgraded.create("native", "session", "codex")
     with pytest.raises(RunConflict):
         upgraded.transition("native", expected_version=1, state="running", owner_id="another")
@@ -174,12 +183,12 @@ def test_future_and_unversioned_databases_are_not_replaced(tmp_path):
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE future (value TEXT)")
         db.execute("INSERT INTO future VALUES ('keep')")
-        db.execute("PRAGMA user_version=3")
+        db.execute(f"PRAGMA user_version={run_store.SCHEMA_VERSION + 1}")
     with pytest.raises(UnsupportedSchema):
         RunStore(path)
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT value FROM future").fetchone()[0] == "keep"
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == run_store.SCHEMA_VERSION + 1
         db.execute("PRAGMA user_version=0")
     with pytest.raises(UnsupportedSchema):
         RunStore(path)
@@ -211,7 +220,7 @@ def test_unversioned_database_with_only_a_view_is_not_adopted(tmp_path):
 def test_existing_instance_refuses_newer_schema(store):
     store.create("turn", "session", "openclaw")
     with sqlite3.connect(store.path) as db:
-        db.execute("PRAGMA user_version=3")
+        db.execute(f"PRAGMA user_version={run_store.SCHEMA_VERSION + 1}")
     with pytest.raises(UnsupportedSchema):
         store.get("turn")
     with pytest.raises(UnsupportedSchema):
@@ -353,3 +362,15 @@ def test_process_death_at_commit_preserves_a_complete_revision(store, phase, exp
         process.join(10)
         process.close()
         parent.close()
+
+
+def test_unpaired_surrogate_identifiers_and_references_are_rejected_without_changing_records(store):
+    with pytest.raises(ValueError,match='UTF-8'):
+        store.create('invalid-session','\udcff','hermes')
+    assert store.get('invalid-session') is None
+    queued=store.create('valid','会话 🎨','hermes')
+    running=store.transition(queued.turn_id,expected_version=1,state='running',owner_id='owner')
+    with pytest.raises(ValueError,match='UTF-8'):
+        store.transition('valid',expected_version=running.version,state='succeeded',owner_id='owner',
+                         result_refs=['project/\udcff.png'])
+    assert store.get('valid')==running

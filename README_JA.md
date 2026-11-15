@@ -320,6 +320,8 @@ Easel/
 
 Easel は独立した `easel` の OpenClaw プロフィールを使い、既存の OpenClaw の設定を上書きしません。Web ワークスペースのデフォルトのポートは `7860` です。ゲートウェイのポートは OpenClaw が選び（デフォルト以外のプロフィールにはハッシュから求めたポートが割り当てられます。`easel` → `18789` ではなく `37289`）、Easel が自動的に解決します。
 
+「設定 → Agent 底座」で Hermes Agent も選択できます。ネイティブの ACP と独立した `easel` profile を使い、認証情報は Hermes 側で管理します。標準インストールでは OpenClaw を使います。[Harness ガイド](docs/agent-harnesses.md)をご覧ください。
+
 ## 📑 ドキュメント
 
 - [トレンドコレクター：Python スクリプト / HTTP サービス / RSS フィード（中国語）](docs/trend-collectors.md)

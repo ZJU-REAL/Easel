@@ -31,6 +31,8 @@ class HermesAdapter(ACPAdapter):
             "HERMES_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
             "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
             "EASEL_ROOT", "EASEL_AGENT_RUNTIME",
+            "EASEL_PUBLISH_MODE", "EASEL_CALENDAR_AUTORECORD",
+            "EASEL_MAX_SKILLS_IN_PROMPT", "EASEL_MAX_SKILLS_PROMPT_CHARS",
         }
         proxy_names = {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}
         safe = {}

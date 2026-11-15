@@ -13,6 +13,7 @@ def account_state(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "LOGIN_DIR", tmp_path)
     monkeypatch.setattr(web, "LOGIN_PROCESSES", {})
     monkeypatch.setattr(web, "_WHOAMI_CACHE", {})
+    monkeypatch.setattr(web, "_WHOAMI_FAILURES", {})
     monkeypatch.setattr(web, "_WHOAMI_LOCK", threading.Lock())
     monkeypatch.setattr(web, "_WHOAMI_TASKS", {})
     return tmp_path

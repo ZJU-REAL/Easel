@@ -15,8 +15,8 @@ import sqlite3
 from easel.timeouts import TIMEOUT_RUN_STORE
 
 
-SCHEMA_VERSION = 2
-BACKENDS = frozenset({"openclaw", "direct_api", "codex", "opencode", "acp"})
+SCHEMA_VERSION = 3
+BACKENDS = frozenset({"openclaw", "direct_api", "codex", "opencode", "acp", "hermes"})
 _FINAL = frozenset({"succeeded", "failed", "cancelled", "interrupted", "unknown"})
 _TRANSITIONS = {"queued": {"running", "failed", "cancelled"}, "running": _FINAL}
 
@@ -52,6 +52,10 @@ def _identifier(value: str) -> None:
     if (not isinstance(value, str) or not value.strip() or len(value) > 512
             or any(ord(c) < 32 for c in value)):
         raise ValueError("Identifiers must contain 1-512 characters without control characters")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("Identifiers must be valid UTF-8 text") from None
 
 
 def _references(values) -> tuple[str, ...]:
@@ -64,6 +68,10 @@ def _references(values) -> tuple[str, ...]:
                 or PurePosixPath(ref).is_absolute()
                 or any(part in ("", ".", "..") for part in ref.split("/"))):
             raise ValueError("Result references must be relative paths below outputs")
+        try:
+            ref.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValueError("Result references must be valid UTF-8 text") from None
     return refs
 
 
@@ -91,13 +99,13 @@ class RunStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection(initialize=True, write=True) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version in (0, 1):
+            if version in (0, 1, 2):
                 if version == 0 and db.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
                     raise UnsupportedSchema("Unversioned database is not an empty run store")
-                if version == 1:
+                if version in (1, 2):
                     # Rebuild the CHECK constraint transactionally. Old readers
                     # reject v2 rather than writing through a changed schema.
-                    db.execute("ALTER TABLE runs RENAME TO runs_v1")
+                    db.execute("ALTER TABLE runs RENAME TO runs_previous")
                     db.execute("DROP INDEX runs_session")
                     db.execute("DROP INDEX runs_active_session")
                 db.execute("""
@@ -105,7 +113,7 @@ class RunStore:
                         turn_id TEXT PRIMARY KEY NOT NULL,
                         session_id TEXT NOT NULL,
                         backend TEXT NOT NULL CHECK (backend IN
-                            ('openclaw', 'direct_api', 'codex', 'opencode', 'acp')),
+                            ('openclaw', 'direct_api', 'codex', 'opencode', 'acp', 'hermes')),
                         state TEXT NOT NULL CHECK (state IN
                             ('queued','running','succeeded','failed','cancelled','interrupted','unknown')),
                         version INTEGER NOT NULL CHECK (version > 0),
@@ -121,9 +129,9 @@ class RunStore:
                 db.execute("CREATE INDEX runs_session ON runs(session_id, created_at, turn_id)")
                 db.execute("CREATE UNIQUE INDEX runs_active_session ON runs(session_id) "
                            "WHERE state='running'")
-                if version == 1:
-                    db.execute("INSERT INTO runs SELECT * FROM runs_v1")
-                    db.execute("DROP TABLE runs_v1")
+                if version in (1, 2):
+                    db.execute("INSERT INTO runs SELECT * FROM runs_previous")
+                    db.execute("DROP TABLE runs_previous")
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             elif version != SCHEMA_VERSION:
                 raise UnsupportedSchema("Unsupported run-store schema version")

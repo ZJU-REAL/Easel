@@ -12,6 +12,7 @@ def test_login_start_returns_without_waiting_for_qr(tmp_path, monkeypatch, platf
     monkeypatch.setattr(web, "LOGIN_DIR", tmp_path)
     monkeypatch.setattr(web, "LOGIN_PROCESSES", {})
     monkeypatch.setattr(web, "_WHOAMI_CACHE", {})
+    monkeypatch.setattr(web, "_WHOAMI_FAILURES", {})
     monkeypatch.setattr(web, "_LOGIN_START_LOCKS", {})
     process = SimpleNamespace(poll=lambda: None)
     launch = Mock(return_value=process)
@@ -38,6 +39,7 @@ def test_login_start_reports_immediate_runner_exit(tmp_path, monkeypatch, platfo
     monkeypatch.setattr(web, "LOGIN_DIR", tmp_path)
     monkeypatch.setattr(web, "LOGIN_PROCESSES", {})
     monkeypatch.setattr(web, "_WHOAMI_CACHE", {})
+    monkeypatch.setattr(web, "_WHOAMI_FAILURES", {})
     monkeypatch.setattr(web, "_LOGIN_START_LOCKS", {})
     monkeypatch.setattr(web.subprocess, "Popen", Mock(return_value=SimpleNamespace(poll=lambda: 1)))
     start = web.api_mp_login_start if platform == "wechat-oa" else web.api_login_start
@@ -49,6 +51,7 @@ def test_login_start_reports_immediate_runner_exit(tmp_path, monkeypatch, platfo
 def test_zhihu_restart_exits_old_runner_before_removing_qr(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "LOGIN_DIR", tmp_path)
     monkeypatch.setattr(web, "_WHOAMI_CACHE", {})
+    monkeypatch.setattr(web, "_WHOAMI_FAILURES", {})
     monkeypatch.setattr(web, "_LOGIN_START_LOCKS", {})
     qr = tmp_path / "zhihu.png"
     qr.write_bytes(b"old-qr")
@@ -99,6 +102,7 @@ def test_zhihu_restart_keeps_old_qr_if_runner_cannot_exit(tmp_path, monkeypatch)
 def test_login_restart_reaps_old_runner_before_replacing_qr(tmp_path, monkeypatch, platform):
     monkeypatch.setattr(web, "LOGIN_DIR", tmp_path)
     monkeypatch.setattr(web, "_WHOAMI_CACHE", {})
+    monkeypatch.setattr(web, "_WHOAMI_FAILURES", {})
     monkeypatch.setattr(web, "_LOGIN_START_LOCKS", {})
     qr = tmp_path / f"{platform}.png"
     qr.write_bytes(b"old")

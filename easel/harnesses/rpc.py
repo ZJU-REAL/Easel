@@ -230,7 +230,7 @@ class RPC:
                                             detail = detail.replace(value, "***")
                             future.set_exception(HarnessError(f"Agent 协议错误：{detail}"))
                         else:
-                            future.set_result(message.get("result") or {})
+                            future.set_result(message.get("result"))
         except asyncio.CancelledError:
             raise
         except Exception as error:
