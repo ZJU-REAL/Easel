@@ -23,8 +23,11 @@
 
 - **`login`**：Playwright 打开 `mp.weixin.qq.com` 出二维码 → 管理员微信扫码 → 会话持久化到浏览器
   profile `~/.easel-browser-profiles/WeixinMpProfile`。
-  - 关键实现点：`goto(wait_until="commit")`（等 `domcontentloaded` 可能超时）；二维码要等
-    `img[src*='qrcode']` 真正渲染（`naturalWidth>10`）再截图，否则截出白图。
+  - 关键实现点：`goto(wait_until="commit")`（等 `domcontentloaded` 可能超时）；记住微信账号后页面会
+    默认进入「微信快捷登录」，主文档二维码被隐藏，需先点「扫码登录」切回二维码模式，**一轮只切一次**
+    （重复切换会重建会话并作废已扫的码）；二维码要等 `img.login__type__container__scan__qrcode`
+    真正渲染（`naturalWidth>10`）再截图，并校验截图里确实能识别出二维码，否则不覆盖上一张；过期遮罩
+    出现时点「点击刷新」重新出码。
 - **`stats`**：拦截页面自然发出的数据 XHR（不自己拼易变参数）：`appmsgpublish`（发表记录：
   total/publish/masssend count + 文章列表 title/link/cover）+ `get_article_stat_tendency`
   （近 30 天阅读/分享 read_uv/share_uv）。输出与 `account_stats.py` 一致的统一 dict。
