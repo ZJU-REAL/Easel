@@ -1089,3 +1089,69 @@ export function fetchAvailableModels(
     body: JSON.stringify({ baseUrl, key, protocol, slot, name }),
   });
 }
+
+// ── MCP 节点管理（/api/mcp/*）──
+
+export interface McpServerRow {
+  name: string;
+  transport: 'stdio' | 'streamable-http';
+  target: string;
+  args: string[];
+  hasEnv: boolean;
+  hasHeaders: boolean;
+  disabled: boolean;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+}
+
+export interface McpProbeResponse {
+  ok: boolean;
+  toolCount: number;
+  tools: McpToolInfo[];
+}
+
+export interface McpServerUpsert {
+  name: string;
+  transport: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  disabled?: boolean;
+}
+
+export function fetchMcpServers(): Promise<{ servers: McpServerRow[] }> {
+  return request('/api/mcp/servers');
+}
+
+export function addMcpServer(body: McpServerUpsert): Promise<{ ok: boolean; note: string }> {
+  return request('/api/mcp/servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteMcpServer(name: string): Promise<{ ok: boolean; note: string }> {
+  return request(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+export function toggleMcpServer(name: string): Promise<{ ok: boolean; note: string }> {
+  return request(`/api/mcp/servers/${encodeURIComponent(name)}/toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+}
+
+export function probeMcpServer(name: string): Promise<McpProbeResponse> {
+  return request(`/api/mcp/servers/${encodeURIComponent(name)}/probe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+}
