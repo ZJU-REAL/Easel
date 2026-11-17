@@ -65,6 +65,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const [chan, setChan] = useState<Chan>('chat');
   const [harness, setHarness] = useState('');
   const [selectedHarness, setSelectedHarness] = useState('');
+  const [harnessPreview, setHarnessPreview] = useState<{ runtime: string }>();
+  const harnessSection = useRef<HTMLDivElement>(null);
+  const clearHarnessPreview = useCallback(() => setHarnessPreview(undefined), []);
 
   // ── 环境安装（引擎真实数据） ──────────────────────────────
   const [tools, setTools] = useState<EnvTool[]>([]);
@@ -762,7 +765,10 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                 </div>
                 {savedNote ? <div className={`save-note${savedNote.startsWith('保存失败') || savedNote.startsWith('没有') ? ' err' : ''}`}>{savedNote}</div> : null}
 
-                {chan === 'chat' && <HarnessSettings onChange={setHarness} onSelect={setSelectedHarness} />}
+                {chan === 'chat' && <div ref={harnessSection} tabIndex={-1}>
+                  <HarnessSettings onChange={setHarness} onSelect={setSelectedHarness}
+                    previewRequest={harnessPreview} onPreviewHandled={clearHarnessPreview} />
+                </div>}
                 {chan === 'chat' && (selectedHarness === 'api' || selectedHarness === 'openclaw') && (
                   <section className="st-panel active">
                     <div className="panel-top">
@@ -782,23 +788,33 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                       if (localAgentsErr) return <div className="foot-note">本机 agent 探测失败：{localAgentsErr}</div>;
                       if (!shown.length) return null;
                       const usable = shown.filter((a) => a.supported);
+                      const native = shown.filter((a) => a.nativeRuntime);
                       return (
                         <div className="local-agents">
                           <div className="la-head">
                             本机 Agent
                             <span className="desc">
-                              {usable.length
-                                ? `检测到可免 API Key 使用：${usable.map((a) => a.label).join('、')}`
-                                : '检测到的 CLI 暂无底座后端，仍需填 API Key'}
+                              {native.length
+                                ? `可配置独立引擎：${native.map((a) => a.label).join('、')}；认证由对应 CLI 管理`
+                                : usable.length
+                                  ? `可通过 OpenClaw 接入：${usable.map((a) => a.label).join('、')}（需先登录）`
+                                  : '检测到本机 CLI，当前入口暂无可用的接入方式'}
                             </span>
                           </div>
                           {shown.map((a) => (
                             <div className="la-row" key={a.id}>
                               <span className="la-name">{a.label}<small>{a.path || a.command}</small></span>
-                              <span className={`la-state ${a.configured ? 'ok' : a.supported ? 'todo' : 'na'}`}>
-                                {a.configured ? '已接入' : a.supported ? '可接入' : '暂不支持'}
+                              <span className={`la-state ${a.configured ? 'ok' : a.supported || a.nativeRuntime ? 'todo' : 'na'}`}>
+                                {a.nativeRuntime ? '支持独立引擎' : a.configured ? '已接入' : a.supported ? '可接入' : '暂不支持'}
                               </span>
                               <span className="la-act">
+                                {a.nativeRuntime && (
+                                  <button className="btn btn-sm" onClick={() => {
+                                    setHarnessPreview({ runtime: a.nativeRuntime! });
+                                    harnessSection.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                    harnessSection.current?.focus({ preventScroll: true });
+                                  }}>配置 {a.label.replace(/ CLI$/, '')}</button>
+                                )}
                                 {a.supported && (a.models?.length ?? 0) > 0 && (
                                   <SettingsSelect className="la-model" label={`${a.label}模型`}
                                     value={laModels[a.id] ?? ''}

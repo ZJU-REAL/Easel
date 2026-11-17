@@ -7,8 +7,8 @@ Gemini CLI、Codex、OpenCode 这类 agent CLI，它们自己维护着登录态 
 OpenClaw（Easel 的底座）对其中两类有原生后端，会把 CLI 的登录态直接当成模型来源：
   * ``claude-cli``  ← Claude Code（anthropic 插件）
   * ``google-gemini-cli`` ← Gemini CLI（google 插件）
-其余 CLI（codex / opencode / qwen …）OpenClaw 目前没有内置 provider；探测出来是为了
-在界面上如实展示「本机有什么、哪些能直接用」，而不是假装支持。
+其余 CLI 不通过此入口作为 OpenClaw provider。Codex 可以作为 Easel 独立执行引擎，
+用 nativeRuntime 单独标明；这不代表已登录，也不将其认证复制给 OpenClaw。
 
 设计上刻意与 AionUi 的「先探测后配置」一致：先告诉用户现成有什么，再谈要不要填 key。
 """
@@ -46,7 +46,8 @@ KNOWN_AGENT_CLIS: tuple[dict[str, object], ...] = (
         "commands": ("codex",),
         "openclaw_provider": None,
         "config_provider": None,
-        "login_hint": "Codex CLI 登录态暂未被底座识别为模型来源，可用其自身命令直接使用。",
+        "native_runtime": "codex",
+        "login_hint": "可切换到独立 Codex 执行引擎，沿用 Codex 自身认证与模型配置。请先完成 codex login；配置并保存底座后新建对话。",
     },
     {
         "id": "opencode",
@@ -157,7 +158,8 @@ def detect_local_agents() -> list[dict[str, object]]:
       installed             是否在 PATH 上找到
       command / path        命中的可执行名与绝对路径
       openclaw_provider     底座的 provider id（None = 无原生后端）
-      usable_without_key    True 表示「装了就能不填 API key 用」（需 provider 且已接入）
+      supported / usableWithoutKey 仅指 OpenClaw 的 CLI provider 路径，不验证登录
+      nativeRuntime         可另行选择的 Easel 独立执行引擎；不表示已配置或已登录
       configured            该 provider 是否已出现在 openclaw.json 里
       login_hint            给用户的一句话说明
     """
@@ -185,6 +187,7 @@ def detect_local_agents() -> list[dict[str, object]]:
             "openclawProvider": provider,
             "configProvider": config_provider,
             "supported": provider is not None,
+            "nativeRuntime": spec.get("native_runtime"),
             "configured": is_configured,
             "usableWithoutKey": bool(installed and provider is not None),
             "loginHint": spec["login_hint"],
