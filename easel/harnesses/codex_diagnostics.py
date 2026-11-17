@@ -75,13 +75,20 @@ async def account_status(request: RunRequest) -> dict:
         async with RPC(request, command, lambda *_: None, reject) as rpc:
             await initialize(rpc)
             result = await rpc.call("account/read", {"refreshToken": False})
-            account = result.get("account") or {}
-            authenticated = bool(account.get("type"))
+            account = result.get("account")
+            if account is None:
+                account = {}
+            elif not isinstance(account, dict) or account.get("type") not in (
+                    "chatgpt", "apiKey", "amazonBedrock"):
+                raise HarnessError("Codex 账号响应格式无效")
+            if not isinstance(result.get("requiresOpenaiAuth"), bool):
+                raise HarnessError("Codex 账号响应格式无效")
+            authenticated = bool(account)
             state = "authenticated" if authenticated else (
                 "external" if result.get("requiresOpenaiAuth") is False else "unauthenticated")
             kind = account.get("type")
             response = {"state": state, "authType": kind if kind in (
-                "chatgpt", "apiKey", "chatgptAuthTokens", "bedrock") else "unknown", "windows": []}
+                "chatgpt", "apiKey", "amazonBedrock") else "unknown", "windows": []}
             if authenticated:
                 try:
                     response["windows"] = rate_windows(await rpc.call("account/rateLimits/read", {}, timeout=10))
@@ -136,13 +143,19 @@ async def probe(request: RunRequest) -> dict:
             if request.model:
                 options["model"] = request.model
             result = await rpc.call("thread/start", options)
-            thread_id = result["thread"]["id"]
+            thread = result.get("thread")
+            thread_id = thread.get("id") if isinstance(thread, dict) else None
+            if not isinstance(thread_id, str) or not thread_id:
+                raise HarnessError("Codex 未返回有效的诊断会话 ID")
             params = {"threadId": thread_id, "input": [{"type": "text", "text": "Reply OK only."}],
                       "approvalPolicy": "never", "sandboxPolicy": {"type": "readOnly"}}
             if request.codex_effort:
                 params["effort"] = request.codex_effort
             result = await rpc.call("turn/start", params)
-            turn_id = result["turn"]["id"]
+            turn = result.get("turn")
+            turn_id = turn.get("id") if isinstance(turn, dict) else None
+            if not isinstance(turn_id, str) or not turn_id:
+                raise HarnessError("Codex 未返回有效的诊断轮次 ID")
             for method, values in early:
                 notify(method, values)
             turn = await rpc.wait_notification(done)

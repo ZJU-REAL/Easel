@@ -80,6 +80,20 @@ function text(tree) {
 }
 const button = (tree, label) => nodes(tree, 'button').find(node => text(node) === label);
 
+test('another window logout is polled and cannot be cancelled or followed by login', async () => {
+  const view = setup({ authenticated: true, initial: { id: 'logout-attempt', state: 'logging_out' } });
+  view.render(); await settle();
+  let tree = view.render();
+  assert.ok(nodes(tree, 'button').every(node => node.props.disabled));
+  assert.equal(button(tree, '取消登录'), undefined);
+  view.server({ id: 'logout-attempt', state: 'logged_out' });
+  view.tick(); await settle();
+  tree = view.render();
+  assert.ok(button(tree, '登录 Codex'));
+  assert.equal(button(tree, '退出登录'), undefined);
+  assert.equal(view.connected(), 1);
+});
+
 test('login opens a tab on the click, isolates opener, then follows official URL', async () => {
   const view = setup(); view.render(); await settle();
   button(view.render(), '登录 Codex').props.onClick(); await settle();

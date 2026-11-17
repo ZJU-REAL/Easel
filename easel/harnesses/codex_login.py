@@ -34,15 +34,22 @@ class CodexLogin:
         self.record = {"state": "idle"}
         self.task = None
         self.ready = None
+        self.logging_out = False
 
     @property
     def pending(self):
         return self.task is not None and not self.task.done()
 
+    @property
+    def busy(self):
+        return self.pending or self.logging_out
+
     def snapshot(self):
         return dict(self.record)
 
     async def start(self, request: RunRequest, method="browser"):
+        if self.logging_out:
+            raise HarnessError("正在退出 Codex，请等待账号操作完成")
         if method not in ("browser", "device"):
             raise HarnessError("请选择浏览器登录或验证码登录")
         if self.pending:
@@ -73,20 +80,27 @@ class CodexLogin:
             await self.cancel(self.record.get("id"))
 
     async def logout(self, request: RunRequest):
-        if self.pending:
+        if self.busy:
             raise HarnessError("请先完成或取消当前登录")
         command = list(request.command) or base_command("codex") + ["app-server"]
+        self.logging_out = True
+        identifier = uuid.uuid4().hex
+        self.record = {"id": identifier, "state": "logging_out", "message": "正在退出 Codex…"}
         try:
             async with RPC(request, command, lambda *_: None, reject) as rpc:
                 await initialize(rpc)
                 await rpc.call("account/logout", {}, timeout=TIMEOUT_CODEX_DIAGNOSTICS)
             await close_sessions(runtime="codex")
-            self.record = {"state": "logged_out", "message": "已退出 Codex，原有对话和作品仍保留。"}
+            self.record = {"id": identifier, "state": "logged_out", "message": "已退出 Codex，原有对话和作品仍保留。"}
             return self.snapshot()
         except asyncio.CancelledError:
+            self.record = {"id": identifier, "state": "unknown", "message": "退出结果待确认，请刷新账号状态。"}
             raise
         except Exception as error:
+            self.record = {"id": identifier, "state": "unknown", "message": "退出结果待确认，请刷新账号状态。"}
             raise HarnessError("退出 Codex 失败，请稍后重试；原有登录状态未主动清除") from error
+        finally:
+            self.logging_out = False
 
     async def _run(self, request, method):
         native_id = ""

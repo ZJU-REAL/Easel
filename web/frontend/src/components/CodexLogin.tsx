@@ -15,7 +15,8 @@ export default function CodexLogin({ disabled, authenticated, onConnected }: {
   const generation = useRef(0);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
-  const pending = login.state === 'starting' || login.state === 'pending';
+  const cancellable = login.state === 'starting' || login.state === 'pending';
+  const pending = cancellable || login.state === 'logging_out';
 
   useEffect(() => { setLoggedIn(authenticated); }, [authenticated]);
 
@@ -30,11 +31,12 @@ export default function CodexLogin({ disabled, authenticated, onConnected }: {
         if (!alive || current !== generation.current) return;
         setPollError('');
         setLogin(value);
-        if (value.state === 'success' && value.id && completed.current !== value.id) {
+        if (value.state === 'logged_out') setLoggedIn(false);
+        if ((value.state === 'success' || value.state === 'logged_out') && value.id && completed.current !== value.id) {
           completed.current = value.id;
           onConnectedRef.current();
         }
-        if (value.state === 'starting' || value.state === 'pending') timer = setTimeout(() => void poll(), 1500);
+        if (value.state === 'starting' || value.state === 'pending' || value.state === 'logging_out') timer = setTimeout(() => void poll(), 1500);
       } catch {
         if (alive && current === generation.current) {
           setPollError('暂时无法读取登录进度，正在重试…');
@@ -87,7 +89,9 @@ export default function CodexLogin({ disabled, authenticated, onConnected }: {
     setError('');
     generation.current += 1;
     try {
-      setLogin(await logoutCodex());
+      const value = await logoutCodex();
+      setLogin(value);
+      if (value.id) completed.current = value.id;
       setLoggedIn(false);
       onConnectedRef.current();
     } catch (reason) {
@@ -106,7 +110,7 @@ export default function CodexLogin({ disabled, authenticated, onConnected }: {
         onClick={() => void start('device')}>使用验证码登录</button>
       {loggedIn && <button className="btn btn-sm" disabled={disabled || busy || pending}
         onClick={() => void logout()}>退出登录</button>}
-      {pending && <button className="btn btn-sm" disabled={busy} onClick={() => void cancel()}>取消登录</button>}
+      {cancellable && <button className="btn btn-sm" disabled={busy} onClick={() => void cancel()}>取消登录</button>}
     </div>
     {login.userCode && <p className="desc">请在官方页面输入验证码：<strong>{login.userCode}</strong></p>}
     {login.authUrl && <p className="desc">

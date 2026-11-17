@@ -42,7 +42,8 @@ token 用量（输入、输出、缓存输入）。这个统计不是费用估�
 `GET /api/settings/harness/codex/status`、`POST /api/settings/harness/codex/probe`
 调用；后者接受 `model` 和 `effort`，同时只允许一个连接测试。
 
-协议依据：[OpenAI Codex App Server 文档](https://learn.chatgpt.com/docs/app-server)。
+协议字段可用当前 Codex CLI 的 `codex app-server generate-json-schema --experimental --out <临时目录>`
+核对；该命令仅生成 schema，不登录或调用模型。不同 CLI 版本的可用功能可能不同。
 
 ### 网页登录
 
@@ -59,8 +60,10 @@ token 用量（输入、输出、缓存输入）。这个统计不是费用估�
 登录成功后同一处会显示「退出登录」。确认后 Easel 调用 Codex 原生
 `account/logout`，退出当前操作系统账户保存的 Codex 账号；它不会删除 Easel 对话、
 内容项目、模型选择或附件。退出期间不会自动注销 B 站等平台账号；再次点击「登录
-Codex」即可重新授权。正在执行对话、连接测试或登录时，退出按钮会暂时禁用，避免
-中途撤销凭证导致本轮状态不一致。
+Codex」即可重新授权。正在执行对话、连接测试或登录时，退出请求会被拒绝，避免
+中途撤销凭证导致本轮状态不一致。退出操作结束前禁止新的 Codex 对话、账号操作、
+连接测试及底座设置变更；其它窗口可以查看退出进度，完成后刷新账号状态。
+退出请求失败或中断时显示结果待确认，请刷新原生账号状态，不假定凭证仍有效。
 
 此入口面向本机运行的 Easel；登录绑定运行服务的操作系统账户，不能用来隔离多人
 共用服务器时各自的账号。它也不代替 Codex 的安装。API 为

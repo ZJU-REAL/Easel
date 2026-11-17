@@ -44,6 +44,16 @@ class CodexAdapter:
                 if len(secret) >= 4 and any(marker in key.upper() for marker in (
                         "KEY", "TOKEN", "SECRET", "PASSWORD", "COOKIE")):
                     text = text.replace(secret, "***")
+            # Tool commands can introduce credentials absent from the inherited env.
+            value = r'''(?:"[^"]*"|'[^']*'|[^\s,;]+)'''
+            text = re.sub(r"(\b[\w-]*(?:api[_-]?key|access[_-]?token|secret|password|cookie)[\w-]*\s*[:=]\s*)" + value,
+                          r"\1***", text, flags=re.I)
+            text = re.sub(r"(\bAuthorization\s*:\s*)(?:Bearer|Basic|Apikey)\s+[^\s'\"]+",
+                          r"\1***", text, flags=re.I)
+            text = re.sub(r"(\bCookie\s*:\s*)[^'\"\r\n]+", r"\1***", text, flags=re.I)
+            text = re.sub(r"(--(?:password|token|api-key|secret)\s+)" + value,
+                          r"\1***", text, flags=re.I)
+            text = re.sub(r"(https?://)[^\s/@:]+:[^\s/@]+@", r"\1***@", text, flags=re.I)
             return re.sub(r"sk-[A-Za-z0-9_-]{12,}|Bearer\s+\S+", "***", text, flags=re.I)
 
         def activity(item, completed=False):

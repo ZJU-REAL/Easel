@@ -1911,12 +1911,12 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
         raise HTTPException(400, "请选择模型支持的推理强度")
     if "EASEL_AGENT_RUNTIME" in read_settings(ENV_FILE):
         raise HTTPException(409, "启动环境固定了底座，请修改 EASEL_AGENT_RUNTIME 后重启")
-    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS:
+    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS or _CODEX_LOGIN.busy:
         raise HTTPException(409, "请等待当前任务完成或停止后切换底座")
     if (req.runtime not in ("api", "openclaw")
             and not (await asyncio.to_thread(harnesses.describe, req.runtime))["installed"]):
         raise HTTPException(409, "请先在终端安装并配置对应 Agent CLI，再切换")
-    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS:
+    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS or _CODEX_LOGIN.busy:
         raise HTTPException(409, "请等待当前任务完成或停止后切换底座")
     config = _harness_settings()
     if req.runtime == "openclaw" and api_mode(read_settings(ENV_FILE)):
@@ -1983,7 +1983,7 @@ async def api_codex_login_cancel(req: CodexLoginCancelRequest):
 
 @app.post("/api/settings/harness/codex/logout")
 async def api_codex_logout():
-    if _CODEX_LOGIN.pending:
+    if _CODEX_LOGIN.busy:
         raise HTTPException(409, "请先完成或取消当前登录")
     if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS or _CODEX_PROBE_RUNNING:
         raise HTTPException(409, "请等待当前任务完成后退出 Codex")
@@ -2007,6 +2007,8 @@ def _codex_diagnostic_request(model="", effort=""):
 @app.get("/api/settings/harness/codex/status")
 async def api_codex_status():
     from easel.harnesses.codex_diagnostics import account_status
+    if _CODEX_LOGIN.busy:
+        return {"state": "unknown", "windows": [], "quotaNote": "账号操作进行中，请完成后刷新状态。"}
     return await account_status(_codex_diagnostic_request())
 
 
@@ -2015,7 +2017,7 @@ async def api_codex_probe(req: CodexProbeRequest):
     global _CODEX_PROBE_RUNNING
     from easel.harnesses.codex_diagnostics import probe
     request = _codex_diagnostic_request(req.model.strip(), req.effort)
-    if _CODEX_LOGIN.pending:
+    if _CODEX_LOGIN.busy:
         raise HTTPException(409, "请先完成或取消登录，再测试连接")
     if _CODEX_PROBE_RUNNING:
         raise HTTPException(409, "连接测试正在运行，请稍后重试")
@@ -2034,7 +2036,7 @@ async def api_chat_transport_save(req: ChatTransportRequest):
         raise HTTPException(409, "启动环境固定了执行引擎，请修改 EASEL_AGENT_RUNTIME 后重启")
     if "EASEL_CHAT_TRANSPORT" in os.environ:
         raise HTTPException(409, "运行环境已指定 EASEL_CHAT_TRANSPORT，请修改启动环境后重启")
-    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS:
+    if _RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS or _CODEX_LOGIN.busy:
         raise HTTPException(409, "请等待当前对话完成或停止后切换模式")
     config = _harness_settings()
     _write_env_direct({"EASEL_CHAT_TRANSPORT": "api" if req.transport == "api" else "http"})
@@ -2977,6 +2979,8 @@ def _chat_message(req: ChatRequest) -> str:
 
 
 def _codex_images(req: ChatRequest) -> tuple[str, ...]:
+    if not req.attachments:
+        return ()
     _attachment_context(req)
     # Other formats remain in the attachment manifest for skill/tool handling.
     images = []
@@ -3350,8 +3354,8 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
             raise HarnessError("此会话正在另一个窗口运行，请稍后再试")
         if _chat_backend(sk) != runtime:
             raise HarnessError("底座已切换，请使用新对话重试")
-        if runtime == "codex" and _CODEX_LOGIN.pending:
-            raise HarnessError("请先在设置中完成或取消 Codex 登录，再发送消息")
+        if runtime == "codex" and _CODEX_LOGIN.busy:
+            raise HarnessError("请先在设置中完成 Codex 账号操作，再发送消息")
         record = harness_store.binding(SESSIONS_DIR, sk)
         native_id = record.get("native_id", "")
         harness_store.bind(SESSIONS_DIR, sk, runtime, native_id)

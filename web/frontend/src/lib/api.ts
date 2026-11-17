@@ -93,7 +93,7 @@ export function fetchCodexStatus(): Promise<CodexStatus> {
 
 export interface CodexLoginState {
   id?: string;
-  state: 'idle' | 'starting' | 'pending' | 'success' | 'failed' | 'expired' | 'cancelled';
+  state: 'idle' | 'starting' | 'pending' | 'success' | 'failed' | 'expired' | 'cancelled' | 'logging_out' | 'logged_out' | 'unknown';
   method?: 'browser' | 'device';
   authUrl?: string;
   userCode?: string;
