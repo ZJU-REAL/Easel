@@ -50,7 +50,22 @@ jobs:
       # CI 也全绿，但那部分从来没在 CI 上跑过。从根目录跑一次，两边都覆盖。
       - name: Run unit tests
         timeout-minutes: 10
-        run: python -m pytest -v -o faulthandler_timeout=90
+        run: python -m pytest -v -o faulthandler_timeout=90 --junitxml=reports/pytest.xml
+      # 故障评估报告（issue #108）：失败时更要保留证据。报告把缺失用例记为 not_run，
+      # 缺失证据永远不是 pass；报告脚本出错以非零码退出，工件仍照常上传。
+      - name: Summarize deterministic fault regression evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports
+          python scripts/agent_fault_report.py reports/pytest.xml --revision "${{ github.sha }}" > reports/agent-fault-report.json
+      - name: Upload fault evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-fault-report-${{ matrix.os }}
+          path: reports/agent-fault-report.json
+          if-no-files-found: ignore
 
   harness-portability:
     name: Agent settings (${{ matrix.os }}, Python ${{ matrix.python }})

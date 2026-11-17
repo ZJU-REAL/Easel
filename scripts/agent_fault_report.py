@@ -33,7 +33,50 @@ SCENARIOS = (
         "forbidden_effect": "report success or automatically repeat the prompt",
         "tests": ["tests.test_agent_harnesses::test_codex_fatal_event_does_not_wait_until_timeout"],
     },
+    {
+        "id": "event-log-truncation", "fault_stage": "damaged chat event log record",
+        "expected": "preserve the valid events around the damage and still reach the terminal event",
+        "forbidden_effect": "discard valid events or rewrite the source log",
+        "tests": ["tests.test_chat_event_log_recovery::*"],
+    },
+    {
+        "id": "stream-completion-ordering", "fault_stage": "gateway completion racing buffered response tokens",
+        "expected": "deliver every token before the completion sentinel and release session locks",
+        "forbidden_effect": "drop buffered tokens or signal completion early",
+        "tests": ["tests.test_gateway_stream_completion::*"],
+    },
+    {
+        "id": "snapshot-ownership", "fault_stage": "queued turn, cancellation and cross-process contention",
+        "expected": "claim the recovery snapshot only under both session locks and release only its own ownership",
+        "forbidden_effect": "overwrite another turn's snapshot or steal a live process lock",
+        "tests": ["tests.test_gateway_snapshot_ownership::*"],
+    },
+    {
+        "id": "native-failure-fail-closed", "fault_stage": "native tool failure, malformed RPC output or corrupt settings",
+        "expected": "fail closed with a safe, non-success report",
+        "forbidden_effect": "report success or leak keys, payloads or settings contents",
+        "tests": ["tests.test_agent_harnesses::test_native_failure_never_succeeds_or_leaks_keys*",
+                  "tests.test_agent_harnesses::test_rpc_stderr_and_invalid_json",
+                  "tests.test_agent_harnesses::test_corrupt_settings_fail_closed*"],
+    },
+    {
+        "id": "process-interruption-recovery", "fault_stage": "process death between artifact checkpoint commits",
+        "expected": "reuse only committed steps, release locks and preserve the previous final artifact",
+        "forbidden_effect": "treat uncommitted or invalid steps as reusable receipts",
+        "tests": ["tests.test_artifact_checkpoints::*", "tests.test_assemble_checkpoints::*"],
+    },
 )
+
+
+def _entry_matches(entry: str, classname: str, name: str) -> bool:
+    """Match ``classname::name`` where the name part may end with ``*`` (prefix wildcard,
+    e.g. parametrized cases or a whole-module ``classname::*``)."""
+    expected_classname, separator, expected_name = entry.partition("::")
+    if not separator or classname != expected_classname:
+        return False
+    if expected_name.endswith("*"):
+        return name.startswith(expected_name[:-1])
+    return name == expected_name
 
 
 def report(source: bytes, *, revision: str | None = None) -> dict:
@@ -46,10 +89,10 @@ def report(source: bytes, *, revision: str | None = None) -> dict:
     root = ET.fromstring(text)
     if root.tag not in ("testsuite", "testsuites"):
         raise ValueError("Expected a JUnit testsuite or testsuites root")
-    evidence: dict[str, list[tuple[str, float | None]]] = {}
+    evidence: dict[tuple[str, str], list[tuple[str, float | None]]] = {}
     for case in root.iter("testcase"):
-        key = f"{case.get('classname', '')}::{case.get('name', '')}"
-        if not any(key in scenario["tests"] for scenario in SCENARIOS):
+        key = (case.get("classname", ""), case.get("name", ""))
+        if not any(_entry_matches(entry, *key) for scenario in SCENARIOS for entry in scenario["tests"]):
             continue
         duration = float(case.get("time")) if "time" in case.attrib else None
         if duration is not None and (not math.isfinite(duration) or duration < 0):
@@ -59,8 +102,10 @@ def report(source: bytes, *, revision: str | None = None) -> dict:
         evidence.setdefault(key, []).append((status, duration))
     scenarios = []
     for definition in SCENARIOS:
-        missing = [key for key in definition["tests"] if key not in evidence]
-        cases = [item for key in definition["tests"] for item in evidence.get(key, [])]
+        missing = [entry for entry in definition["tests"]
+                   if not any(_entry_matches(entry, *key) for key in evidence)]
+        cases = [item for key in evidence if any(_entry_matches(entry, *key) for entry in definition["tests"])
+                 for item in evidence[key]]
         counts = {state: sum(result == state for result, _ in cases)
                   for state in ("passed", "failed", "error", "skipped")}
         status = ("error" if counts["error"] else "failed" if counts["failed"] else

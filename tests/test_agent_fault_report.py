@@ -18,7 +18,10 @@ def evidence():
     for scenario in module.SCENARIOS:
         suite = ET.SubElement(root, "testsuite")
         for key in scenario["tests"]:
-            classname, name = key.split("::")
+            if key.endswith("::*"):
+                classname, name = key[:-3], "test_covered_case"
+            else:
+                classname, name = key.split("::")
             ET.SubElement(suite, "testcase", classname=classname, name=name, time="0.25")
     return root
 
@@ -31,7 +34,7 @@ def test_complete_report_is_repeatable_and_does_not_invent_metrics():
     root = evidence()
     result = convert(root)
     assert result == convert(root) and result["complete"] is True
-    assert len(result["scenarios"]) == 3 and result["revision_verified"] is False
+    assert len(result["scenarios"]) == len(module.SCENARIOS) and result["revision_verified"] is False
     assert result["scenarios"][0]["test_duration_seconds"] == 0.5
     for scenario in result["scenarios"]:
         assert scenario["model_calls"] is None
@@ -95,3 +98,48 @@ def test_cli_status_agrees_with_its_report(tmp_path, complete, expected):
     result = subprocess.run([sys.executable, str(SCRIPT), str(source), "--revision", "abc"], capture_output=True, text=True)
     assert result.returncode == expected
     assert json.loads(result.stdout)["complete"] is complete
+
+
+def test_module_wildcard_matches_parametrized_case_names():
+    root = ET.Element("testsuites")
+    suite = ET.SubElement(root, "testsuite")
+    for name in ("test_one", "test_two[param]", "test_three[a::b]"):
+        ET.SubElement(suite, "testcase", classname="tests.test_gateway_stream_completion", name=name, time="0.1")
+    result = convert(root)
+    scenario = next(item for item in result["scenarios"] if item["id"] == "stream-completion-ordering")
+    assert scenario["status"] == "passed" and scenario["case_counts"]["passed"] == 3
+
+
+def test_module_wildcard_failure_among_passes_is_not_a_pass():
+    root = evidence()
+    for case in root.iter("testcase"):
+        if case.get("classname") == "tests.test_gateway_stream_completion":
+            ET.SubElement(case, "failure", message="private-tool-output").text = "private-token"
+            break
+    result = convert(root)
+    scenario = next(item for item in result["scenarios"] if item["id"] == "stream-completion-ordering")
+    assert result["complete"] is False and scenario["status"] == "failed"
+    assert "private-" not in json.dumps(result)
+
+
+def test_module_wildcard_requires_the_exact_module_prefix():
+    root = evidence()
+    for case in root.iter("testcase"):
+        if case.get("classname") == "tests.test_chat_event_log_recovery":
+            case.set("classname", "tests.test_chat_event_log_recovery_extra")
+    result = convert(root)
+    scenario = next(item for item in result["scenarios"] if item["id"] == "event-log-truncation")
+    assert scenario["status"] == "not_run"
+    assert scenario["missing_tests"] == ["tests.test_chat_event_log_recovery::*"]
+
+
+def test_function_prefix_wildcard_matches_parametrized_cases_only():
+    root = ET.Element("testsuites")
+    suite = ET.SubElement(root, "testsuite")
+    ET.SubElement(suite, "testcase", classname="tests.test_agent_harnesses",
+                  name="test_native_failure_never_succeeds_or_leaks_keys[mode0]", time="0.1")
+    ET.SubElement(suite, "testcase", classname="tests.test_agent_harnesses",
+                  name="test_unrelated_lookalike_native_failure_never_succeeds_or_leaks", time="0.1")
+    result = convert(root)
+    scenario = next(item for item in result["scenarios"] if item["id"] == "native-failure-fail-closed")
+    assert scenario["case_counts"]["passed"] == 1 and scenario["status"] == "not_run"
