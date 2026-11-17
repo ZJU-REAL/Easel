@@ -1,18 +1,26 @@
 # Agent 确定性故障回归报告
 
 从已有 pytest 的 JUnit XML 生成可比较的 JSON 证据，不运行模型、不调用平台、不重放工具。
-首批三个场景覆盖原生会话身份恢复、并发会话所有权与取消清理、原生致命错误通知。
+八个场景覆盖原生会话身份恢复、并发会话所有权与取消清理、原生致命错误通知，
+以及事件日志损坏、流结束顺序、快照归属、原生失败和产物检查点中断恢复。
 场景 ID、故障阶段、预期行为、禁止效果及具体测试映射位于报告脚本的 `SCENARIOS`。
 
 ```bash
-python -m pytest -q tests/test_agent_harnesses.py --junitxml=agent-tests.xml
-python scripts/agent_fault_report.py agent-tests.xml --revision YOUR_TESTED_COMMIT > agent-report.json
+python -m pytest -q --junitxml=reports/pytest.xml
+python scripts/agent_fault_report.py reports/pytest.xml --revision YOUR_TESTED_COMMIT > reports/agent-fault-report.json
 ```
 
 测试命令失败时也可以生成报告，但必须保留 pytest 的退出码与原始 XML；生成报告不改变测试结果。
-报告命令退出码：0 表示三个登记场景全部通过，1 表示至少一个失败、错误、跳过或未运行，
+报告命令退出码：0 表示八个登记场景的必需测试函数族全部通过，1 表示至少一个失败、错误、跳过或未运行，
 2 表示输入文件不可读取或格式无效。0 只覆盖登记场景，不代表整个测试套件或产品全部通过。
 部分测试文件、`-k` 筛选或测试更名可能产生 `not_run`，不会被当成成功。
+每个必需函数族至少要有一条证据；这不证明所有参数组合都已运行。
+目录中的普通测试不能替代登记的故障测试。函数名后的 `*` 匹配同名函数及其参数化用例，
+不匹配更名的相邻函数；脚本也支持整模块选择，但登记场景采用具体必需函数。
+
+Linux/Windows CI 在 pytest 后生成并上传 `agent-fault-report-<os>` 工件。
+报告中的平台跳过和未运行会保留为非成功状态，不改变 pytest 本身的退出结果；
+无效 XML 或报告脚本错误仍使报告步骤失败。测试失败后也会尝试生成和上传报告。
 
 输出包含输入 XML 的 SHA-256、调用者提供的版本标签及每个场景的结果与测试用时。
 版本标签不被脚本独立验证；应由执行测试的 CI 记录当时的提交，而不是事后猜测。
@@ -22,5 +30,5 @@ python scripts/agent_fault_report.py agent-tests.xml --revision YOUR_TESTED_COMM
 模型调用数、重复外部效果数及恢复延迟目前没有独立采集，明确输出 `null`，不伪装成零。
 测试断言通过也不等于真实用户任务成功率。相同 XML 和版本标签会生成相同报告。
 
-待任务账本、检查点及调用预算功能合入后，再分小 PR 登记对应场景、采集专门指标，
-并接入 CI artifact。真实模型任务评测需要独立的任务集、费用预算和多次采样，当前命令不提供。
+后续可随运行时功能继续登记对应场景和采集专门指标。
+真实模型任务评测需要独立的任务集、费用预算和多次采样，当前命令不提供。

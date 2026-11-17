@@ -37,19 +37,28 @@ SCENARIOS = (
         "id": "event-log-truncation", "fault_stage": "damaged chat event log record",
         "expected": "preserve the valid events around the damage and still reach the terminal event",
         "forbidden_effect": "discard valid events or rewrite the source log",
-        "tests": ["tests.test_chat_event_log_recovery::*"],
+        "tests": ["tests.test_chat_event_log_recovery::test_damaged_record_preserves_surrounding_events*",
+                  "tests.test_chat_event_log_recovery::test_incomplete_tail_is_retried_after_append",
+                  "tests.test_chat_event_log_recovery::test_replay_reaches_terminal_event_after_corrupt_record"],
     },
     {
         "id": "stream-completion-ordering", "fault_stage": "gateway completion racing buffered response tokens",
         "expected": "deliver every token before the completion sentinel and release session locks",
         "forbidden_effect": "drop buffered tokens or signal completion early",
-        "tests": ["tests.test_gateway_stream_completion::*"],
+        "tests": ["tests.test_gateway_stream_completion::test_gateway_stream_preserves_every_token*"],
     },
     {
         "id": "snapshot-ownership", "fault_stage": "queued turn, cancellation and cross-process contention",
         "expected": "claim the recovery snapshot only under both session locks and release only its own ownership",
         "forbidden_effect": "overwrite another turn's snapshot or steal a live process lock",
-        "tests": ["tests.test_gateway_snapshot_ownership::*"],
+        "tests": ["tests.test_gateway_snapshot_ownership::test_queued_turn_preserves_owner_until_lock_acquired*",
+                  "tests.test_gateway_snapshot_ownership::test_rejected_turn_keeps_owner_and_reports_error_in_its_own_log",
+                  "tests.test_gateway_snapshot_ownership::test_snapshot_writes_remain_inside_both_locks",
+                  "tests.test_gateway_snapshot_ownership::test_invalid_transport_pin_finishes_turn_and_releases_ownership",
+                  "tests.test_gateway_snapshot_ownership::test_process_lock_waiter_can_acquire_after_owner_releases",
+                  "tests.test_gateway_snapshot_ownership::test_cancelled_startup_releases_only_its_ownership*",
+                  "tests.test_gateway_snapshot_ownership::test_disconnected_reader_does_not_cancel_startup",
+                  "tests.test_gateway_snapshot_ownership::test_other_process_owner_survives_rejection_and_next_turn_can_start"],
     },
     {
         "id": "native-failure-fail-closed", "fault_stage": "native tool failure, malformed RPC output or corrupt settings",
@@ -63,19 +72,28 @@ SCENARIOS = (
         "id": "process-interruption-recovery", "fault_stage": "process death between artifact checkpoint commits",
         "expected": "reuse only committed steps, release locks and preserve the previous final artifact",
         "forbidden_effect": "treat uncommitted or invalid steps as reusable receipts",
-        "tests": ["tests.test_artifact_checkpoints::*", "tests.test_assemble_checkpoints::*"],
+        "tests": ["tests.test_artifact_checkpoints::test_incomplete_step_never_gets_a_receipt*",
+                  "tests.test_artifact_checkpoints::test_invalid_manifest_is_preserved_and_releases_lock*",
+                  "tests.test_artifact_checkpoints::test_failed_manifest_replace_keeps_old_committed_receipt",
+                  "tests.test_artifact_checkpoints::test_atomic_delivery_preserves_existing_result_on_failure",
+                  "tests.test_artifact_checkpoints::test_process_death_releases_lock_and_only_committed_steps_are_reused*",
+                  "tests.test_assemble_checkpoints::test_failure_then_resume_skips_completed_shot_and_preserves_previous_final",
+                  "tests.test_assemble_checkpoints::test_changed_inputs_or_corrupt_artifact_are_not_reused*",
+                  "tests.test_assemble_checkpoints::test_final_render_failure_preserves_delivered_file_and_completed_clips",
+                  "tests.test_assemble_checkpoints::test_competing_assembly_fails_without_touching_output",
+                  "tests.test_assemble_checkpoints::test_invalid_render_never_commits_checkpoint_or_replaces_delivery"],
     },
 )
 
 
 def _entry_matches(entry: str, classname: str, name: str) -> bool:
-    """Match ``classname::name`` where the name part may end with ``*`` (prefix wildcard,
-    e.g. parametrized cases or a whole-module ``classname::*``)."""
+    """Match an exact test, a ``test_name*`` parameter family, or ``classname::*``."""
     expected_classname, separator, expected_name = entry.partition("::")
     if not separator or classname != expected_classname:
         return False
     if expected_name.endswith("*"):
-        return name.startswith(expected_name[:-1])
+        base = expected_name[:-1]
+        return not base or name == base or name.startswith(base + "[")
     return name == expected_name
 
 

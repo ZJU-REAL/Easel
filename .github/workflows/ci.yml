@@ -58,7 +58,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p reports
-          python scripts/agent_fault_report.py reports/pytest.xml --revision "${{ github.sha }}" > reports/agent-fault-report.json
+          report_status=0
+          python scripts/agent_fault_report.py reports/pytest.xml --revision "${{ github.sha }}" > reports/agent-fault-report.json || report_status=$?
+          # pytest 已决定测试成败；报告中的平台跳过/未运行仍保留，不让它们覆盖 pytest。
+          # 无效 XML、脚本故障等仍然使本步失败，工件上传始终执行。
+          if [ "$report_status" -gt 1 ]; then exit "$report_status"; fi
       - name: Upload fault evaluation report
         if: always()
         uses: actions/upload-artifact@v4
