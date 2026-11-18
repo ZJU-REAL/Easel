@@ -581,10 +581,6 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="Easel", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
-# MCP 节点配置管理（/api/mcp/*）：mcp_admin.py 与本文件同目录
-from mcp_admin import router as mcp_admin_router  # noqa: E402
-app.include_router(mcp_admin_router)
-
 def _local_ports(env_port: str) -> set[str]:
     """本机写守卫放行的端口集合：固定的 7860/7870/5173，加上 `--port`/EASEL_PORT
     实际配置的端口——否则自定义端口跑 Easel 时，前端自己发的写请求（包括发消息
@@ -3140,11 +3136,6 @@ _RUNNING_CHAT: dict = {}
 _STOPPED_CHAT: set = set()
 _HARNESS_TASKS: set = set()
 _HARNESS_QUESTIONS: dict = {}
-
-# MCP 面板的活跃任务守卫：有进行中的对话/后台任务时，节点变更默认拒绝（除非显式 force）
-import mcp_admin as _mcp_admin  # noqa: E402
-_mcp_admin.set_busy_probe(
-    lambda: bool(_RUNNING_CHAT or _BG_TASKS or _DIRECT_CHAT_TASKS or _HARNESS_TASKS))
 
 
 class _HarnessProc(_GatewayHttpProc):
