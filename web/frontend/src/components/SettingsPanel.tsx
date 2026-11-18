@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import EnvBoard from './EnvBoard';
 import HarnessSettings from './HarnessSettings';
+import McpPanel from './McpPanel';
 import SettingsSelect, { OptionsDropdown } from './SettingsSelect';
 import type { JobView } from './EnvBoard';
 import {
@@ -11,7 +12,7 @@ import {
   fetchProxySettings, saveProxySettings,
 } from '../lib/api';
 import type { EnvTool, ModelRow, SelftestResult, LocalAgentInfo, ProxySettings } from '../lib/api';
-import { IconSlidersHorizontal, IconPackage, IconEllipsis } from './settingsIcons';
+import { IconSlidersHorizontal, IconPackage, IconEllipsis, IconHexagon } from './settingsIcons';
 
 interface Props {
   onClose: () => void;
@@ -19,7 +20,7 @@ interface Props {
   banner?: string;
 }
 
-type Sec = 'model' | 'env' | 'more';
+type Sec = 'model' | 'env' | 'mcp' | 'more';
 type Chan = 'chat' | 'transcribe' | 'speech' | 'image' | 'video' | 'music';
 
 const CHANNELS: { id: Chan; label: string }[] = [
@@ -745,6 +746,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
             <button className={`snav${sec === 'env' ? ' active' : ''}`} onClick={() => setSec('env')}>
               <IconPackage size={16} />环境安装<small>{total ? (okCount === total ? '全就绪' : `${okCount}/${total}`) : '…'}</small>
             </button>
+            <button className={`snav${sec === 'mcp' ? ' active' : ''}`} onClick={() => setSec('mcp')}>
+              <IconHexagon size={16} />MCP 节点<small>工具通讯录</small>
+            </button>
             <button className={`snav${sec === 'more' ? ' active' : ''}`} onClick={() => setSec('more')}>
               <IconEllipsis size={16} />更多设置
             </button>
@@ -904,6 +908,12 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                   onInstall={installOne}
                   onInstallMany={installMany}
                 />
+              </section>
+            )}
+
+            {sec === 'mcp' && (
+              <section className="st-sec active">
+                <McpPanel />
               </section>
             )}
 

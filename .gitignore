@@ -94,3 +94,6 @@ skills/builtin/video-production/vendor/**/node_modules/
 skills/builtin/video-production/vendor/**/.remotion/
 skills/builtin/video-production/vendor/**/models/
 skills/builtin/video-production/vendor/**/*large-v3*
+
+# Easel 项目级 OpenCode 配置（设置 → MCP 节点 分发生成）
+opencode.json
