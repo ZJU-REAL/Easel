@@ -2,7 +2,8 @@
 param(
     [switch]$SkipOpenClaw,
     [switch]$OpenClaw,
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+    [switch]$Plain
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,28 +20,282 @@ $script:StepTimings = New-Object System.Collections.ArrayList
 $script:CurrentStepName = $null
 $script:CurrentStepStartedAt = $null
 $script:OpenClawConfigChanged = $false
+$script:TuiEnabled = $false
+$script:TuiStepTotal = 8
+$script:TuiSteps = @(
+    [pscustomobject]@{ Index = '1/8'; Title = '检查系统环境'; Status = 'pending' }
+    [pscustomobject]@{ Index = '2/8'; Title = '检测 OpenClaw'; Status = 'pending' }
+    [pscustomobject]@{ Index = '3/8'; Title = '安装 Easel 运行依赖'; Status = 'pending' }
+    [pscustomobject]@{ Index = '4/8'; Title = '构建 Web 工作台'; Status = 'pending' }
+    [pscustomobject]@{ Index = '5/8'; Title = '安装 Playwright Chromium'; Status = 'pending' }
+    [pscustomobject]@{ Index = '6/8'; Title = '初始化 Easel profile'; Status = 'pending' }
+    [pscustomobject]@{ Index = '7/8'; Title = '同步 skills 与配置'; Status = 'pending' }
+    [pscustomobject]@{ Index = '8/8'; Title = '启动并验证'; Status = 'pending' }
+)
+$script:CurrentStepIndex = $null
+$script:CurrentStepSubtitle = ''
+$script:TuiMessages = New-Object System.Collections.ArrayList
+$script:TuiFatalMessage = ''
+$script:TuiLogo = @(
+    '    _____    _    ____  _____ _'
+    '   | ____|  / \  / ___|| ____| |'
+    '   |  _|   / _ \ \___ \|  _| | |'
+    '   | |___ / ___ \ ___) | |___| |___'
+    '   |_____/_/   \_\____/|_____|_____|'
+)
 
-function Info($Message) { Write-Host "[easel] $Message" -ForegroundColor Cyan }
-function Ok($Message) { Write-Host "  [OK] $Message" -ForegroundColor Green }
-function Warn($Message) { Write-Host "  [!] $Message" -ForegroundColor Yellow }
+function Add-TuiMessage([string]$Message, [string]$Color = 'Cyan', [switch]$KeepAll) {
+    if (-not $script:TuiEnabled) { return }
+    foreach ($line in @((Get-NormalizedLines $Message))) {
+        [void]$script:TuiMessages.Add([pscustomobject]@{ Text = $line; Color = $Color })
+    }
+    if (-not $KeepAll) {
+        while ($script:TuiMessages.Count -gt 14) { $script:TuiMessages.RemoveAt(0) }
+    }
+}
+
+function Info($Message) {
+    if ($script:TuiEnabled) { Add-TuiMessage "[easel] $Message" 'Cyan' } else { Write-Host "[easel] $Message" -ForegroundColor Cyan }
+    if ($script:TuiEnabled -and $script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
+}
+function Ok($Message) {
+    if ($script:TuiEnabled) { Add-TuiMessage "[OK] $Message" 'Green' } else { Write-Host "  [OK] $Message" -ForegroundColor Green }
+    if ($script:TuiEnabled -and $script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
+}
+function Warn($Message) {
+    if ($script:TuiEnabled) { Add-TuiMessage "[!] $Message" 'Yellow' } else { Write-Host "  [!] $Message" -ForegroundColor Yellow }
+    if ($script:TuiEnabled -and $script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
+}
+
+function Test-UsableKey($Value) {
+    return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch 'REPLACE_ME|your[-_ ]?api[-_ ]?key'
+}
+
+# 轻量 TUI 只负责选择和恢复操作；安装核心仍由下面的普通 PowerShell 函数执行。
+# 不依赖第三方模块，确保 Python/venv 尚未创建时也能启动；重定向、CI 和
+# -NonInteractive 自动回到原来的纯文本模式。
+function Initialize-Tui {
+    if ($Plain -or $NonInteractive -or -not [Environment]::UserInteractive -or
+        [Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return }
+    try {
+        $null = [Console]::WindowWidth
+        $null = [Console]::KeyAvailable
+        $script:TuiEnabled = $true
+    } catch { $script:TuiEnabled = $false }
+}
+
+function Get-TuiDisplayWidth([string]$Text) {
+    $width = 0
+    # Windows PowerShell 5.1 不会把字符串 foreach 成字符；必须显式转成 Char[]。
+    foreach ($char in ([string]$Text).ToCharArray()) {
+        if ([int][char]$char -gt 127) { $width += 2 } else { $width++ }
+    }
+    return $width
+}
+
+function Split-TuiLine([string]$Text, [int]$Width = 78) {
+    $value = [string]$Text
+    if ($value.Length -eq 0) { return @('') }
+    $parts = New-Object System.Collections.ArrayList
+    $current = ''
+    $used = 0
+    foreach ($char in $value.ToCharArray()) {
+        $charWidth = Get-TuiDisplayWidth ([string]$char)
+        if ($used -gt 0 -and ($used + $charWidth) -gt $Width) {
+            [void]$parts.Add($current)
+            $current = ''
+            $used = 0
+        }
+        $current += [string]$char
+        $used += $charWidth
+    }
+    if ($current -or $parts.Count -eq 0) { [void]$parts.Add($current) }
+    return @($parts)
+}
+
+function Write-TuiFrame([object[]]$Lines, [string]$Title = 'Windows 安装向导') {
+    if (-not $script:TuiEnabled) { return }
+    # 78 个内容列，足以容纳中文菜单；所有输出都在框内，长路径自动换行。
+    $width = 78
+    Write-Host ('+' + ('-' * ($width + 2)) + '+') -ForegroundColor DarkCyan
+    $separator = ' ' + ('-' * ($width - 2)) + ' '
+    $logoLines = foreach ($logoLine in $script:TuiLogo) {
+        [pscustomobject]@{ Text = $logoLine; Color = 'White'; Align = 'Logo'; Highlight = $false }
+    }
+    $logoBlockWidth = 0
+    foreach ($logoLine in $script:TuiLogo) {
+        $logoBlockWidth = [math]::Max($logoBlockWidth, (Get-TuiDisplayWidth $logoLine))
+    }
+    $allLines = @(
+        [pscustomobject]@{ Text = ''; Color = 'DarkGray'; Align = 'Left'; Highlight = $false }
+    ) + @($logoLines) + @(
+        [pscustomobject]@{ Text = $Title; Color = 'DarkGray'; Align = 'Center'; Highlight = $false }
+        [pscustomobject]@{ Text = ''; Color = 'DarkGray'; Align = 'Left'; Highlight = $false }
+        [pscustomobject]@{ Text = $separator; Color = 'DarkCyan'; Align = 'Center'; Highlight = $false }
+    ) + @($Lines)
+    foreach ($line in $allLines) {
+        if ($line -is [string]) { $item = [pscustomobject]@{ Text = $line; Color = 'Cyan'; Align = 'Left'; Highlight = $false } }
+        else { $item = $line }
+        foreach ($text in @(Split-TuiLine ([string]$item.Text) $width)) {
+            $displayWidth = Get-TuiDisplayWidth $text
+            $leftPadding = 0
+            if ($item.Align -eq 'Logo') { $leftPadding = [math]::Floor([math]::Max(0, $width - $logoBlockWidth) / 2) }
+            elseif ($item.Align -eq 'Center') { $leftPadding = [math]::Floor([math]::Max(0, $width - $displayWidth) / 2) }
+            $rightPadding = [math]::Max(0, $width - $displayWidth - $leftPadding)
+            $writeParams = @{ ForegroundColor = $item.Color }
+            if ($item.Highlight) { $writeParams['BackgroundColor'] = 'DarkCyan' }
+            Write-Host ('| ' + (' ' * $leftPadding) + $text + (' ' * $rightPadding) + ' |') @writeParams
+        }
+    }
+    Write-Host ('+' + ('-' * ($width + 2)) + '+') -ForegroundColor DarkCyan
+}
+
+function Write-TuiHeader([string]$Subtitle = '', [string]$Instruction = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。') {
+    if (-not $script:TuiEnabled) { return }
+    $lines = @([pscustomobject]@{ Text = $Subtitle; Color = 'Yellow'; Align = 'Center' })
+    $lines += [pscustomobject]@{ Text = $Instruction; Color = 'DarkGray'; Align = 'Center' }
+    Clear-Host
+    Write-TuiFrame $lines
+}
+
+function Read-TuiInput([string]$Prompt, [switch]$Secret) {
+    if (-not $script:TuiEnabled) {
+        if ($Secret) { $secure = Read-Host $Prompt -AsSecureString; return [System.Net.NetworkCredential]::new('', $secure).Password }
+        return Read-Host $Prompt
+    }
+    Clear-Host
+    Write-TuiFrame @(
+        [pscustomobject]@{ Text = '输入设置'; Color = 'Yellow'; Align = 'Center' }
+        [pscustomobject]@{ Text = '操作：输入内容后按 Enter；Ctrl+C 放弃安装。'; Color = 'DarkGray'; Align = 'Center' }
+        [pscustomobject]@{ Text = $Prompt; Color = 'Cyan' }
+    )
+    if ($Secret) {
+        $secure = Read-Host -AsSecureString
+        return [System.Net.NetworkCredential]::new('', $secure).Password
+    }
+    return [Console]::ReadLine()
+}
+
+function Set-TuiStepStatus([string]$Index, [string]$Status, [string]$Title = '') {
+    if (-not $script:TuiEnabled) { return }
+    foreach ($step in $script:TuiSteps) {
+        if ($step.Index -eq $Index) {
+            $step.Status = $Status
+            if ($Title) { $step.Title = $Title }
+            return
+        }
+    }
+}
+
+function Render-TuiProgress([string]$Subtitle = '') {
+    if (-not $script:TuiEnabled) { return }
+    if ($Subtitle) { $script:CurrentStepSubtitle = $Subtitle }
+    $lines = @([pscustomobject]@{ Text = '安装进度'; Color = 'Yellow'; Align = 'Center' })
+    $lines += [pscustomobject]@{ Text = '操作：安装进行中；按 Ctrl+C 放弃安装。'; Color = 'DarkGray'; Align = 'Center' }
+    foreach ($step in $script:TuiSteps) {
+        $mark = '[  ]'; $color = 'DarkGray'
+        switch ($step.Status) {
+            'complete' { $mark = '[OK]'; $color = 'Green' }
+            'running' { $mark = '[>>]'; $color = 'Yellow' }
+            'skipped' { $mark = '[--]'; $color = 'DarkGray' }
+            'failed' { $mark = '[!!]'; $color = 'Red' }
+        }
+        $lines += [pscustomobject]@{ Text = ("{0} {1} {2}" -f $mark, $step.Index, $step.Title); Color = $color }
+    }
+    $activeStep = $script:TuiSteps | Where-Object { $_.Status -eq 'running' } | Select-Object -First 1
+    $progressPercent = 0
+    if ($activeStep) { $progressPercent = [int]($activeStep.Index.Split('/')[0] - 1) * 100 / $script:TuiStepTotal }
+    elseif (($script:TuiSteps | Where-Object { $_.Status -eq 'complete' -or $_.Status -eq 'skipped' }).Count -eq $script:TuiStepTotal) { $progressPercent = 100 }
+    $barWidth = 48
+    $filled = [int][math]::Round($barWidth * $progressPercent / 100)
+    $bar = ('#' * $filled) + ('.' * ($barWidth - $filled))
+    $lines += [pscustomobject]@{ Text = ''; Color = 'DarkGray' }
+    $lines += [pscustomobject]@{ Text = ("[{0}] {1,3}%" -f $bar, [int]$progressPercent); Color = 'Cyan'; Align = 'Center' }
+    $lines += [pscustomobject]@{ Text = ''; Color = 'DarkGray' }
+    if ($script:CurrentStepIndex) {
+        $current = $script:TuiSteps | Where-Object { $_.Index -eq $script:CurrentStepIndex } | Select-Object -First 1
+        if ($current) {
+            $lines += [pscustomobject]@{ Text = ("当前阶段：[{0}] {1}" -f $current.Index, $current.Title); Color = 'Cyan' }
+            if ($script:CurrentStepSubtitle) { $lines += [pscustomobject]@{ Text = $script:CurrentStepSubtitle; Color = 'DarkGray' } }
+        }
+    }
+    if ($script:TuiMessages.Count -gt 0) {
+        $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+        foreach ($message in $script:TuiMessages) { $lines += $message }
+    }
+    Clear-Host
+    Write-TuiFrame $lines
+}
+
+function Read-TuiMenu([string]$Title, [string[]]$Items, [int]$Default = 0, [string]$Instruction = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。') {
+    if (-not $script:TuiEnabled) { return -1 }
+    $selected = [math]::Max(0, [math]::Min($Default, $Items.Count - 1))
+    while ($true) {
+        Clear-Host
+        $lines = @([pscustomobject]@{ Text = $Title; Color = 'Yellow'; Align = 'Center' }, [pscustomobject]@{ Text = $Instruction; Color = 'DarkGray'; Align = 'Center' }, '')
+        for ($i = 0; $i -lt $Items.Count; $i++) {
+            if ($i -eq $selected) {
+                $lines += [pscustomobject]@{ Text = ("> {0}" -f $Items[$i]); Color = 'White'; Highlight = $true }
+            } else { $lines += [pscustomobject]@{ Text = ("  {0}" -f $Items[$i]); Color = 'Cyan'; Highlight = $false } }
+        }
+        if ($script:TuiMessages.Count -gt 0) {
+            $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+            foreach ($message in $script:TuiMessages) { $lines += $message }
+        }
+        Write-TuiFrame $lines
+        try { $key = [Console]::ReadKey($true) } catch { return -1 }
+        switch ($key.Key.ToString()) {
+            'UpArrow' { if ($selected -gt 0) { $selected-- } else { $selected = $Items.Count - 1 } }
+            'DownArrow' { if ($selected -lt ($Items.Count - 1)) { $selected++ } else { $selected = 0 } }
+            'Enter' { return $selected }
+            'Escape' { return -1 }
+        }
+    }
+}
+
+function Invoke-WithRecovery([string]$Label, [scriptblock]$Action, [switch]$Optional) {
+    while ($true) {
+        $result = & $Action
+        if ($result) { return $true }
+        # 非交互模式保持原语义：核心失败终止，可选组件失败降级。
+        if (-not $script:TuiEnabled) { if ($Optional) { return $null } return $false }
+        $items = if ($Optional) { @('重试', '跳过（继续安装）', '放弃安装（中止安装）') } else { @('重试', '放弃安装（中止安装）') }
+        $choice = Read-TuiMenu "$Label 失败：请选择操作" $items 0 '操作：Up/Down 选择，Enter 确认；可选择放弃安装。'
+        if ($choice -eq 0) { continue }
+        if ($Optional -and $choice -eq 1) { return $null }
+        return $false
+    }
+}
+
 # 用 [OK] / [!] 这种 ASCII 标记而不是 ✓ / ⚠：cmd.exe 与较老的终端代码页并不可靠地
 # 支持 UTF-8，而本文件原有的 Ok() 已经是 [OK] 风格，不引入第二套符号。
-function Complete-CurrentStep {
+function Complete-CurrentStep([string]$FinalStatus = 'complete') {
     if (-not $script:CurrentStepName -or -not $script:CurrentStepStartedAt) { return }
     $seconds = [math]::Round(((Get-Date) - $script:CurrentStepStartedAt).TotalSeconds, 1)
     [void]$script:StepTimings.Add([pscustomobject]@{ name = $script:CurrentStepName; seconds = $seconds })
-    Write-Host ("  阶段耗时：{0}s" -f $seconds) -ForegroundColor DarkGray
+    if ($script:TuiEnabled) { Add-TuiMessage ("阶段耗时：{0}s" -f $seconds) 'DarkGray' } else { Write-Host ("  阶段耗时：{0}s" -f $seconds) -ForegroundColor DarkGray }
+    Set-TuiStepStatus $script:CurrentStepIndex $FinalStatus
     $script:CurrentStepName = $null
     $script:CurrentStepStartedAt = $null
+    $script:CurrentStepIndex = $null
+    $script:CurrentStepSubtitle = ''
+    if ($script:TuiEnabled) { Render-TuiProgress }
 }
 
 function Step($Index, $Title, $Subtitle) {
     Complete-CurrentStep
-    Write-Host ''
-    Write-Host ('-' * 52) -ForegroundColor DarkBlue
-    Write-Host "  [$Index] " -NoNewline -ForegroundColor Magenta
-    Write-Host $Title -ForegroundColor Cyan
-    Write-Host "  $Subtitle" -ForegroundColor DarkGray
+    $script:CurrentStepIndex = $Index
+    $script:CurrentStepSubtitle = $Subtitle
+    Set-TuiStepStatus $Index 'running' $Title
+    if ($script:TuiEnabled) {
+        Render-TuiProgress $Subtitle
+    } else {
+        Write-Host ''
+        Write-Host ('-' * 52) -ForegroundColor DarkBlue
+        Write-Host "  [$Index] " -NoNewline -ForegroundColor Magenta
+        Write-Host $Title -ForegroundColor Cyan
+        Write-Host "  $Subtitle" -ForegroundColor DarkGray
+    }
     $script:CurrentStepName = "$Index $Title"
     $script:CurrentStepStartedAt = Get-Date
 }
@@ -54,10 +309,14 @@ function Write-NativeOutput([string]$Text) {
     $lines = @(Get-NormalizedLines $Text)
     $emitted = $false
     foreach ($line in $lines) {
-        if ($line -ne 'No change') { Write-Host $line; $emitted = $true }
+        if ($line -ne 'No change') {
+            if ($script:TuiEnabled) { Add-TuiMessage $line 'Cyan' } else { Write-Host $line }
+            $emitted = $true
+        }
     }
     # 成功但没有 stdout 时按“可能已变更”处理，确保运行中的 Gateway 不会继续使用旧配置。
     if ($lines.Count -eq 0) { $emitted = $true }
+    if ($script:TuiEnabled -and $emitted -and $script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
     return $emitted
 }
 
@@ -74,7 +333,8 @@ function Invoke-WithProgress([string]$Label, [string]$Exe, [string[]]$Arguments,
     $log = Join-Path $script:InstallLogDir "$stamp-$safeLabel.out.log"
     $errLog = Join-Path $script:InstallLogDir "$stamp-$safeLabel.err.log"
     [void]$script:InstallLogs.Add([pscustomobject]@{ label = $Label; stdout = $log; stderr = $errLog })
-    Write-Host "  [....] $Label 开始（详细日志：$log）"
+    if ($script:TuiEnabled) { Add-TuiMessage "[....] $Label 开始" 'DarkGray'; Add-TuiMessage "详细日志：$log" 'DarkGray' } else { Write-Host "  [....] $Label 开始（详细日志：$log）" }
+    if ($script:TuiEnabled -and $script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
     $t0 = Get-Date
     $previousPreference = $ErrorActionPreference
     $exitCode = 1
@@ -99,17 +359,81 @@ function Invoke-WithProgress([string]$Label, [string]$Exe, [string[]]$Arguments,
         Ok "$Label 完成（${elapsed}s）"
         return $true
     }
-    Write-Host "  [FAIL] $Label 失败" -ForegroundColor Red
-    foreach ($f in @($log, $errLog)) {
-        if (Test-Path $f) { Get-Content $f -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ } }
+    if ($script:TuiEnabled) {
+        Add-TuiMessage "[FAIL] $Label 失败" 'Red'
+        Add-TuiMessage '日志尾部：' 'Yellow'
+        foreach ($f in @($log, $errLog)) {
+            if (Test-Path $f) { Get-Content $f -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Add-TuiMessage $_ 'Red' } }
+        }
+        Add-TuiMessage "详细日志：$log；$errLog" 'DarkGray'
+        if ($script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
+    } else {
+        Write-Host "  [FAIL] $Label 失败" -ForegroundColor Red
+        foreach ($f in @($log, $errLog)) {
+            if (Test-Path $f) { Get-Content $f -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ } }
+        }
+        Write-Host "      详细日志：$log；$errLog" -ForegroundColor DarkGray
     }
-    Write-Host "      详细日志：$log；$errLog" -ForegroundColor DarkGray
     return $false
 }
 
-# 结尾汇总。变宽内容不套框线：中文是双宽字符，按字符数 padding 的 ASCII 框一定错位。
-function Show-Summary {
+# 结尾汇总。TUI 模式下汇总、警告和下一步全部在同一个框内；普通模式保留原来的输出。
+function Show-Summary([string]$FatalMessage = '') {
     Complete-CurrentStep
+    if ($script:TuiEnabled) {
+        $innerSeparator = ' ' + ('-' * 72) + ' '
+        $lines = @(
+            [pscustomobject]@{ Text = ''; Color = 'DarkGray' }
+            [pscustomobject]@{ Text = $(if ($FatalMessage) { '[ INSTALLATION ABORTED ]' } else { '[ INSTALLATION COMPLETE ]' }); Color = $(if ($FatalMessage) { 'Red' } else { 'Green' }); Align = 'Center' }
+            [pscustomobject]@{ Text = $(if ($FatalMessage) { 'Easel 安装未完成。' } else { 'Easel 已准备就绪。' }); Color = $(if ($FatalMessage) { 'Red' } else { 'White' }); Align = 'Center' }
+            [pscustomobject]@{ Text = '操作：安装已结束；可关闭此窗口。'; Color = 'DarkGray'; Align = 'Center' }
+            [pscustomobject]@{ Text = ''; Color = 'DarkGray' }
+        )
+        if ($FatalMessage) {
+        } else {
+            $lines += [pscustomobject]@{ Text = ('[' + ('#' * 48) + '] 100%'); Color = 'Cyan'; Align = 'Center' }
+            $lines += [pscustomobject]@{ Text = '[OK] 所有必需组件安装完成'; Color = 'Green' }
+            $lines += [pscustomobject]@{ Text = '[OK] 环境配置完成'; Color = 'Green' }
+            $lines += [pscustomobject]@{ Text = '[OK] 安装过程顺利结束'; Color = 'Green' }
+        }
+        if ($FatalMessage) { $lines += [pscustomobject]@{ Text = "[X] 安装中止：$FatalMessage"; Color = 'Red' } }
+        if ($script:Warnings.Count -gt 0) {
+            $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+            $lines += [pscustomobject]@{ Text = $innerSeparator; Color = 'DarkCyan'; Align = 'Center' }
+            $lines += [pscustomobject]@{ Text = "需要处理（$($script:Warnings.Count)）："; Color = 'Yellow' }
+            foreach ($sev in @('high', 'low')) {
+                foreach ($w in $script:Warnings) {
+                    if ($w.Severity -ne $sev) { continue }
+                    $lines += [pscustomobject]@{ Text = "[!] $($w.Label) - $($w.Detail)"; Color = 'Yellow' }
+                    if ($w.Fix) { $lines += [pscustomobject]@{ Text = "-> $($w.Fix)"; Color = 'DarkGray' } }
+                }
+            }
+        }
+        $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+        $lines += [pscustomobject]@{ Text = $innerSeparator; Color = 'DarkCyan'; Align = 'Center' }
+        $lines += [pscustomobject]@{ Text = '开始使用'; Color = 'Yellow'; Align = 'Center' }
+        $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+        $lines += [pscustomobject]@{ Text = "安装报告：$script:InstallReportPath"; Color = 'DarkGray' }
+        if ([bool]$SkipOpenClaw) {
+            $lines += [pscustomobject]@{ Text = '下一步：启动 Web → 设置 → Agent 底座 → 选择已安装的 Codex / OpenCode'; Color = 'Cyan' }
+            $lines += [pscustomobject]@{ Text = '以后需要 OpenClaw：重新运行 .\setup.ps1 -OpenClaw'; Color = 'DarkGray' }
+        } else {
+            $hasModelKey = $false
+            if ($null -ne $envValues) {
+                $hasModelKey = (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -or (Test-UsableKey $envValues['OPENAI_API_KEY']) -or (Test-UsableKey $envValues['EASEL_LLM_API_KEY'])
+            }
+        }
+        if (-not $FatalMessage -and -not [bool]$SkipOpenClaw -and -not $hasModelKey) {
+            $lines += [pscustomobject]@{ Text = '下一步：启动 Web，在设置 → 模型配置中填写 API Key'; Color = 'Yellow' }
+            $lines += [pscustomobject]@{ Text = '保存后 Easel 会自动写好 OpenClaw 配置并重启网关'; Color = 'DarkGray' }
+        }
+        $lines += [pscustomobject]@{ Text = "启动 Web：$Venv\Scripts\easel.exe web"; Color = 'Cyan' }
+        $lines += [pscustomobject]@{ Text = "检查环境：$Venv\Scripts\easel.exe doctor"; Color = 'Cyan' }
+        if (-not $SkipOpenClaw) { $lines += [pscustomobject]@{ Text = '默认执行引擎：OpenClaw；Web 设置可切换其它 ACP 引擎。'; Color = 'DarkGray' } }
+        Clear-Host
+        Write-TuiFrame $lines
+        return
+    }
     $n = $script:Warnings.Count
     Write-Host ''
     if ($n -eq 0) { Write-Host '  [OK] Easel 安装完成' -ForegroundColor Green }
@@ -149,13 +473,15 @@ function Write-InstallReport([string]$FatalMessage = '') {
         $json = ConvertTo-Json -InputObject $report -Depth 8
         [System.IO.File]::WriteAllText($script:InstallReportPath, $json, (New-Object System.Text.UTF8Encoding($false)))
     } catch {
-        Write-Host "  [!] 无法写入安装报告：$($_.Exception.Message)" -ForegroundColor Yellow
+        Warn "无法写入安装报告：$($_.Exception.Message)"
     }
 }
 
 # 致命退出前也要把汇总打出来：第 8 步挂掉时，用户仍然需要知道第 4~7 步降级了什么。
 function Fail($Message) {
+    Complete-CurrentStep 'failed'
     Write-InstallReport $Message
+    if ($script:TuiEnabled) { Show-Summary $Message; exit 1 }
     if ($script:Warnings) { Show-Summary }
     Write-Host ''
     Write-Host "  [X] 安装中止：$Message" -ForegroundColor Red
@@ -166,8 +492,15 @@ function Install-RequiredCommand($Name, $PackageId, $Hint) {
     if (Get-Command $Name -ErrorAction SilentlyContinue) { return }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Fail "$Name 未找到。$Hint`n也可以先安装 Windows App Installer（winget）后重试。" }
     Info "未找到 $Name，使用 winget 安装 $PackageId..."
-    & winget install --id $PackageId --exact --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) { Fail "$Name 自动安装失败。$Hint" }
+    $wingetArgs = @('install','--id',$PackageId,'--exact','--accept-source-agreements','--accept-package-agreements')
+    if ($script:TuiEnabled) {
+        $winget = Invoke-NativeCapture 'winget' $wingetArgs
+        [void](Write-NativeOutput $winget.Output)
+        if (-not $winget.Ok) { Fail "$Name 自动安装失败。$Hint" }
+    } else {
+        & winget @wingetArgs
+        if ($LASTEXITCODE -ne 0) { Fail "$Name 自动安装失败。$Hint" }
+    }
     $env:Path = $env:Path + ';' + [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
     Assert-Command $Name $Hint
 }
@@ -179,8 +512,7 @@ function Read-EnvFile($Path) {
     return $values
 }
 function Read-Secret($Prompt) {
-    $secure = Read-Host $Prompt -AsSecureString
-    return [System.Net.NetworkCredential]::new('', $secure).Password
+    return Read-TuiInput $Prompt -Secret
 }
 # 所有 openclaw 调用的唯一出口。
 #
@@ -197,8 +529,14 @@ $script:Warnings = New-Object System.Collections.ArrayList
 function Add-Warning([string]$Label, [string]$Detail, [string]$Fix = '', [string]$Severity = 'low') {
     [void]$script:Warnings.Add([pscustomobject]@{
         Label = $Label; Detail = $Detail; Fix = $Fix; Severity = $Severity })
-    Write-Host "  [!] $Label : $Detail" -ForegroundColor Yellow
-    if ($Fix) { Write-Host "      -> $Fix" -ForegroundColor DarkGray }
+    if ($script:TuiEnabled) {
+        Add-TuiMessage "[!] $Label : $Detail" 'Yellow'
+        if ($Fix) { Add-TuiMessage "-> $Fix" 'DarkGray' }
+        if ($script:CurrentStepIndex) { Render-TuiProgress $script:CurrentStepSubtitle }
+    } else {
+        Write-Host "  [!] $Label : $Detail" -ForegroundColor Yellow
+        if ($Fix) { Write-Host "      -> $Fix" -ForegroundColor DarkGray }
+    }
     if ($env:EASEL_SETUP_STRICT) {
         Fail "$Label : $Detail（EASEL_SETUP_STRICT 下警告视为致命）"
     }
@@ -214,6 +552,16 @@ function Invoke-NativeCapture([string]$Exe, [string[]]$Arguments) {
     } finally {
         $ErrorActionPreference = $prev
     }
+    return [pscustomobject]@{ Ok = ($code -eq 0); Output = $out; Code = $code }
+}
+
+function Invoke-PythonStdinCapture([string]$Code, [string[]]$Arguments) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = $Code | & $Python @Arguments 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $prev }
     return [pscustomobject]@{ Ok = ($code -eq 0); Output = $out; Code = $code }
 }
 
@@ -270,11 +618,12 @@ except (OSError, ValueError):
 for key, value in updates.items():
     print(f"skills.limits.{key}={value}")
 '@
-    $plan = $code | & $Python - $Root
-    if ($LASTEXITCODE -ne 0) {
+    $planResult = Invoke-PythonStdinCapture $code @('-',$Root)
+    if (-not $planResult.Ok) {
         Add-Warning '技能目录预算' '配置或环境覆盖不可解析；保留现状，不盲写' 'easel doctor'
         return
     }
+    $plan = Get-NormalizedLines $planResult.Output
     foreach ($line in $plan) {
         if ($line -match '^(skills\.limits\.(?:maxSkillsInPrompt|maxSkillsPromptChars))=([0-9]+)$') {
             Set-OpenClawConfig $matches[1] $matches[2] -Json -Label '技能目录预算'
@@ -300,11 +649,12 @@ except (OSError, ValueError):
 for key, value in plan.items():
     print(key + '=' + json.dumps(value, ensure_ascii=False))
 '@
-    $plan = $code | & $Python - $Root
-    if ($LASTEXITCODE -ne 0) {
+    $planResult = Invoke-PythonStdinCapture $code @('-',$Root)
+    if (-not $planResult.Ok) {
         Add-Warning '后台通知与辅助模型' '配置不可解析，已保留现状' 'easel doctor'
         return
     }
+    $plan = Get-NormalizedLines $planResult.Output
     foreach ($line in $plan) {
         if ($line -match '^(tools\.exec\.notifyOnExit|tools\.loopDetection\.enabled|agents\.defaults\.(?:compaction\.maxActiveTranscriptBytes|utilityModel))=(.+)$') {
             $key = $matches[1]
@@ -389,19 +739,44 @@ headers = api_headers(os.environ["A_API_KEY"], os.environ.get("A_HDR", ""),
                       os.environ.get("A_PREFIX", ""), os.environ.get("A_VER", ""))
 if headers: p["headers"] = headers
 print(json.dumps(p))
-'@ | & $Python -
+'@
+    $seedResult = Invoke-PythonStdinCapture $seed @('-')
     Remove-Item Env:A_BASE_URL, Env:A_API_KEY, Env:A_HDR, Env:A_VER, Env:A_PREFIX -ErrorAction SilentlyContinue
-    Set-OpenClawConfigBatch @(@{ path = 'models.providers.anthropic'; value = ($seed | ConvertFrom-Json) })
+    if (-not $seedResult.Ok) { Add-Warning 'Anthropic 模型配置' '生成 provider 配置失败，已保留现状' 'easel doctor'; return }
+    Set-OpenClawConfigBatch @(@{ path = 'models.providers.anthropic'; value = ($seedResult.Output | ConvertFrom-Json) })
 }
 
-Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta
-if (-not $SkipOpenClaw -and -not $OpenClaw -and -not $NonInteractive -and
-    [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+# Write-Host "`nEasel · Windows 安装向导"
+Initialize-Tui
+if ($script:TuiEnabled) {
+    Clear-Host
+    Write-TuiFrame @(
+        [pscustomobject]@{ Text = '欢迎使用 Windows 安装向导'; Color = 'Yellow'; Align = 'Center' }
+        [pscustomobject]@{ Text = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。'; Color = 'DarkGray'; Align = 'Center' }
+    )
+} else {
+    Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta
+}
+if (-not $SkipOpenClaw -and -not $OpenClaw -and $script:TuiEnabled) {
+    $installChoice = Read-TuiMenu '选择安装模式' @(
+        '安装或复用 OpenClaw（推荐）',
+        '跳过 OpenClaw，仅安装 Easel 与 Web 依赖',
+        '放弃安装'
+    ) 0
+    if ($installChoice -eq 1) { $SkipOpenClaw = $true }
+    elseif ($installChoice -eq 2 -or $installChoice -lt 0) { Fail '用户放弃安装。' }
+} elseif (-not $SkipOpenClaw -and -not $OpenClaw -and -not $NonInteractive -and
+    [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and
+    -not [Console]::IsOutputRedirected) {
     Info '默认安装或复用 OpenClaw；也可以跳过，进入 Web 后选择已安装的 Codex / OpenCode。'
     $installAnswer = Read-Host '是否安装或复用 OpenClaw？[Y/n]'
     if ($installAnswer.Trim() -match '^(n|no|0)$') { $SkipOpenClaw = $true }
 }
+if ($script:TuiEnabled) { Write-TuiHeader '准备开始安装' '操作：安装过程中按 Ctrl+C 放弃；此页无需选择。' }
 if ($SkipOpenClaw) {
+    Set-TuiStepStatus '2/8' 'skipped'
+    Set-TuiStepStatus '7/8' 'skipped'
+    Set-TuiStepStatus '8/8' 'skipped'
     Info '只安装 Easel 与 Web 依赖，不安装、配置或启动 OpenClaw；已有底座与凭证保留。'
 }
 Step '1/8' '检查系统环境' 'Python · Node.js · Git · FFmpeg'
@@ -427,9 +802,22 @@ $pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
 if ($pythonCommand -and -not (Invoke-NativeCapture $pythonCommand @('--version')).Ok) { $pythonCommand = $null }
 if (-not $pythonCommand -and (Get-Command py -ErrorAction SilentlyContinue)) { $pythonCommand = (Get-Command py).Source; $pythonArgs = @('-3') } else { $pythonArgs = @() }
 if (-not $pythonCommand) { Fail '未找到可运行的 Python 3；请安装 Python 3.10+。' }
-& $pythonCommand @pythonArgs -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'
-if ($LASTEXITCODE -ne 0) { Fail 'Python 3.10+ 是必需依赖。' }
-if (-not (Test-Path $Venv)) { Info '创建 Python 虚拟环境...'; & $pythonCommand @pythonArgs -m venv $Venv }
+if ($script:TuiEnabled) {
+    $pythonVersionCheck = Invoke-NativeCapture $pythonCommand ($pythonArgs + @('-c','import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'))
+    [void](Write-NativeOutput $pythonVersionCheck.Output)
+    if (-not $pythonVersionCheck.Ok) { Fail 'Python 3.10+ 是必需依赖。' }
+} else {
+    & $pythonCommand @pythonArgs -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'
+    if ($LASTEXITCODE -ne 0) { Fail 'Python 3.10+ 是必需依赖。' }
+}
+if (-not (Test-Path $Venv)) {
+    Info '创建 Python 虚拟环境...'
+    if ($script:TuiEnabled) {
+        $venvResult = Invoke-NativeCapture $pythonCommand ($pythonArgs + @('-m','venv',$Venv))
+        [void](Write-NativeOutput $venvResult.Output)
+        if (-not $venvResult.Ok) { Fail 'Python venv 创建失败。' }
+    } else { & $pythonCommand @pythonArgs -m venv $Venv }
+}
 if (-not (Test-Path $Python)) { Fail 'Python venv 创建失败。' }
 Ok '系统环境检查完成'
 
@@ -437,7 +825,10 @@ if (-not $SkipOpenClaw) {
 Step '2/8' '检测 OpenClaw' '已有安装将直接复用'
 Info '安装 OpenClaw...'
     if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) {
-        if (-not (Invoke-WithProgress 'OpenClaw' $NpmCommand @('install','-g','openclaw@latest','--loglevel','error','--no-fund','--no-audit'))) {
+        $openClawInstall = Invoke-WithRecovery 'OpenClaw 安装' {
+            Invoke-WithProgress 'OpenClaw' $NpmCommand @('install','-g','openclaw@latest','--loglevel','error','--no-fund','--no-audit')
+        }
+        if (-not $openClawInstall) {
             Fail 'OpenClaw 安装失败。'
         }
     }
@@ -445,20 +836,38 @@ Assert-Command 'openclaw' '请确认 npm 全局 bin 已加入 PATH。'
 }
 Step '3/8' '安装 Easel 运行依赖' 'Web · 媒体 · 浏览器发布'
 Info '安装 Easel Python 依赖...'
-if (-not (Invoke-WithProgress 'Python pip' $Python @('-m','pip','install','--upgrade','pip','--disable-pip-version-check','--quiet'))) { Fail 'pip 升级失败。' }
-if (-not (Invoke-WithProgress 'Easel Python 依赖' $Python @('-m','pip','install','-e',$Root,'--prefer-binary','--disable-pip-version-check','--quiet'))) { Fail 'Easel Python 依赖安装失败。' }
+$pipUpgrade = Invoke-WithRecovery 'pip 升级' {
+    Invoke-WithProgress 'Python pip' $Python @('-m','pip','install','--upgrade','pip','--disable-pip-version-check','--quiet')
+}
+if (-not $pipUpgrade) { Fail 'pip 升级失败。' }
+$pythonDeps = Invoke-WithRecovery 'Easel Python 依赖' {
+    Invoke-WithProgress 'Easel Python 依赖' $Python @('-m','pip','install','-e',$Root,'--prefer-binary','--disable-pip-version-check','--quiet')
+}
+if (-not $pythonDeps) { Fail 'Easel Python 依赖安装失败。' }
 Step '4/8' '构建 Web 工作台' 'React production bundle'
 Info '构建 Web 前端...'
 $Frontend = Join-Path $Root 'web\frontend'
 Push-Location $Frontend
 try {
-    if (-not (Invoke-WithProgress 'Web 前端依赖' $NpmCommand @('install','--no-fund','--no-audit','--loglevel','error') $Frontend)) { Fail 'Web 前端依赖安装失败。' }
-    if (-not (Invoke-WithProgress 'Web 前端构建' $NpmCommand @('run','build') $Frontend)) { Fail 'Web 前端构建失败。' }
+    $frontendDeps = Invoke-WithRecovery 'Web 前端依赖' {
+        Invoke-WithProgress 'Web 前端依赖' $NpmCommand @('install','--no-fund','--no-audit','--loglevel','error') $Frontend
+    }
+    if (-not $frontendDeps) { Fail 'Web 前端依赖安装失败。' }
+    $frontendBuild = Invoke-WithRecovery 'Web 前端构建' {
+        Invoke-WithProgress 'Web 前端构建' $NpmCommand @('run','build') $Frontend
+    }
+    if (-not $frontendBuild) { Fail 'Web 前端构建失败。' }
 } finally { Pop-Location }
 Step '5/8' '安装 Playwright Chromium' '浏览器登录与发布'
 Info '安装 Playwright Chromium...'
 # 降级而非中断：这是个 ~300MB 的下载，弱网下失败很常见，且只影响浏览器登录/发布。
-if (-not (Invoke-WithProgress 'Playwright Chromium' $Python @('-m','playwright','install','chromium'))) {
+$playwrightInstall = Invoke-WithRecovery 'Playwright Chromium' {
+    Invoke-WithProgress 'Playwright Chromium' $Python @('-m','playwright','install','chromium')
+} -Optional
+if ($playwrightInstall -eq $false) {
+    Fail 'Playwright Chromium 安装失败。'
+}
+if ($null -eq $playwrightInstall) {
     Add-Warning 'Playwright Chromium' '下载失败，浏览器登录/发布不可用' `
         "$Python -m playwright install chromium"
 }
@@ -466,12 +875,17 @@ if (-not (Invoke-WithProgress 'Playwright Chromium' $Python @('-m','playwright',
 $envPath = Join-Path $Root '.env'
 if (-not (Test-Path $envPath)) { Copy-Item (Join-Path $Root '.env.example') $envPath }
 $envValues = Read-EnvFile $envPath
-function Test-UsableKey($Value) { return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch 'REPLACE_ME|your[-_ ]?api[-_ ]?key' }
 
 if ($SkipOpenClaw) {
     Step '6/8' '准备执行引擎设置' '进入 Web 后选择已安装的 Agent；不迁移原生凭证'
-    & $Python -m easel.installation $Root api
-    if ($LASTEXITCODE -ne 0) { Fail '执行引擎设置初始化失败；已有配置未覆盖，请检查文件后重试。' }
+    if ($script:TuiEnabled) {
+        $engineSetup = Invoke-NativeCapture $Python @('-m','easel.installation',$Root,'api')
+        [void](Write-NativeOutput $engineSetup.Output)
+        if (-not $engineSetup.Ok) { Fail '执行引擎设置初始化失败；已有配置未覆盖，请检查文件后重试。' }
+    } else {
+        & $Python -m easel.installation $Root api
+        if ($LASTEXITCODE -ne 0) { Fail '执行引擎设置初始化失败；已有配置未覆盖，请检查文件后重试。' }
+    }
 } else {
 Step '6/8' '初始化 Easel profile' '独立配置、独立 workspace、独立 Gateway'
 Info '准备 Easel OpenClaw profile...'
@@ -509,10 +923,16 @@ $workspace = ''
 $prevOutEnc = [Console]::OutputEncoding
 try {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-    $wsOut = & $Python (Join-Path $Root 'easel\openclaw_workspace.py')
-    if ($LASTEXITCODE -eq 0) { $workspace = ($wsOut | Select-Object -Last 1) }
+    if ($script:TuiEnabled) {
+        $workspaceResult = Invoke-NativeCapture $Python @((Join-Path $Root 'easel\openclaw_workspace.py'))
+        if ($workspaceResult.Ok) { $workspace = ($workspaceResult.Output | Select-Object -Last 1) }
+        elseif ($workspaceResult.Output) { Add-TuiMessage ($workspaceResult.Output | Select-Object -Last 3) 'Red' }
+    } else {
+        $wsOut = & $Python (Join-Path $Root 'easel\openclaw_workspace.py')
+        if ($LASTEXITCODE -eq 0) { $workspace = ($wsOut | Select-Object -Last 1) }
+    }
 } catch {
-    Write-Warning "解析 workspace 时出错：$($_.Exception.Message)"
+    Warn "解析 workspace 时出错：$($_.Exception.Message)"
 } finally {
     [Console]::OutputEncoding = $prevOutEnc
 }
@@ -524,7 +944,7 @@ if ([string]::IsNullOrWhiteSpace($workspace)) {
     } else {
         $workspace = Join-Path $HOME '.openclaw-easel\workspace'
     }
-    Write-Warning "无法向 openclaw 问出 workspace，回退到 $workspace；若 agent 读不到技能，请设 EASEL_OPENCLAW_WORKSPACE 后重跑。"
+    Warn "无法向 openclaw 问出 workspace，回退到 $workspace；若 agent 读不到技能，请设 EASEL_OPENCLAW_WORKSPACE 后重跑。"
 }
 Info "  workspace → $workspace"
 $skills = Join-Path $workspace 'skills'
@@ -571,10 +991,35 @@ if (Test-Path $outputs) {
 Set-OpenClawSkillsBudget
 $envValues = Read-EnvFile $envPath
 if (-not $NonInteractive -and -not [Console]::IsInputRedirected -and
+    -not [Console]::IsOutputRedirected -and
     -not (Test-UsableKey $envValues['ANTHROPIC_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_API_KEY']) -and -not (Test-UsableKey $envValues['ANTHROPIC_AUTH_TOKEN']) -and -not (Test-UsableKey $envValues['EASEL_LLM_API_KEY']) -and -not (Test-UsableKey $envValues['OPENAI_MAAS_API_KEY'])) {
-    $choice = Read-Host '模型服务：1 Anthropic / 2 OpenAI-compatible / 0 稍后配置 [1]'
-    if ($choice -eq '2') { $key = Read-Secret 'OpenAI API Key（不会回显）'; $url = Read-Host 'Base URL [https://api.openai.com/v1]'; $model = Read-Host '模型 [gpt-4o]'; Add-Content $envPath "`nOPENAI_API_KEY=$key`nOPENAI_BASE_URL=$url`nOPENAI_MODEL=$model" }
-    elseif ($choice -eq '1' -or [string]::IsNullOrWhiteSpace($choice)) { $key = Read-Secret 'Anthropic API Key（不会回显）'; $model = Read-Host '模型 [anthropic/claude-sonnet-4-6]'; Add-Content $envPath "`nANTHROPIC_API_KEY=$key`nCLAUDE_MODEL=$model" }
+    if ($script:TuiEnabled) {
+        $providerChoice = Read-TuiMenu '选择模型服务' @(
+            'Anthropic',
+            'OpenAI-compatible',
+            '稍后在 Web 设置中配置',
+            '放弃安装'
+        ) 0
+        if ($providerChoice -eq 3 -or $providerChoice -lt 0) {
+            Fail '用户放弃安装。'
+        } elseif ($providerChoice -eq 1) {
+            $key = Read-Secret 'OpenAI API Key（不会回显）'
+            $url = Read-TuiInput 'Base URL [https://api.openai.com/v1]'
+            if ([string]::IsNullOrWhiteSpace($url)) { $url = 'https://api.openai.com/v1' }
+            $model = Read-TuiInput '模型 [gpt-4o]'
+            if ([string]::IsNullOrWhiteSpace($model)) { $model = 'gpt-4o' }
+            Add-Content $envPath "`nOPENAI_API_KEY=$key`nOPENAI_BASE_URL=$url`nOPENAI_MODEL=$model" -Encoding UTF8
+        } elseif ($providerChoice -eq 0) {
+            $key = Read-Secret 'Anthropic API Key（不会回显）'
+            $model = Read-TuiInput '模型 [anthropic/claude-sonnet-4-6]'
+            if ([string]::IsNullOrWhiteSpace($model)) { $model = 'anthropic/claude-sonnet-4-6' }
+            Add-Content $envPath "`nANTHROPIC_API_KEY=$key`nCLAUDE_MODEL=$model" -Encoding UTF8
+        }
+    } else {
+        $choice = Read-Host '模型服务：1 Anthropic / 2 OpenAI-compatible / 0 稍后配置 [1]'
+        if ($choice -eq '2') { $key = Read-Secret 'OpenAI API Key（不会回显）'; $url = Read-Host 'Base URL [https://api.openai.com/v1]'; $model = Read-Host '模型 [gpt-4o]'; Add-Content $envPath "`nOPENAI_API_KEY=$key`nOPENAI_BASE_URL=$url`nOPENAI_MODEL=$model" -Encoding UTF8 }
+        elseif ($choice -eq '1' -or [string]::IsNullOrWhiteSpace($choice)) { $key = Read-Secret 'Anthropic API Key（不会回显）'; $model = Read-Host '模型 [anthropic/claude-sonnet-4-6]'; Add-Content $envPath "`nANTHROPIC_API_KEY=$key`nCLAUDE_MODEL=$model" -Encoding UTF8 }
+    }
 }
 $envValues = Read-EnvFile $envPath
 
@@ -583,7 +1028,7 @@ $envValues = Read-EnvFile $envPath
 # 这里在写入任何配置前，先把 models.providers.* 下残留的 null 叶子节点原地清空。
 $openclawJson = Join-Path $HOME '.openclaw-easel\openclaw.json'
 if (Test-Path $openclawJson) {
-    @'
+    $cleanupCode = @'
 import json, sys
 
 path = sys.argv[1]
@@ -610,7 +1055,9 @@ if strip_nulls(providers):
     with open(path, "w") as f:
         json.dump(config, f, indent=2)
         f.write("\n")
-'@ | & $Python - $openclawJson
+'@
+    $cleanupResult = Invoke-PythonStdinCapture $cleanupCode @('-',$openclawJson)
+    if (-not $cleanupResult.Ok) { Warn '清理旧 OpenClaw 配置中的空字段失败，继续使用现有配置' }
 }
 
 # 仅当真正写了 anthropic provider 时，才补设它的 provider 级超时（见文末 timeoutSeconds）；
@@ -677,7 +1124,7 @@ if ($embeddingKey -and $embeddingUrl -and $embeddingModel) {
     # 「关闭」这个语义本来就不能用 provider 表达。
     Set-OpenClawFirst '关闭向量记忆' 'false' -Json `
         -Keys @('memory.search.enabled','agents.defaults.memorySearch.enabled')
-    if (($embeddingKeyNames + $embeddingUrlNames + $embeddingModelNames | Where-Object { $envValues.ContainsKey($_) }).Count -gt 0) { Write-Warning '向量 API 配置不完整，已关闭向量检索；需要同时设置向量 API key、Base URL 和模型名' } else { Info '未配置独立向量 API，使用关键词记忆检索' }
+    if (($embeddingKeyNames + $embeddingUrlNames + $embeddingModelNames | Where-Object { $envValues.ContainsKey($_) }).Count -gt 0) { Warn '向量 API 配置不完整，已关闭向量检索；需要同时设置向量 API key、Base URL 和模型名' } else { Info '未配置独立向量 API，使用关键词记忆检索' }
 }
 Set-OpenClawConfig 'agents.defaults.timeoutSeconds' '7200'; Set-OpenClawConfig 'gateway.mode' 'local'; Set-OpenClawConfig 'gateway.bind' 'loopback'; Set-OpenClawConfig 'gateway.auth.mode' 'none'
 # 对话直连常驻网关（web/app.py 的 http 传输层）要用 OpenAI 兼容端点，而 openclaw 默认不挂这条
@@ -720,6 +1167,7 @@ if (-not $gw.Ok) {
 
 Write-InstallReport
 Show-Summary
+if (-not $script:TuiEnabled) {
 if ($SkipOpenClaw) {
     Write-Host ''
     Write-Host '  下一步：启动 Web → 设置 → Agent 底座 → 执行引擎 → 选择已安装的 Codex / OpenCode → 保存' -ForegroundColor Cyan
@@ -740,4 +1188,5 @@ Write-Host "  启动 Web：$Venv\Scripts\easel.exe web" -ForegroundColor Cyan
 Write-Host "  检查环境：$Venv\Scripts\easel.exe doctor" -ForegroundColor Cyan
 if (-not $SkipOpenClaw) {
     Write-Host '  默认执行引擎：OpenClaw；Web 设置可切换到已安装的 Codex、OpenCode 或其它 ACP 引擎。' -ForegroundColor DarkGray
+}
 }

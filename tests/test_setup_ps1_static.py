@@ -32,6 +32,7 @@ def test_windows_optional_openclaw_is_an_explicit_install_choice() -> None:
     assert "[switch]$SkipOpenClaw" in before
     assert "[switch]$OpenClaw" in before
     assert "[switch]$NonInteractive" in before
+    assert "[switch]$Plain" in before
     assert "if (-not $SkipOpenClaw) {\nStep '2/8'" in text
     assert "if ($SkipOpenClaw) {\n    Step '6/8'" in text
     assert "& $Python -m easel.installation $Root api" in text
@@ -219,7 +220,8 @@ def test_no_powershell7_only_syntax() -> None:
     """
     for p in (SETUP_PS1, GATEWAY_PS1):
         for n, line in enumerate(_read(p).splitlines(), 1):
-            code = line.split("#")[0]
+            # Ignore quoted data: the ASCII Easel logo legitimately contains ``||``.
+            code = re.sub(r"'(?:''|[^'])*'", "''", line.split("#")[0])
             assert "??" not in code, f"{p.name}:{n} 用了 PS7 的 ?? 运算符"
             assert not re.search(r"\)\s*\?\s|\s\?\s.*\s:\s", code), \
                 f"{p.name}:{n} 疑似用了 PS7 的三元运算符：{line.strip()}"
@@ -341,3 +343,73 @@ def test_setup_ps1_writes_install_report_and_reloads_changed_gateway() -> None:
     assert "$script:OpenClawConfigChanged" in gateway
     assert "$gatewayAction = 'restart'" in gateway
     assert "$gatewayAction = 'start'" in gateway
+
+
+def test_setup_ps1_has_native_tui_with_plain_fallback() -> None:
+    """交互终端使用原生方向键菜单，CI/重定向仍必须保持纯文本路径。"""
+    text = _read(SETUP_PS1)
+    assert "function Initialize-Tui" in text
+    assert "[Console]::ReadKey($true)" in text
+    assert "UpArrow" in text and "DownArrow" in text
+    assert "[Console]::IsInputRedirected" in text
+    assert "[Console]::IsOutputRedirected" in text
+    assert "$NonInteractive" in text[text.index("function Initialize-Tui"):text.index("function Write-TuiHeader")]
+    assert "if ($script:TuiEnabled)" in text[text.index("Write-Host \"`nEasel"):text.index("if ($SkipOpenClaw)")]
+
+
+def test_setup_ps1_tui_covers_choices_recovery_and_progress() -> None:
+    """TUI 必须覆盖安装模式、模型服务、失败恢复和阶段进度。"""
+    text = _read(SETUP_PS1)
+    assert "选择安装模式" in text
+    assert "选择模型服务" in text
+    assert "function Invoke-WithRecovery" in text
+    assert "重试" in text and "中止安装" in text
+    assert "跳过（继续安装）" in text
+    assert "function Render-TuiProgress" in text
+    assert "安装进度" in text
+    assert "'complete'" in text and "'running'" in text and "'failed'" in text
+    assert "安装进度：{0}/{1}" not in text
+    assert "([string]$Text).ToCharArray()" in text
+    assert "Invoke-WithRecovery 'pip 升级'" in text
+    assert "Invoke-WithRecovery 'Web 前端构建'" in text
+    assert "Invoke-WithRecovery 'Playwright Chromium'" in text
+
+
+def test_setup_ps1_tui_does_not_replace_noninteractive_flags() -> None:
+    """原有显式安装参数仍然优先于 TUI。"""
+    text = _read(SETUP_PS1)
+    start = text.index("Initialize-Tui")
+    mode = text[start:text.index("if ($SkipOpenClaw)", start)]
+    assert "-not $SkipOpenClaw" in mode
+    assert "-not $OpenClaw" in mode
+    assert "-not $NonInteractive" in mode
+    assert "$Plain" in text[text.index("function Initialize-Tui"):text.index("function Write-TuiHeader")]
+    assert "[Console]::IsOutputRedirected" in mode
+    assert "-SkipOpenClaw" not in mode or "param(" in text[:start]
+
+
+def test_setup_ps1_tui_keeps_instructions_colors_and_messages_inside_frame() -> None:
+    """每个交互页都要有操作提示，进度消息不能再跑到框外。"""
+    text = _read(SETUP_PS1)
+    assert "操作：安装进行中；按 Ctrl+C 放弃安装。" in text
+    assert "操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。" in text
+    assert "操作：输入内容后按 Enter；Ctrl+C 放弃安装。" in text
+    assert "function Split-TuiLine" in text
+    assert "function Add-TuiMessage" in text
+    assert "['BackgroundColor'] = 'DarkCyan'" in text
+    assert "'放弃安装'" in text
+    assert "Write-TuiFrame $lines" in text
+
+
+def test_setup_ps1_tui_completion_visual_keeps_launch_commands() -> None:
+    """完成页采用居中品牌和状态块，同时保留用户需要的两个启动提示。"""
+    text = _read(SETUP_PS1)
+    assert "$script:TuiLogo = @(" in text
+    assert "'    _____    _    ____  _____ _'" in text
+    assert "'   |_____/_/   \\_\\____/|_____|_____|'" in text
+    assert "[ INSTALLATION COMPLETE ]" in text
+    assert "Easel 已准备就绪。" in text
+    assert "('[' + ('#' * 48) + '] 100%')" in text
+    assert '启动 Web：$Venv\\Scripts\\easel.exe web' in text
+    assert '检查环境：$Venv\\Scripts\\easel.exe doctor' in text
+    assert 'easel --help' not in text[text.index('function Show-Summary'):text.index('function Write-InstallReport')]

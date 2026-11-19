@@ -229,6 +229,12 @@ The terminal shows phase progress and elapsed time, then prints the log tail on 
 the installer changes OpenClaw configuration, it restarts the Easel Gateway so the running
 process loads the new settings.
 
+In an interactive PowerShell terminal, the installer enables a lightweight TUI. Use the arrow
+keys to choose the installation mode, model service, and retry, skip, or abandon actions after a
+failure; press Enter to confirm. Each page shows its controls, and progress, log tails, and the
+result are refreshed inside a colored frame. CI, redirected output, and `-NonInteractive`
+automatically use plain text mode. Pass `-Plain` to explicitly disable the TUI.
+
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
 
 When Easel runs on a server accessed through VSCode Remote SSH, forward server port `7860`
