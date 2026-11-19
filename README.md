@@ -234,6 +234,8 @@ Windows 安装器会优先通过 `winget` 自动安装缺失的 Python 3.10+、N
 
 安装器全程非交互（只有「是否创建 `.venv`」一问，非交互环境下按默认值），适合 CI 与自动化。非致命问题（FFmpeg、Chromium、gateway 启动、模型未配置等）会收集起来在结尾汇总，并写入 `outputs/_install/last-install.json` 供 `easel doctor` 复述，安装本身仍以 0 退出。若希望这些问题直接让安装失败，设 `EASEL_SETUP_STRICT=1`。
 
+Windows 安装时，pip、npm 和 Chromium 的详细输出会保存到 `outputs/_install/logs/`；终端只显示阶段进度和耗时，失败时自动显示日志尾部。若配置发生变化，安装器会重启 Easel Gateway 以加载最新配置。
+
 安装完成后，`easel` 命令安装在项目的 `.venv` 中。先激活虚拟环境再运行（每次新开终端都要先激活）：
 
 ```bash

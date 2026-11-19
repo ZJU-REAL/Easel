@@ -224,6 +224,11 @@ gateway startup, missing model config — are collected into a summary at the en
 `outputs/_install/last-install.json` for `easel doctor` to repeat; the install itself still exits 0.
 Set `EASEL_SETUP_STRICT=1` to turn those warnings back into hard failures.
 
+On Windows, detailed pip, npm, and Chromium output is kept under `outputs/_install/logs/`.
+The terminal shows phase progress and elapsed time, then prints the log tail on failure. When
+the installer changes OpenClaw configuration, it restarts the Easel Gateway so the running
+process loads the new settings.
+
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
 
 When Easel runs on a server accessed through VSCode Remote SSH, forward server port `7860`

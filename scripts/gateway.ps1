@@ -77,6 +77,15 @@ function Test-Gateway {
     catch { return $false }
 }
 
+# OpenClaw 在 Windows 首次启动时还要加载插件、检查 agent 状态，冷启动可能超过一分钟。
+# 允许部署者按机器性能调整等待上限；避免安装器在网关仍在正常启动时过早报失败。
+$GatewayStartTimeoutSec = 120
+$configuredTimeout = 0
+if ([int]::TryParse($env:EASEL_GATEWAY_START_TIMEOUT_SEC, [ref]$configuredTimeout) -and
+    $configuredTimeout -ge 15 -and $configuredTimeout -le 600) {
+    $GatewayStartTimeoutSec = $configuredTimeout
+}
+
 function Get-GatewayProcess {
     Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
         Where-Object { $_.CommandLine -match "openclaw.*--profile\s+$ProfileName.*gateway" } |
@@ -98,11 +107,13 @@ switch ($args[0]) {
         Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command', $command `
             -WorkingDirectory $Root -RedirectStandardOutput $LogFile -RedirectStandardError $ErrorLogFile -WindowStyle Hidden | Out-Null
         $ready = $false
-        1..20 | ForEach-Object {
-            if (-not $ready) {
-                if (Test-Gateway) { $ready = $true }
-                else { Start-Sleep -Seconds 1 }
+        $polls = [int]($GatewayStartTimeoutSec * 2)
+        for ($i = 1; $i -le $polls -and -not $ready; $i++) {
+            if (Test-Gateway) { $ready = $true; break }
+            if (($i % 20) -eq 0) {
+                Write-Host "[easel] Gateway still starting... ($([int]($i / 2))s)"
             }
+            Start-Sleep -Milliseconds 500
         }
         if ($ready) { Write-Host '[easel] Gateway started' }
         else { Write-Error "Gateway 启动失败；请检查 $LogFile 和 $ErrorLogFile"; exit 1 }

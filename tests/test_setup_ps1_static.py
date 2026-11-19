@@ -258,3 +258,86 @@ def test_gateway_ps1_does_not_shadow_automatic_variable() -> None:
     bad = [f"{n}: {l.strip()}" for n, l in enumerate(text.splitlines(), 1)
            if re.search(r"^\s*\$Profile\s*=", l)]
     assert not bad, "不许给自动变量 $Profile 赋值：\n" + "\n".join(bad)
+
+
+def test_gateway_ps1_has_configurable_bounded_start_timeout() -> None:
+    """Gateway 冷启动等待必须有默认值，并允许受限的环境变量覆盖。
+
+    回归背景：旧实现固定只等 20 秒，Windows 首次加载插件和 agent 状态时可能
+    还没有完成 healthz，导致 setup 把正常启动误报成失败。这里同时锁住默认值、
+    环境变量入口和 15--600 秒边界，避免后续改回硬编码或接受不受控的等待时间。
+    """
+    text = _read(GATEWAY_PS1)
+    assert "$GatewayStartTimeoutSec = 120" in text
+    assert re.search(
+        r"\[int\]::TryParse\(\$env:EASEL_GATEWAY_START_TIMEOUT_SEC,\s*"
+        r"\[ref\]\$configuredTimeout\)",
+        text,
+    ), "必须从 EASEL_GATEWAY_START_TIMEOUT_SEC 读取可选覆盖值"
+    assert "$configuredTimeout -ge 15" in text
+    assert "$configuredTimeout -le 600" in text
+    assert "$GatewayStartTimeoutSec = $configuredTimeout" in text
+
+
+def test_gateway_ps1_polls_healthz_until_ready_with_progress() -> None:
+    """启动流程必须按可配置上限轮询 healthz，并在长启动时报告进度。"""
+    text = _read(GATEWAY_PS1)
+    start = text.index("    'start' {")
+    body = text[start:text.index("    'stop' {", start)]
+
+    assert "$polls = [int]($GatewayStartTimeoutSec * 2)" in body, \
+        "等待上限应转换为 500ms 轮询次数"
+    assert re.search(
+        r"for \(\$i = 1; \$i -le \$polls -and -not \$ready; \$i\+\+\)",
+        body,
+    )
+    assert "if (Test-Gateway) { $ready = $true; break }" in body
+    assert "Start-Sleep -Milliseconds 500" in body
+    assert "if (($i % 20) -eq 0)" in body
+    assert "Gateway still starting..." in body
+
+
+def test_setup_ps1_explains_gateway_wait_before_start() -> None:
+    """setup.ps1 必须在调用 Gateway 前说明首次启动可能较慢。"""
+    text = _read(SETUP_PS1)
+    info = "Info '启动 Gateway；首次启动可能需要几分钟，正在等待 healthz...'"
+    info_pos = text.index(info)
+    start_pos = text.index("$gw = Invoke-NativeCapture", info_pos)
+    assert info_pos < start_pos
+
+
+def test_setup_ps1_normalizes_native_output_before_filtering_no_change() -> None:
+    """PowerShell 5.1 的 CRLF 不应让 ``No change`` 穿透到终端。"""
+    text = _read(SETUP_PS1)
+    assert "function Get-NormalizedLines" in text
+    assert "-split '\\r?\\n'" in text
+    assert "if ($line -ne 'No change')" in text
+    assert "Write-NativeOutput $r.Output" in text
+
+
+def test_setup_ps1_quiets_dependency_commands_and_keeps_logs() -> None:
+    """pip/npm 的常规噪声应进入安装日志，失败时才显示尾部。"""
+    text = _read(SETUP_PS1)
+    assert "--disable-pip-version-check" in text
+    assert "--quiet" in text
+    assert "--no-fund" in text
+    assert "--no-audit" in text
+    assert "$script:InstallLogDir" in text
+    assert "1> $log 2> $errLog" in text
+    assert "$LASTEXITCODE" in text
+    progress = text[text.index("function Invoke-WithProgress"):text.index("# 结尾汇总", text.index("function Invoke-WithProgress"))]
+    assert "Start-Process" not in progress, "不要用空 ExitCode 的 Start-Process 判定 pip/npm 成功与否"
+    assert "Get-Content $f -Tail 40" in text
+    assert "Remove-Item $log" not in text
+
+
+def test_setup_ps1_writes_install_report_and_reloads_changed_gateway() -> None:
+    """Windows 安装应持久化结果，并在配置写入后重启 Gateway。"""
+    text = _read(SETUP_PS1)
+    assert "outputs\\_install\\last-install.json" in text
+    assert "function Write-InstallReport" in text
+    assert "Write-InstallReport" in text[text.index("Step '8/8'"):]
+    gateway = text[text.index("Step '8/8'"):]
+    assert "$script:OpenClawConfigChanged" in gateway
+    assert "$gatewayAction = 'restart'" in gateway
+    assert "$gatewayAction = 'start'" in gateway

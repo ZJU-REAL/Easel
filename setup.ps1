@@ -11,61 +11,105 @@ $Root = (Resolve-Path (Split-Path -Parent $MyInvocation.MyCommand.Path)).Path
 $Venv = Join-Path $Root '.venv'
 $Python = Join-Path $Venv 'Scripts\python.exe'
 $env:PYTHONUTF8 = '1'
+$script:InstallStartedAt = Get-Date
+$script:InstallReportPath = Join-Path $Root 'outputs\_install\last-install.json'
+$script:InstallLogDir = Join-Path $Root 'outputs\_install\logs'
+$script:InstallLogs = New-Object System.Collections.ArrayList
+$script:StepTimings = New-Object System.Collections.ArrayList
+$script:CurrentStepName = $null
+$script:CurrentStepStartedAt = $null
+$script:OpenClawConfigChanged = $false
 
 function Info($Message) { Write-Host "[easel] $Message" -ForegroundColor Cyan }
 function Ok($Message) { Write-Host "  [OK] $Message" -ForegroundColor Green }
 function Warn($Message) { Write-Host "  [!] $Message" -ForegroundColor Yellow }
 # 用 [OK] / [!] 这种 ASCII 标记而不是 ✓ / ⚠：cmd.exe 与较老的终端代码页并不可靠地
 # 支持 UTF-8，而本文件原有的 Ok() 已经是 [OK] 风格，不引入第二套符号。
+function Complete-CurrentStep {
+    if (-not $script:CurrentStepName -or -not $script:CurrentStepStartedAt) { return }
+    $seconds = [math]::Round(((Get-Date) - $script:CurrentStepStartedAt).TotalSeconds, 1)
+    [void]$script:StepTimings.Add([pscustomobject]@{ name = $script:CurrentStepName; seconds = $seconds })
+    Write-Host ("  阶段耗时：{0}s" -f $seconds) -ForegroundColor DarkGray
+    $script:CurrentStepName = $null
+    $script:CurrentStepStartedAt = $null
+}
+
 function Step($Index, $Title, $Subtitle) {
+    Complete-CurrentStep
     Write-Host ''
     Write-Host ('-' * 52) -ForegroundColor DarkBlue
     Write-Host "  [$Index] " -NoNewline -ForegroundColor Magenta
     Write-Host $Title -ForegroundColor Cyan
     Write-Host "  $Subtitle" -ForegroundColor DarkGray
+    $script:CurrentStepName = "$Index $Title"
+    $script:CurrentStepStartedAt = Get-Date
+}
+
+function Get-NormalizedLines([string]$Text) {
+    if ($null -eq $Text) { return @() }
+    return @($Text -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function Write-NativeOutput([string]$Text) {
+    $lines = @(Get-NormalizedLines $Text)
+    $emitted = $false
+    foreach ($line in $lines) {
+        if ($line -ne 'No change') { Write-Host $line; $emitted = $true }
+    }
+    # 成功但没有 stdout 时按“可能已变更”处理，确保运行中的 Gateway 不会继续使用旧配置。
+    if ($lines.Count -eq 0) { $emitted = $true }
+    return $emitted
 }
 
 # 长耗时步骤转圈。注意三点：
-#   1. 用 Start-Process -PassThru 轮询 HasExited，不要用 Start-Job —— job 跑在全新
-#      runspace 里，拿不到 $Root / $Python / Install-RequiredCommand 改过的 PATH。
+#   1. 直接调用原生命令并读取 $LASTEXITCODE；Windows PowerShell 某些环境下
+#      Start-Process 返回的 Process.ExitCode 为空，会把成功命令误判成失败。
 #   2. 非 TTY（CI、重定向）下不要转圈：1Hz 的 `r 会刷出几千行无用日志。
-#   3. 失败时把日志尾部打出来，否则用户只看到一个 [FAIL] 不知道发生了什么。
+#   3. 详细 stdout/stderr 始终落到 outputs/_install/logs；失败时再把尾部打出来，
+#      成功时不把 pip/npm 的依赖清单和开发者提示刷满终端。
 function Invoke-WithProgress([string]$Label, [string]$Exe, [string[]]$Arguments, [string]$WorkDir = $null) {
-    $log = Join-Path ([System.IO.Path]::GetTempPath()) "easel-install-$(Get-Random).log"
-    $startArgs = @{ FilePath = $Exe; ArgumentList = $Arguments; PassThru = $true;
-                    NoNewWindow = $true; RedirectStandardOutput = $log;
-                    RedirectStandardError = "$log.err" }
-    if ($WorkDir) { $startArgs['WorkingDirectory'] = $WorkDir }
-    $proc = Start-Process @startArgs
-    $quiet = [Console]::IsOutputRedirected
-    if ($quiet) { Write-Host "  [....] $Label 开始（非交互终端，不显示进度）" }
-    $frames = @('[>   ]', '[=>  ]', '[==> ]', '[===>]')
+    New-Item -ItemType Directory -Force -Path $script:InstallLogDir | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $safeLabel = ($Label -replace '[^A-Za-z0-9._-]+', '-')
+    $log = Join-Path $script:InstallLogDir "$stamp-$safeLabel.out.log"
+    $errLog = Join-Path $script:InstallLogDir "$stamp-$safeLabel.err.log"
+    [void]$script:InstallLogs.Add([pscustomobject]@{ label = $Label; stdout = $log; stderr = $errLog })
+    Write-Host "  [....] $Label 开始（详细日志：$log）"
     $t0 = Get-Date
-    $i = 0
-    while (-not $proc.HasExited) {
-        if (-not $quiet) {
-            $el = [int]((Get-Date) - $t0).TotalSeconds
-            Write-Host ("`r  {0} 进行中 {1} 已运行 {2}s" -f $frames[$i % 4], $Label, $el) -NoNewline
-            $i++
+    $previousPreference = $ErrorActionPreference
+    $exitCode = 1
+    try {
+        $ErrorActionPreference = 'Continue'
+        if ($WorkDir) {
+            Push-Location $WorkDir
+            try {
+                & $Exe @Arguments 1> $log 2> $errLog
+                $exitCode = $LASTEXITCODE
+            } finally { Pop-Location }
+        } else {
+            & $Exe @Arguments 1> $log 2> $errLog
+            $exitCode = $LASTEXITCODE
         }
-        Start-Sleep -Seconds 1
-    }
-    if (-not $quiet) { Write-Host "`r$(' ' * 60)`r" -NoNewline }
-    if ($proc.ExitCode -eq 0) {
-        Ok "$Label 完成"
-        Remove-Item $log, "$log.err" -Force -ErrorAction SilentlyContinue
+    } catch {
+        $_ | Out-File -FilePath $errLog -Encoding UTF8
+        $exitCode = 1
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($exitCode -eq 0) {
+        $elapsed = [int]((Get-Date) - $t0).TotalSeconds
+        Ok "$Label 完成（${elapsed}s）"
         return $true
     }
     Write-Host "  [FAIL] $Label 失败" -ForegroundColor Red
-    foreach ($f in @($log, "$log.err")) {
+    foreach ($f in @($log, $errLog)) {
         if (Test-Path $f) { Get-Content $f -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ } }
     }
-    Remove-Item $log, "$log.err" -Force -ErrorAction SilentlyContinue
+    Write-Host "      详细日志：$log；$errLog" -ForegroundColor DarkGray
     return $false
 }
 
 # 结尾汇总。变宽内容不套框线：中文是双宽字符，按字符数 padding 的 ASCII 框一定错位。
 function Show-Summary {
+    Complete-CurrentStep
     $n = $script:Warnings.Count
     Write-Host ''
     if ($n -eq 0) { Write-Host '  [OK] Easel 安装完成' -ForegroundColor Green }
@@ -84,10 +128,34 @@ function Show-Summary {
         Write-Host '  以上均不影响已装好的部分；逐项修完可用 easel doctor 复检。' -ForegroundColor DarkGray
         Write-Host '  若希望这些问题直接让安装失败（CI/自动化场景）：$env:EASEL_SETUP_STRICT=1' -ForegroundColor DarkGray
     }
+    Write-Host "  安装报告：$script:InstallReportPath" -ForegroundColor DarkGray
+}
+
+function Write-InstallReport([string]$FatalMessage = '') {
+    Complete-CurrentStep
+    try {
+        $reportDir = Split-Path -Parent $script:InstallReportPath
+        New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
+        $report = [ordered]@{
+            timestamp = (Get-Date).ToUniversalTime().ToString('o')
+            installer = 'setup.ps1'
+            root = $Root
+            fatal = if ($FatalMessage) { $FatalMessage } else { $null }
+            warnings = @($script:Warnings)
+            timings = @($script:StepTimings)
+            logs = @($script:InstallLogs)
+            strict = [bool]$env:EASEL_SETUP_STRICT
+        }
+        $json = ConvertTo-Json -InputObject $report -Depth 8
+        [System.IO.File]::WriteAllText($script:InstallReportPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+    } catch {
+        Write-Host "  [!] 无法写入安装报告：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 # 致命退出前也要把汇总打出来：第 8 步挂掉时，用户仍然需要知道第 4~7 步降级了什么。
 function Fail($Message) {
+    Write-InstallReport $Message
     if ($script:Warnings) { Show-Summary }
     Write-Host ''
     Write-Host "  [X] 安装中止：$Message" -ForegroundColor Red
@@ -173,8 +241,7 @@ function Set-OpenClawConfig([string]$Key, $Value, [switch]$Json, [string]$Label,
     if ($Json) { $arguments += '--strict-json' }
     $r = Invoke-OpenClawRaw $arguments
     if ($r.Ok) {
-        ($r.Output -split "`n") | Where-Object { $_ -and $_ -notmatch '^No change$' } |
-            ForEach-Object { Write-Host $_ }
+        if (Write-NativeOutput $r.Output) { $script:OpenClawConfigChanged = $true }
         return
     }
     $first = (($r.Output -split "`n") | Where-Object { $_ } | Select-Object -First 1)
@@ -252,7 +319,10 @@ for key, value in plan.items():
 function Set-OpenClawConfigQuiet([string]$Key, $Value, [switch]$Json) {
     $arguments = @('--profile','easel','config','set',$Key,$Value)
     if ($Json) { $arguments += '--strict-json' }
-    return (Invoke-OpenClawRaw $arguments).Ok
+    $result = Invoke-OpenClawRaw $arguments
+    $quietLines = @(Get-NormalizedLines $result.Output)
+    if ($result.Ok -and ($quietLines.Count -eq 0 -or ($quietLines | Where-Object { $_ -ne 'No change' }))) { $script:OpenClawConfigChanged = $true }
+    return $result.Ok
 }
 
 # 依次尝试多套候选 key，第一个成功即止；全失败只报一条警告（按意图而非按 key 计数）。
@@ -281,8 +351,7 @@ function Set-OpenClawConfigBatch($Operations, [string]$Label = 'OpenClaw 配置'
             if (Test-OpenClawSupport @('config','set') '--replace') { $arguments += '--replace' }
             $r = Invoke-OpenClawRaw $arguments
             if ($r.Ok) {
-                ($r.Output -split "`n") | Where-Object { $_ -and $_ -notmatch '^No change$' } |
-                    ForEach-Object { Write-Host $_ }
+                if (Write-NativeOutput $r.Output) { $script:OpenClawConfigChanged = $true }
                 return
             }
             $first = (($r.Output -split "`n") | Where-Object { $_ } | Select-Object -First 1)
@@ -349,6 +418,9 @@ if ($SkipOpenClaw) {
     $nodeOk = ($nodeParts[0] -eq 20 -and $nodeParts[1] -ge 19) -or ($nodeParts[0] -eq 22 -and $nodeParts[1] -ge 12) -or ($nodeParts[0] -ge 23)
 }
 if (-not $nodeOk) { Fail '当前 Node.js 不满足安装依赖；仅安装 Web 需要 20.19+（20.x）或 22.12+，安装 openclaw@latest 需要 24.22.1+（24.x）或 26.12.1+。' }
+$NpmCommand = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+if ([string]::IsNullOrWhiteSpace($NpmCommand)) { $NpmCommand = (Get-Command npm -CommandType Application -ErrorAction SilentlyContinue).Source }
+if ([string]::IsNullOrWhiteSpace($NpmCommand)) { $NpmCommand = 'npm.cmd' }
 $pythonCommand = (Get-Command python -ErrorAction SilentlyContinue).Source
 # 这是一次可用性探测：python 存在但跑不起来（典型是 Windows 应用商店的占位 python.exe）
 # 时要安静地换下一个候选，不能让它抛 NativeCommandError 把安装打断。
@@ -364,24 +436,24 @@ Ok '系统环境检查完成'
 if (-not $SkipOpenClaw) {
 Step '2/8' '检测 OpenClaw' '已有安装将直接复用'
 Info '安装 OpenClaw...'
-if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) { & npm install -g openclaw@latest --loglevel warn; if ($LASTEXITCODE -ne 0) { Fail 'OpenClaw 安装失败。' } }
+    if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) {
+        if (-not (Invoke-WithProgress 'OpenClaw' $NpmCommand @('install','-g','openclaw@latest','--loglevel','error','--no-fund','--no-audit'))) {
+            Fail 'OpenClaw 安装失败。'
+        }
+    }
 Assert-Command 'openclaw' '请确认 npm 全局 bin 已加入 PATH。'
 }
 Step '3/8' '安装 Easel 运行依赖' 'Web · 媒体 · 浏览器发布'
 Info '安装 Easel Python 依赖...'
-& $Python -m pip install --upgrade pip --progress-bar on
-if ($LASTEXITCODE -ne 0) { Fail 'pip 升级失败。' }
-& $Python -m pip install -e $Root --prefer-binary --progress-bar on
-if ($LASTEXITCODE -ne 0) { Fail 'Easel Python 依赖安装失败。' }
+if (-not (Invoke-WithProgress 'Python pip' $Python @('-m','pip','install','--upgrade','pip','--disable-pip-version-check','--quiet'))) { Fail 'pip 升级失败。' }
+if (-not (Invoke-WithProgress 'Easel Python 依赖' $Python @('-m','pip','install','-e',$Root,'--prefer-binary','--disable-pip-version-check','--quiet'))) { Fail 'Easel Python 依赖安装失败。' }
 Step '4/8' '构建 Web 工作台' 'React production bundle'
 Info '构建 Web 前端...'
 $Frontend = Join-Path $Root 'web\frontend'
 Push-Location $Frontend
 try {
-    & npm install
-    if ($LASTEXITCODE -ne 0) { Fail 'Web 前端依赖安装失败。' }
-    & npm run build
-    if ($LASTEXITCODE -ne 0) { Fail 'Web 前端构建失败。' }
+    if (-not (Invoke-WithProgress 'Web 前端依赖' $NpmCommand @('install','--no-fund','--no-audit','--loglevel','error') $Frontend)) { Fail 'Web 前端依赖安装失败。' }
+    if (-not (Invoke-WithProgress 'Web 前端构建' $NpmCommand @('run','build') $Frontend)) { Fail 'Web 前端构建失败。' }
 } finally { Pop-Location }
 Step '5/8' '安装 Playwright Chromium' '浏览器登录与发布'
 Info '安装 Playwright Chromium...'
@@ -410,8 +482,7 @@ foreach ($flag in @('--skip-health','--skip-channels','--skip-skills','--skip-ui
 }
 if ($onboardHelp -match '--no-install-daemon' -and $onboardHelp -notmatch '--skip-daemon') { $onboardArgs += '--no-install-daemon' }
 $onboard = Invoke-NativeCapture 'openclaw' $onboardArgs
-($onboard.Output -split "`n") | Where-Object { $_ -and $_ -notmatch '^No change$' } |
-    ForEach-Object { Write-Host $_ }
+[void](Write-NativeOutput $onboard.Output)
 # onboard 失败且 profile 配置确实不存在才算致命：没有 profile 后面每一条 config set
 # 都会失败，没有可以 fail-soft 进去的东西。
 if (-not $onboard.Ok -and -not (Test-Path (Join-Path $env:USERPROFILE '.openclaw-easel\openclaw.json'))) {
@@ -631,15 +702,23 @@ if (Test-OpenClawSupport @('config') 'validate') {
     Add-Warning 'OpenClaw 配置校验' '当前 OpenClaw 不支持 config validate，已跳过整体校验'
 }
 Step '8/8' '启动并验证' '配置校验 · Gateway health'
+if ($script:OpenClawConfigChanged) {
+    Info '配置已更新，重启 Gateway 以加载最新配置；首次启动可能需要几分钟，正在等待 healthz...'
+    $gatewayAction = 'restart'
+} else {
+    Info '启动 Gateway；首次启动可能需要几分钟，正在等待 healthz...'
+    $gatewayAction = 'start'
+}
 $gw = Invoke-NativeCapture 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',
-    (Join-Path $Root 'scripts\gateway.ps1'), 'start')
-($gw.Output -split "`n") | Where-Object { $_ } | ForEach-Object { Write-Host $_ }
+    (Join-Path $Root 'scripts\gateway.ps1'), $gatewayAction)
+[void](Write-NativeOutput $gw.Output)
 # 降级而非中断：gateway 随时可以重启，没理由让一次十几分钟的安装在最后一步作废。
 if (-not $gw.Ok) {
-    Add-Warning 'Gateway' '启动失败' 'powershell -File scripts\gateway.ps1 start' 'high'
+    Add-Warning 'Gateway' "${gatewayAction} 失败" "powershell -File scripts\gateway.ps1 $gatewayAction" 'high'
 }
 }
 
+Write-InstallReport
 Show-Summary
 if ($SkipOpenClaw) {
     Write-Host ''
