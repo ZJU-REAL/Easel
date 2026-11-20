@@ -413,3 +413,27 @@ def test_setup_ps1_tui_completion_visual_keeps_launch_commands() -> None:
     assert '启动 Web：$Venv\\Scripts\\easel.exe web' in text
     assert '检查环境：$Venv\\Scripts\\easel.exe doctor' in text
     assert 'easel --help' not in text[text.index('function Show-Summary'):text.index('function Write-InstallReport')]
+
+
+def test_setup_ps1_running_step_uses_in_place_braille_spinner() -> None:
+    """Running 只动态替换原标记，并用定时器写回固定光标位置。"""
+    text = _read(SETUP_PS1)
+    progress = text[text.index("function Render-TuiProgress"):text.index("function Read-TuiMenu")]
+    assert '⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏' in text
+    assert 'new Timer(Tick, null, 100, 100)' in text
+    assert 'Console.SetCursorPosition(left, top)' in text
+    assert 'Console.Write(Frames[frame])' in text
+    assert '$totalRows = $renderedRows + 1' in text
+    assert 'Top = ([Console]::CursorTop - ($totalRows - $spinnerRow))' in text
+    assert "'running' { $mark = '⠋   '; $color = 'Yellow' }" in progress
+    assert 'Stop-TuiSpinner' in progress
+    assert 'if ($activeStep) { Start-TuiSpinner }' in progress
+
+
+def test_setup_ps1_tui_uses_utf8_for_braille_spinner_and_restores_encoding() -> None:
+    """Braille 动画应避免被 Windows 控制台代码页替换成问号。"""
+    text = _read(SETUP_PS1)
+    assert "$script:TuiPreviousOutputEncoding = [Console]::OutputEncoding" in text
+    assert "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false" in text
+    assert "function Restore-TuiConsoleEncoding" in text
+    assert "Restore-TuiConsoleEncoding" in text[text.index("function Show-Summary"):text.index("function Write-InstallReport")]

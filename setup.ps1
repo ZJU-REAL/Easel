@@ -43,6 +43,9 @@ $script:TuiLogo = @(
     '   | |___ / ___ \ ___) | |___| |___'
     '   |_____/_/   \_\____/|_____|_____|'
 )
+$script:TuiSpinnerAvailable = $false
+$script:TuiSpinnerPosition = $null
+$script:TuiPreviousOutputEncoding = $null
 
 function Add-TuiMessage([string]$Message, [string]$Color = 'Cyan', [switch]$KeepAll) {
     if (-not $script:TuiEnabled) { return }
@@ -80,8 +83,93 @@ function Initialize-Tui {
     try {
         $null = [Console]::WindowWidth
         $null = [Console]::KeyAvailable
+        $script:TuiPreviousOutputEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
         $script:TuiEnabled = $true
-    } catch { $script:TuiEnabled = $false }
+        $spinnerType = 'EaselTuiSpinner' -as [type]
+        if (-not $spinnerType) {
+            $spinnerSource = @'
+using System;
+using System.Threading;
+
+public static class EaselTuiSpinner
+{
+    private static readonly object Gate = new object();
+    private static readonly string[] Frames = new string[] { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+    private static Timer timer;
+    private static int frame;
+    private static int left;
+    private static int top;
+
+    public static void Start(int cursorLeft, int cursorTop)
+    {
+        lock (Gate)
+        {
+            if (timer != null) timer.Dispose();
+            left = cursorLeft;
+            top = cursorTop;
+            frame = 0;
+            timer = new Timer(Tick, null, 100, 100);
+        }
+    }
+
+    public static void Stop()
+    {
+        lock (Gate)
+        {
+            if (timer != null) timer.Dispose();
+            timer = null;
+        }
+    }
+
+    private static void Tick(object state)
+    {
+        lock (Gate)
+        {
+            if (timer == null) return;
+            try
+            {
+                int oldLeft = Console.CursorLeft;
+                int oldTop = Console.CursorTop;
+                ConsoleColor oldColor = Console.ForegroundColor;
+                Console.SetCursorPosition(left, top);
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(Frames[frame]);
+                Console.ForegroundColor = oldColor;
+                frame = (frame + 1) % Frames.Length;
+                Console.SetCursorPosition(oldLeft, oldTop);
+            }
+            catch { }
+        }
+    }
+}
+'@
+            try {
+                Add-Type -TypeDefinition $spinnerSource -ErrorAction Stop | Out-Null
+                $spinnerType = 'EaselTuiSpinner' -as [type]
+            } catch { $spinnerType = $null }
+        }
+        $script:TuiSpinnerAvailable = ($null -ne $spinnerType)
+    } catch {
+        $script:TuiEnabled = $false
+        Restore-TuiConsoleEncoding
+    }
+}
+
+function Stop-TuiSpinner {
+    if ($script:TuiSpinnerAvailable) { [EaselTuiSpinner]::Stop() }
+}
+
+function Restore-TuiConsoleEncoding {
+    if ($null -ne $script:TuiPreviousOutputEncoding) {
+        try { [Console]::OutputEncoding = $script:TuiPreviousOutputEncoding } catch { }
+        $script:TuiPreviousOutputEncoding = $null
+    }
+}
+
+function Start-TuiSpinner {
+    if (-not $script:TuiEnabled -or -not $script:TuiSpinnerAvailable -or -not $script:TuiSpinnerPosition) { return }
+    [EaselTuiSpinner]::Start($script:TuiSpinnerPosition.Left, $script:TuiSpinnerPosition.Top)
 }
 
 function Get-TuiDisplayWidth([string]$Text) {
@@ -133,10 +221,14 @@ function Write-TuiFrame([object[]]$Lines, [string]$Title = 'Windows 安装向导
         [pscustomobject]@{ Text = ''; Color = 'DarkGray'; Align = 'Left'; Highlight = $false }
         [pscustomobject]@{ Text = $separator; Color = 'DarkCyan'; Align = 'Center'; Highlight = $false }
     ) + @($Lines)
+    $renderedRows = 1 # 顶部边框
+    $spinnerRow = $null
     foreach ($line in $allLines) {
         if ($line -is [string]) { $item = [pscustomobject]@{ Text = $line; Color = 'Cyan'; Align = 'Left'; Highlight = $false } }
         else { $item = $line }
-        foreach ($text in @(Split-TuiLine ([string]$item.Text) $width)) {
+        $wrappedLines = @(Split-TuiLine ([string]$item.Text) $width)
+        if ($item.Spinner -and $script:TuiSpinnerAvailable) { $spinnerRow = $renderedRows }
+        foreach ($text in $wrappedLines) {
             $displayWidth = Get-TuiDisplayWidth $text
             $leftPadding = 0
             if ($item.Align -eq 'Logo') { $leftPadding = [math]::Floor([math]::Max(0, $width - $logoBlockWidth) / 2) }
@@ -145,9 +237,18 @@ function Write-TuiFrame([object[]]$Lines, [string]$Title = 'Windows 安装向导
             $writeParams = @{ ForegroundColor = $item.Color }
             if ($item.Highlight) { $writeParams['BackgroundColor'] = 'DarkCyan' }
             Write-Host ('| ' + (' ' * $leftPadding) + $text + (' ' * $rightPadding) + ' |') @writeParams
+            $renderedRows++
         }
     }
     Write-Host ('+' + ('-' * ($width + 2)) + '+') -ForegroundColor DarkCyan
+    if ($null -ne $spinnerRow -and $script:TuiSpinnerAvailable) {
+        try {
+            # 从整帧底部反向定位，避免不同 Windows 主机对帧起始 CursorTop 的差异。
+            # renderedRows 包含顶部边框和内容行；底部边框写完后再多前进一行。
+            $totalRows = $renderedRows + 1
+            $script:TuiSpinnerPosition = [pscustomobject]@{ Left = 2; Top = ([Console]::CursorTop - ($totalRows - $spinnerRow)) }
+        } catch { $script:TuiSpinnerPosition = $null }
+    }
 }
 
 function Write-TuiHeader([string]$Subtitle = '', [string]$Instruction = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。') {
@@ -163,6 +264,7 @@ function Read-TuiInput([string]$Prompt, [switch]$Secret) {
         if ($Secret) { $secure = Read-Host $Prompt -AsSecureString; return [System.Net.NetworkCredential]::new('', $secure).Password }
         return Read-Host $Prompt
     }
+    Stop-TuiSpinner
     Clear-Host
     Write-TuiFrame @(
         [pscustomobject]@{ Text = '输入设置'; Color = 'Yellow'; Align = 'Center' }
@@ -189,6 +291,8 @@ function Set-TuiStepStatus([string]$Index, [string]$Status, [string]$Title = '')
 
 function Render-TuiProgress([string]$Subtitle = '') {
     if (-not $script:TuiEnabled) { return }
+    Stop-TuiSpinner
+    $script:TuiSpinnerPosition = $null
     if ($Subtitle) { $script:CurrentStepSubtitle = $Subtitle }
     $lines = @([pscustomobject]@{ Text = '安装进度'; Color = 'Yellow'; Align = 'Center' })
     $lines += [pscustomobject]@{ Text = '操作：安装进行中；按 Ctrl+C 放弃安装。'; Color = 'DarkGray'; Align = 'Center' }
@@ -196,11 +300,11 @@ function Render-TuiProgress([string]$Subtitle = '') {
         $mark = '[  ]'; $color = 'DarkGray'
         switch ($step.Status) {
             'complete' { $mark = '[OK]'; $color = 'Green' }
-            'running' { $mark = '[>>]'; $color = 'Yellow' }
+            'running' { $mark = '⠋   '; $color = 'Yellow' }
             'skipped' { $mark = '[--]'; $color = 'DarkGray' }
             'failed' { $mark = '[!!]'; $color = 'Red' }
         }
-        $lines += [pscustomobject]@{ Text = ("{0} {1} {2}" -f $mark, $step.Index, $step.Title); Color = $color }
+        $lines += [pscustomobject]@{ Text = ("{0} {1} {2}" -f $mark, $step.Index, $step.Title); Color = $color; Spinner = ($step.Status -eq 'running') }
     }
     $activeStep = $script:TuiSteps | Where-Object { $_.Status -eq 'running' } | Select-Object -First 1
     $progressPercent = 0
@@ -225,10 +329,12 @@ function Render-TuiProgress([string]$Subtitle = '') {
     }
     Clear-Host
     Write-TuiFrame $lines
+    if ($activeStep) { Start-TuiSpinner }
 }
 
 function Read-TuiMenu([string]$Title, [string[]]$Items, [int]$Default = 0, [string]$Instruction = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。') {
     if (-not $script:TuiEnabled) { return -1 }
+    Stop-TuiSpinner
     $selected = [math]::Max(0, [math]::Min($Default, $Items.Count - 1))
     while ($true) {
         Clear-Host
@@ -271,6 +377,7 @@ function Invoke-WithRecovery([string]$Label, [scriptblock]$Action, [switch]$Opti
 # 支持 UTF-8，而本文件原有的 Ok() 已经是 [OK] 风格，不引入第二套符号。
 function Complete-CurrentStep([string]$FinalStatus = 'complete') {
     if (-not $script:CurrentStepName -or -not $script:CurrentStepStartedAt) { return }
+    Stop-TuiSpinner
     $seconds = [math]::Round(((Get-Date) - $script:CurrentStepStartedAt).TotalSeconds, 1)
     [void]$script:StepTimings.Add([pscustomobject]@{ name = $script:CurrentStepName; seconds = $seconds })
     if ($script:TuiEnabled) { Add-TuiMessage ("阶段耗时：{0}s" -f $seconds) 'DarkGray' } else { Write-Host ("  阶段耗时：{0}s" -f $seconds) -ForegroundColor DarkGray }
@@ -432,6 +539,7 @@ function Show-Summary([string]$FatalMessage = '') {
         if (-not $SkipOpenClaw) { $lines += [pscustomobject]@{ Text = '默认执行引擎：OpenClaw；Web 设置可切换其它 ACP 引擎。'; Color = 'DarkGray' } }
         Clear-Host
         Write-TuiFrame $lines
+        Restore-TuiConsoleEncoding
         return
     }
     $n = $script:Warnings.Count
