@@ -224,6 +224,19 @@ gateway startup, missing model config — are collected into a summary at the en
 `outputs/_install/last-install.json` for `easel doctor` to repeat; the install itself still exits 0.
 Set `EASEL_SETUP_STRICT=1` to turn those warnings back into hard failures.
 
+On Windows, detailed pip, npm, and Chromium output is kept under `outputs/_install/logs/`.
+The terminal shows phase progress and elapsed time, then prints the log tail on failure. When
+the installer changes OpenClaw configuration, it restarts the Easel Gateway so the running
+process loads the new settings.
+
+In an interactive PowerShell terminal, the installer enables a lightweight TUI. Use the arrow
+keys to choose the installation mode, model service, and retry, skip, or abandon actions after a
+failure; press Enter to confirm. The progress page hides detailed installation messages by default;
+press `↓` to expand them and `↑` to collapse them; the toggle responds while long-running
+tasks are still active. Each page shows its controls, and progress,
+log tails, and the result are refreshed inside a colored frame. CI, redirected output, and `-NonInteractive`
+automatically use plain text mode. Pass `-Plain` to explicitly disable the TUI.
+
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
 
 When Easel runs on a server accessed through VSCode Remote SSH, forward server port `7860`

@@ -32,6 +32,7 @@ def test_windows_optional_openclaw_is_an_explicit_install_choice() -> None:
     assert "[switch]$SkipOpenClaw" in before
     assert "[switch]$OpenClaw" in before
     assert "[switch]$NonInteractive" in before
+    assert "[switch]$Plain" in before
     assert "if (-not $SkipOpenClaw) {\nStep '2/8'" in text
     assert "if ($SkipOpenClaw) {\n    Step '6/8'" in text
     assert "& $Python -m easel.installation $Root api" in text
@@ -219,7 +220,8 @@ def test_no_powershell7_only_syntax() -> None:
     """
     for p in (SETUP_PS1, GATEWAY_PS1):
         for n, line in enumerate(_read(p).splitlines(), 1):
-            code = line.split("#")[0]
+            # Ignore quoted data: the ASCII Easel logo legitimately contains ``||``.
+            code = re.sub(r"'(?:''|[^'])*'", "''", line.split("#")[0])
             assert "??" not in code, f"{p.name}:{n} 用了 PS7 的 ?? 运算符"
             assert not re.search(r"\)\s*\?\s|\s\?\s.*\s:\s", code), \
                 f"{p.name}:{n} 疑似用了 PS7 的三元运算符：{line.strip()}"
@@ -258,3 +260,251 @@ def test_gateway_ps1_does_not_shadow_automatic_variable() -> None:
     bad = [f"{n}: {l.strip()}" for n, l in enumerate(text.splitlines(), 1)
            if re.search(r"^\s*\$Profile\s*=", l)]
     assert not bad, "不许给自动变量 $Profile 赋值：\n" + "\n".join(bad)
+
+
+def test_gateway_ps1_has_configurable_bounded_start_timeout() -> None:
+    """Gateway 冷启动等待必须有默认值，并允许受限的环境变量覆盖。
+
+    回归背景：旧实现固定只等 20 秒，Windows 首次加载插件和 agent 状态时可能
+    还没有完成 healthz，导致 setup 把正常启动误报成失败。这里同时锁住默认值、
+    环境变量入口和 15--600 秒边界，避免后续改回硬编码或接受不受控的等待时间。
+    """
+    text = _read(GATEWAY_PS1)
+    assert "$GatewayStartTimeoutSec = 120" in text
+    assert re.search(
+        r"\[int\]::TryParse\(\$env:EASEL_GATEWAY_START_TIMEOUT_SEC,\s*"
+        r"\[ref\]\$configuredTimeout\)",
+        text,
+    ), "必须从 EASEL_GATEWAY_START_TIMEOUT_SEC 读取可选覆盖值"
+    assert "$configuredTimeout -ge 15" in text
+    assert "$configuredTimeout -le 600" in text
+    assert "$GatewayStartTimeoutSec = $configuredTimeout" in text
+
+
+def test_gateway_ps1_polls_healthz_until_ready_with_progress() -> None:
+    """启动流程必须按可配置上限轮询 healthz，并在长启动时报告进度。"""
+    text = _read(GATEWAY_PS1)
+    start = text.index("    'start' {")
+    body = text[start:text.index("    'stop' {", start)]
+
+    assert "$polls = [int]($GatewayStartTimeoutSec * 2)" in body, \
+        "等待上限应转换为 500ms 轮询次数"
+    assert re.search(
+        r"for \(\$i = 1; \$i -le \$polls -and -not \$ready; \$i\+\+\)",
+        body,
+    )
+    assert "if (Test-Gateway) { $ready = $true; break }" in body
+    assert "Start-Sleep -Milliseconds 500" in body
+    assert "if (($i % 20) -eq 0)" in body
+    assert "Gateway still starting..." in body
+
+
+def test_setup_ps1_explains_gateway_wait_before_start() -> None:
+    """setup.ps1 必须在调用 Gateway 前说明首次启动可能较慢。"""
+    text = _read(SETUP_PS1)
+    info = "Info '启动 Gateway；首次启动可能需要几分钟，正在等待 healthz...'"
+    info_pos = text.index(info)
+    start_pos = text.index("$gw = Invoke-NativeCapture", info_pos)
+    assert info_pos < start_pos
+
+
+def test_setup_ps1_normalizes_native_output_before_filtering_no_change() -> None:
+    """PowerShell 5.1 的 CRLF 不应让 ``No change`` 穿透到终端。"""
+    text = _read(SETUP_PS1)
+    assert "function Get-NormalizedLines" in text
+    assert "-split '\\r?\\n'" in text
+    assert "if ($line -ne 'No change')" in text
+    assert "Write-NativeOutput $r.Output" in text
+
+
+def test_setup_ps1_quiets_dependency_commands_and_keeps_logs() -> None:
+    """pip/npm 的常规噪声应进入安装日志，失败时才显示尾部。"""
+    text = _read(SETUP_PS1)
+    assert "--disable-pip-version-check" in text
+    assert "--quiet" in text
+    assert "--no-fund" in text
+    assert "--no-audit" in text
+    assert "$script:InstallLogDir" in text
+    assert "1> $log 2> $errLog" in text
+    assert "$LASTEXITCODE" in text
+    progress = text[text.index("function Invoke-WithProgress"):text.index("# 结尾汇总", text.index("function Invoke-WithProgress"))]
+    assert "New-Object System.Diagnostics.ProcessStartInfo" in progress, "TUI 长任务需要异步轮询以即时响应展开/收起按键"
+    assert "$process.StartInfo = $startInfo" in progress
+    assert "$exitCode = $process.ExitCode" in progress
+    assert "function ConvertTo-ProcessArgument" in text
+    assert "$startInfo.RedirectStandardOutput = $true" in progress
+    assert "$startInfo.RedirectStandardError = $true" in progress
+    assert "while (-not $process.HasExited)" in progress
+    assert "Start-Sleep -Milliseconds 100" in progress
+    assert "if (Update-TuiDetailsFromKeys) { Render-TuiProgress" in progress
+    assert "Get-Content $f -Tail 40" in text
+    assert "Remove-Item $log" not in text
+
+
+def test_setup_ps1_writes_install_report_and_reloads_changed_gateway() -> None:
+    """Windows 安装应持久化结果，并在配置写入后重启 Gateway。"""
+    text = _read(SETUP_PS1)
+    assert "outputs\\_install\\last-install.json" in text
+    assert "function Write-InstallReport" in text
+    assert "Write-InstallReport" in text[text.index("Step '8/8'"):]
+    gateway = text[text.index("Step '8/8'"):]
+    assert "$script:OpenClawConfigChanged" in gateway
+    assert "$gatewayAction = 'restart'" in gateway
+    assert "$gatewayAction = 'start'" in gateway
+
+
+def test_setup_ps1_has_native_tui_with_plain_fallback() -> None:
+    """交互终端使用原生方向键菜单，CI/重定向仍必须保持纯文本路径。"""
+    text = _read(SETUP_PS1)
+    assert "function Initialize-Tui" in text
+    assert "[Console]::ReadKey($true)" in text
+    assert "UpArrow" in text and "DownArrow" in text
+    assert "[Console]::IsInputRedirected" in text
+    assert "[Console]::IsOutputRedirected" in text
+    assert "$NonInteractive" in text[text.index("function Initialize-Tui"):text.index("function Write-TuiHeader")]
+    assert "if ($script:TuiEnabled)" in text[text.index("Write-Host \"`nEasel"):text.index("if ($SkipOpenClaw)")]
+
+
+def test_setup_ps1_tui_covers_choices_recovery_and_progress() -> None:
+    """TUI 必须覆盖安装模式、模型服务、失败恢复和阶段进度。"""
+    text = _read(SETUP_PS1)
+    assert "选择安装模式" in text
+    assert "选择模型服务" in text
+    assert "function Invoke-WithRecovery" in text
+    assert "重试" in text and "中止安装" in text
+    assert "跳过（继续安装）" in text
+    assert "function Render-TuiProgress" in text
+    assert "安装进度" in text
+    assert "'complete'" in text and "'running'" in text and "'failed'" in text
+    assert "安装进度：{0}/{1}" not in text
+    assert "([string]$Text).ToCharArray()" in text
+    assert "Invoke-WithRecovery 'pip 升级'" in text
+    assert "Invoke-WithRecovery 'Web 前端构建'" in text
+    assert "Invoke-WithRecovery 'Playwright Chromium'" in text
+
+
+def test_setup_ps1_tui_progress_uses_unicode_completion_and_pending_markers() -> None:
+    """TUI 进度页用绿色勾和白色空心圈，其他状态保持现有标识。"""
+    text = _read(SETUP_PS1)
+    progress = text[text.index("function Render-TuiProgress"):text.index("function Read-TuiMenu")]
+    assert "'complete' { $mark = '✓   '; $color = 'Green' }" in progress
+    assert "$mark = '○   '; $color = 'White'" in progress
+    assert "'running' { $mark = '⠋   '; $color = 'Yellow' }" in progress
+    assert "'skipped' { $mark = '[--]'; $color = 'DarkGray' }" in progress
+    assert "'failed' { $mark = '[!!]'; $color = 'Red' }" in progress
+
+
+def test_setup_ps1_tui_does_not_replace_noninteractive_flags() -> None:
+    """原有显式安装参数仍然优先于 TUI。"""
+    text = _read(SETUP_PS1)
+    start = text.index("Initialize-Tui")
+    mode = text[start:text.index("if ($SkipOpenClaw)", start)]
+    assert "-not $SkipOpenClaw" in mode
+    assert "-not $OpenClaw" in mode
+    assert "-not $NonInteractive" in mode
+    assert "$Plain" in text[text.index("function Initialize-Tui"):text.index("function Write-TuiHeader")]
+    assert "[Console]::IsOutputRedirected" in mode
+    assert "-SkipOpenClaw" not in mode or "param(" in text[:start]
+
+
+def test_setup_ps1_tui_keeps_instructions_colors_and_messages_inside_frame() -> None:
+    """每个交互页都要有操作提示，进度消息不能再跑到框外。"""
+    text = _read(SETUP_PS1)
+    assert "操作：按 ↓ 展开详细安装信息，按 ↑ 收起；按 Ctrl+C 放弃安装。" in text
+    assert "操作：详细信息已展开；按 ↑ 收起，按 Ctrl+C 放弃安装。" in text
+    assert "操作：↑/↓ 选择，Enter 确认，Esc 返回/放弃。" in text
+    assert "操作：输入内容后按 Enter；Ctrl+C 放弃安装。" in text
+    assert "function Split-TuiLine" in text
+    assert "function Add-TuiMessage" in text
+    assert "['BackgroundColor'] = 'DarkCyan'" in text
+    assert "'放弃安装'" in text
+    assert "Write-TuiFrame $lines" in text
+
+
+def test_setup_ps1_progress_details_are_collapsed_by_default_and_toggle_with_arrows() -> None:
+    """进度页默认只显示摘要，Down/Up 控制详细消息展开和收起。"""
+    text = _read(SETUP_PS1)
+    assert "$script:TuiDetailsExpanded = $false" in text
+    assert "function Update-TuiDetailsFromKeys" in text
+    assert "[ConsoleKey]::DownArrow" in text
+    assert "[ConsoleKey]::UpArrow" in text
+    progress = text[text.index("function Render-TuiProgress"):text.index("function Read-TuiMenu")]
+    assert "if ($script:TuiDetailsExpanded -and $script:TuiMessages.Count -gt 0)" in progress
+    assert "详细安装信息" in progress
+    assert "if ($script:TuiDetailsExpanded)" in progress
+    assert "安装模式：已跳过 OpenClaw，相关步骤将显示为 [--]。" not in progress
+    assert "Set-TuiStepStatus '2/8' 'skipped' '检测 OpenClaw（因为选择跳过 OpenClaw，从而跳过本步）'" in text
+    assert "Set-TuiStepStatus '7/8' 'skipped' '同步 skills 与配置（因为选择跳过 OpenClaw，从而跳过本步）'" in text
+    assert "Set-TuiStepStatus '8/8' 'skipped' '启动并验证（因为选择跳过 OpenClaw，从而跳过本步）'" in text
+
+
+def test_setup_ps1_native_capture_polls_keys_during_late_install_steps() -> None:
+    """第 6 步后的 OpenClaw/Python 原生命令也必须支持即时展开收起。"""
+    text = _read(SETUP_PS1)
+    assert "function Invoke-TuiProcessCapture" in text
+    native = text[text.index("function Invoke-NativeCapture"):text.index("function Invoke-OpenClawRaw")]
+    assert "return Invoke-TuiProcessCapture $Exe $Arguments" in native
+    python_capture = text[text.index("function Invoke-PythonStdinCapture"):text.index("function Invoke-OpenClawRaw")]
+    assert "return Invoke-TuiProcessCapture $Python $Arguments $Code" in python_capture
+    assert "if ((Update-TuiDetailsFromKeys) -and $script:CurrentStepIndex)" in text
+
+
+def test_setup_ps1_tui_resolves_windows_command_shims_before_dotnet_start() -> None:
+    """.NET Process 不能直接解析 openclaw 这类 PATHEXT 命令名，必须先解析 .cmd/.exe。"""
+    text = _read(SETUP_PS1)
+    assert "function Resolve-TuiExecutable" in text
+    resolver = text[text.index("function Resolve-TuiExecutable"):text.index("function Start-TuiSpinner")]
+    assert '"$Exe.cmd"' in resolver
+    assert '"$Exe.exe"' in resolver
+    process = text[text.index("function Invoke-TuiProcessCapture"):text.index("# 任何对原生命令")]
+    assert "$resolvedExe = Resolve-TuiExecutable $Exe" in process
+    assert "$startInfo.FileName = $resolvedExe" in process
+
+
+def test_setup_ps1_retries_transient_openclaw_batch_read_failures() -> None:
+    """批量配置遇到临时 config read 错误时等待并重试，避免把瞬时竞态暴露给用户。"""
+    text = _read(SETUP_PS1)
+    assert "function Wait-TuiRetryDelay" in text
+    batch = text[text.index("function Set-OpenClawConfigBatch"):text.index("function Write-AnthropicProvider")]
+    assert "$maxAttempts = 3" in batch
+    assert "config could not be read" in batch
+    assert "Wait-TuiRetryDelay 500" in batch
+    assert "正在重试（$attempt/$maxAttempts）" in batch
+
+
+def test_setup_ps1_tui_completion_visual_keeps_launch_commands() -> None:
+    """完成页采用居中品牌和状态块，同时保留用户需要的两个启动提示。"""
+    text = _read(SETUP_PS1)
+    assert "$script:TuiLogo = @(" in text
+    assert "'    _____    _    ____  _____ _'" in text
+    assert "'   |_____/_/   \\_\\____/|_____|_____|'" in text
+    assert "[ INSTALLATION COMPLETE ]" in text
+    assert "Easel 已准备就绪。" in text
+    assert "('[' + ('#' * 48) + '] 100%')" in text
+    assert '启动 Web：$Venv\\Scripts\\easel.exe web' in text
+    assert '检查环境：$Venv\\Scripts\\easel.exe doctor' in text
+    assert 'easel --help' not in text[text.index('function Show-Summary'):text.index('function Write-InstallReport')]
+
+
+def test_setup_ps1_running_step_uses_in_place_braille_spinner() -> None:
+    """Running 只动态替换原标记，并用定时器写回固定光标位置。"""
+    text = _read(SETUP_PS1)
+    progress = text[text.index("function Render-TuiProgress"):text.index("function Read-TuiMenu")]
+    assert '⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏' in text
+    assert 'new Timer(Tick, null, 100, 100)' in text
+    assert 'Console.SetCursorPosition(left, top)' in text
+    assert 'Console.Write(Frames[frame])' in text
+    assert '$totalRows = $renderedRows + 1' in text
+    assert 'Top = ([Console]::CursorTop - ($totalRows - $spinnerRow))' in text
+    assert "'running' { $mark = '⠋   '; $color = 'Yellow' }" in progress
+    assert 'Stop-TuiSpinner' in progress
+    assert 'if ($activeStep) { Start-TuiSpinner }' in progress
+
+
+def test_setup_ps1_tui_uses_utf8_for_braille_spinner_and_restores_encoding() -> None:
+    """Braille 动画应避免被 Windows 控制台代码页替换成问号。"""
+    text = _read(SETUP_PS1)
+    assert "$script:TuiPreviousOutputEncoding = [Console]::OutputEncoding" in text
+    assert "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false" in text
+    assert "function Restore-TuiConsoleEncoding" in text
+    assert "Restore-TuiConsoleEncoding" in text[text.index("function Show-Summary"):text.index("function Write-InstallReport")]
