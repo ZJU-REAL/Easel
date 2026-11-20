@@ -46,6 +46,7 @@ $script:TuiLogo = @(
 $script:TuiSpinnerAvailable = $false
 $script:TuiSpinnerPosition = $null
 $script:TuiPreviousOutputEncoding = $null
+$script:TuiDetailsExpanded = $false
 
 function Add-TuiMessage([string]$Message, [string]$Color = 'Cyan', [switch]$KeepAll) {
     if (-not $script:TuiEnabled) { return }
@@ -167,6 +168,50 @@ function Restore-TuiConsoleEncoding {
     }
 }
 
+function Update-TuiDetailsFromKeys {
+    if (-not $script:TuiEnabled) { return $false }
+    $changed = $false
+    try {
+        while ([Console]::KeyAvailable) {
+            $key = [Console]::ReadKey($true)
+            if ($key.Key -eq [ConsoleKey]::DownArrow -and -not $script:TuiDetailsExpanded) {
+                $script:TuiDetailsExpanded = $true
+                $changed = $true
+            } elseif ($key.Key -eq [ConsoleKey]::UpArrow -and $script:TuiDetailsExpanded) {
+                $script:TuiDetailsExpanded = $false
+                $changed = $true
+            }
+        }
+    } catch { }
+    return $changed
+}
+
+function Wait-TuiRetryDelay([int]$Milliseconds = 500) {
+    $deadline = (Get-Date).AddMilliseconds($Milliseconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($script:TuiEnabled -and (Update-TuiDetailsFromKeys)) {
+            Render-TuiProgress $script:CurrentStepSubtitle
+        }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
+function ConvertTo-ProcessArgument([string]$Argument) {
+    if ($null -eq $Argument) { return '""' }
+    if ($Argument -notmatch '[\s"]') { return $Argument }
+    return '"' + $Argument.Replace('"', '\"') + '"'
+}
+
+function Resolve-TuiExecutable([string]$Exe) {
+    if ([string]::IsNullOrWhiteSpace($Exe)) { return $Exe }
+    if ([System.IO.Path]::IsPathRooted($Exe) -or $Exe -match '[\\/]') { return $Exe }
+    foreach ($candidate in @("$Exe.cmd", "$Exe.exe", "$Exe.bat", $Exe)) {
+        $command = Get-Command $candidate -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command -and $command.Source) { return $command.Source }
+    }
+    return $Exe
+}
+
 function Start-TuiSpinner {
     if (-not $script:TuiEnabled -or -not $script:TuiSpinnerAvailable -or -not $script:TuiSpinnerPosition) { return }
     [EaselTuiSpinner]::Start($script:TuiSpinnerPosition.Left, $script:TuiSpinnerPosition.Top)
@@ -251,7 +296,7 @@ function Write-TuiFrame([object[]]$Lines, [string]$Title = 'Windows 安装向导
     }
 }
 
-function Write-TuiHeader([string]$Subtitle = '', [string]$Instruction = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。') {
+function Write-TuiHeader([string]$Subtitle = '', [string]$Instruction = '操作：↑/↓ 选择，Enter 确认，Esc 返回/放弃。') {
     if (-not $script:TuiEnabled) { return }
     $lines = @([pscustomobject]@{ Text = $Subtitle; Color = 'Yellow'; Align = 'Center' })
     $lines += [pscustomobject]@{ Text = $Instruction; Color = 'DarkGray'; Align = 'Center' }
@@ -291,15 +336,21 @@ function Set-TuiStepStatus([string]$Index, [string]$Status, [string]$Title = '')
 
 function Render-TuiProgress([string]$Subtitle = '') {
     if (-not $script:TuiEnabled) { return }
+    Update-TuiDetailsFromKeys | Out-Null
     Stop-TuiSpinner
     $script:TuiSpinnerPosition = $null
     if ($Subtitle) { $script:CurrentStepSubtitle = $Subtitle }
     $lines = @([pscustomobject]@{ Text = '安装进度'; Color = 'Yellow'; Align = 'Center' })
-    $lines += [pscustomobject]@{ Text = '操作：安装进行中；按 Ctrl+C 放弃安装。'; Color = 'DarkGray'; Align = 'Center' }
+    $detailHint = if ($script:TuiDetailsExpanded) {
+        '操作：详细信息已展开；按 ↑ 收起，按 Ctrl+C 放弃安装。'
+    } else {
+        '操作：按 ↓ 展开详细安装信息，按 ↑ 收起；按 Ctrl+C 放弃安装。'
+    }
+    $lines += [pscustomobject]@{ Text = $detailHint; Color = 'DarkGray'; Align = 'Center' }
     foreach ($step in $script:TuiSteps) {
-        $mark = '[  ]'; $color = 'DarkGray'
+        $mark = '○   '; $color = 'White'
         switch ($step.Status) {
-            'complete' { $mark = '[OK]'; $color = 'Green' }
+            'complete' { $mark = '✓   '; $color = 'Green' }
             'running' { $mark = '⠋   '; $color = 'Yellow' }
             'skipped' { $mark = '[--]'; $color = 'DarkGray' }
             'failed' { $mark = '[!!]'; $color = 'Red' }
@@ -315,16 +366,18 @@ function Render-TuiProgress([string]$Subtitle = '') {
     $bar = ('#' * $filled) + ('.' * ($barWidth - $filled))
     $lines += [pscustomobject]@{ Text = ''; Color = 'DarkGray' }
     $lines += [pscustomobject]@{ Text = ("[{0}] {1,3}%" -f $bar, [int]$progressPercent); Color = 'Cyan'; Align = 'Center' }
-    $lines += [pscustomobject]@{ Text = ''; Color = 'DarkGray' }
-    if ($script:CurrentStepIndex) {
-        $current = $script:TuiSteps | Where-Object { $_.Index -eq $script:CurrentStepIndex } | Select-Object -First 1
-        if ($current) {
-            $lines += [pscustomobject]@{ Text = ("当前阶段：[{0}] {1}" -f $current.Index, $current.Title); Color = 'Cyan' }
-            if ($script:CurrentStepSubtitle) { $lines += [pscustomobject]@{ Text = $script:CurrentStepSubtitle; Color = 'DarkGray' } }
+    if ($script:TuiDetailsExpanded) {
+        $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+        $lines += [pscustomobject]@{ Text = '详细安装信息'; Color = 'Yellow'; Align = 'Center' }
+        if ($script:CurrentStepIndex) {
+            $current = $script:TuiSteps | Where-Object { $_.Index -eq $script:CurrentStepIndex } | Select-Object -First 1
+            if ($current) {
+                $lines += [pscustomobject]@{ Text = ("当前阶段：[{0}] {1}" -f $current.Index, $current.Title); Color = 'Cyan' }
+                if ($script:CurrentStepSubtitle) { $lines += [pscustomobject]@{ Text = $script:CurrentStepSubtitle; Color = 'DarkGray' } }
+            }
         }
     }
-    if ($script:TuiMessages.Count -gt 0) {
-        $lines += [pscustomobject]@{ Text = ''; Color = 'Cyan' }
+    if ($script:TuiDetailsExpanded -and $script:TuiMessages.Count -gt 0) {
         foreach ($message in $script:TuiMessages) { $lines += $message }
     }
     Clear-Host
@@ -332,7 +385,7 @@ function Render-TuiProgress([string]$Subtitle = '') {
     if ($activeStep) { Start-TuiSpinner }
 }
 
-function Read-TuiMenu([string]$Title, [string[]]$Items, [int]$Default = 0, [string]$Instruction = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。') {
+function Read-TuiMenu([string]$Title, [string[]]$Items, [int]$Default = 0, [string]$Instruction = '操作：↑/↓ 选择，Enter 确认，Esc 返回/放弃。') {
     if (-not $script:TuiEnabled) { return -1 }
     Stop-TuiSpinner
     $selected = [math]::Max(0, [math]::Min($Default, $Items.Count - 1))
@@ -366,15 +419,14 @@ function Invoke-WithRecovery([string]$Label, [scriptblock]$Action, [switch]$Opti
         # 非交互模式保持原语义：核心失败终止，可选组件失败降级。
         if (-not $script:TuiEnabled) { if ($Optional) { return $null } return $false }
         $items = if ($Optional) { @('重试', '跳过（继续安装）', '放弃安装（中止安装）') } else { @('重试', '放弃安装（中止安装）') }
-        $choice = Read-TuiMenu "$Label 失败：请选择操作" $items 0 '操作：Up/Down 选择，Enter 确认；可选择放弃安装。'
+        $choice = Read-TuiMenu "$Label 失败：请选择操作" $items 0 '操作：↑/↓ 选择，Enter 确认；可选择放弃安装。'
         if ($choice -eq 0) { continue }
         if ($Optional -and $choice -eq 1) { return $null }
         return $false
     }
 }
 
-# 用 [OK] / [!] 这种 ASCII 标记而不是 ✓ / ⚠：cmd.exe 与较老的终端代码页并不可靠地
-# 支持 UTF-8，而本文件原有的 Ok() 已经是 [OK] 风格，不引入第二套符号。
+# 普通 CLI 继续使用 ASCII 标记；TUI 进度页在已切换 UTF-8 的交互终端中使用 Unicode 状态图标。
 function Complete-CurrentStep([string]$FinalStatus = 'complete') {
     if (-not $script:CurrentStepName -or -not $script:CurrentStepStartedAt) { return }
     Stop-TuiSpinner
@@ -428,8 +480,8 @@ function Write-NativeOutput([string]$Text) {
 }
 
 # 长耗时步骤转圈。注意三点：
-#   1. 直接调用原生命令并读取 $LASTEXITCODE；Windows PowerShell 某些环境下
-#      Start-Process 返回的 Process.ExitCode 为空，会把成功命令误判成失败。
+#   1. 普通模式直接调用原生命令并读取 $LASTEXITCODE；TUI 模式使用
+#      System.Diagnostics.Process，以便在重定向输出时可靠读取 ExitCode。
 #   2. 非 TTY（CI、重定向）下不要转圈：1Hz 的 `r 会刷出几千行无用日志。
 #   3. 详细 stdout/stderr 始终落到 outputs/_install/logs；失败时再把尾部打出来，
 #      成功时不把 pip/npm 的依赖清单和开发者提示刷满终端。
@@ -447,7 +499,31 @@ function Invoke-WithProgress([string]$Label, [string]$Exe, [string[]]$Arguments,
     $exitCode = 1
     try {
         $ErrorActionPreference = 'Continue'
-        if ($WorkDir) {
+        if ($script:TuiEnabled) {
+            $quotedArguments = @($Arguments | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' '
+            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $startInfo.FileName = $Exe
+            $startInfo.Arguments = $quotedArguments
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            if ($WorkDir) { $startInfo.WorkingDirectory = $WorkDir }
+            $process = New-Object System.Diagnostics.Process
+            $process.StartInfo = $startInfo
+            if (-not $process.Start()) { throw "无法启动进程：$Exe" }
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+            while (-not $process.HasExited) {
+                if (Update-TuiDetailsFromKeys) { Render-TuiProgress $script:CurrentStepSubtitle }
+                Start-Sleep -Milliseconds 100
+            }
+            $process.WaitForExit()
+            [System.IO.File]::WriteAllText($log, [string]$stdoutTask.Result, (New-Object System.Text.UTF8Encoding($false)))
+            [System.IO.File]::WriteAllText($errLog, [string]$stderrTask.Result, (New-Object System.Text.UTF8Encoding($false)))
+            $exitCode = $process.ExitCode
+            $process.Dispose()
+        } elseif ($WorkDir) {
             Push-Location $WorkDir
             try {
                 & $Exe @Arguments 1> $log 2> $errLog
@@ -650,13 +726,52 @@ function Add-Warning([string]$Label, [string]$Detail, [string]$Fix = '', [string
     }
 }
 
+function Invoke-TuiProcessCapture([string]$Exe, [string[]]$Arguments, [string]$InputText = $null) {
+    $resolvedExe = Resolve-TuiExecutable $Exe
+    $quotedArguments = @($Arguments | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' '
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $resolvedExe
+    $startInfo.Arguments = $quotedArguments
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw "无法启动进程：$Exe" }
+        if ($null -ne $InputText) { $process.StandardInput.Write($InputText) }
+        $process.StandardInput.Close()
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        while (-not $process.HasExited) {
+            if ((Update-TuiDetailsFromKeys) -and $script:CurrentStepIndex) {
+                Render-TuiProgress $script:CurrentStepSubtitle
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        $process.WaitForExit()
+        $output = [string]$stdoutTask.Result + [string]$stderrTask.Result
+        return [pscustomobject]@{ Ok = ($process.ExitCode -eq 0); Output = $output; Code = $process.ExitCode }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 # 任何对原生命令做 stderr 重定向的地方都必须走这里（原因见上）。
 function Invoke-NativeCapture([string]$Exe, [string[]]$Arguments) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
+        if ($script:TuiEnabled) {
+            return Invoke-TuiProcessCapture $Exe $Arguments
+        }
         $out = (& $Exe @Arguments 2>&1 | Out-String)
         $code = $LASTEXITCODE
+    } catch {
+        $out = ($_ | Out-String)
+        $code = 1
     } finally {
         $ErrorActionPreference = $prev
     }
@@ -667,8 +782,14 @@ function Invoke-PythonStdinCapture([string]$Code, [string[]]$Arguments) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
+        if ($script:TuiEnabled) {
+            return Invoke-TuiProcessCapture $Python $Arguments $Code
+        }
         $out = $Code | & $Python @Arguments 2>&1 | Out-String
         $code = $LASTEXITCODE
+    } catch {
+        $out = ($_ | Out-String)
+        $code = 1
     } finally { $ErrorActionPreference = $prev }
     return [pscustomobject]@{ Ok = ($code -eq 0); Output = $out; Code = $code }
 }
@@ -807,10 +928,20 @@ function Set-OpenClawConfigBatch($Operations, [string]$Label = 'OpenClaw 配置'
             # --replace 明确声明「有意整块替换」。不声明时 2026.9.x 会拒绝任何会删掉既有
             # 子键的写入，让重复安装失败。老版本没这个标志，所以先探测。
             if (Test-OpenClawSupport @('config','set') '--replace') { $arguments += '--replace' }
-            $r = Invoke-OpenClawRaw $arguments
-            if ($r.Ok) {
-                if (Write-NativeOutput $r.Output) { $script:OpenClawConfigChanged = $true }
-                return
+            $maxAttempts = 3
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                $r = Invoke-OpenClawRaw $arguments
+                if ($r.Ok) {
+                    if (Write-NativeOutput $r.Output) { $script:OpenClawConfigChanged = $true }
+                    return
+                }
+                $isTransientReadFailure = "$($r.Output)" -match '(?i)config could not be read|could not read.*openclaw\.json|无法读取.*配置'
+                if (-not $isTransientReadFailure -or $attempt -eq $maxAttempts) { break }
+                if ($script:TuiEnabled) {
+                    Add-TuiMessage "OpenClaw 配置暂时不可读，正在重试（$attempt/$maxAttempts）..." 'Yellow'
+                    Render-TuiProgress $script:CurrentStepSubtitle
+                }
+                Wait-TuiRetryDelay 500
             }
             $first = (($r.Output -split "`n") | Where-Object { $_ } | Select-Object -First 1)
             Add-Warning $Label "openclaw 拒绝了这批配置（$first）" '' 'high'
@@ -860,7 +991,7 @@ if ($script:TuiEnabled) {
     Clear-Host
     Write-TuiFrame @(
         [pscustomobject]@{ Text = '欢迎使用 Windows 安装向导'; Color = 'Yellow'; Align = 'Center' }
-        [pscustomobject]@{ Text = '操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。'; Color = 'DarkGray'; Align = 'Center' }
+        [pscustomobject]@{ Text = '操作：↑/↓ 选择，Enter 确认，Esc 返回/放弃。'; Color = 'DarkGray'; Align = 'Center' }
     )
 } else {
     Write-Host "`nEasel · Windows 安装向导" -ForegroundColor Magenta

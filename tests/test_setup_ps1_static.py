@@ -328,7 +328,15 @@ def test_setup_ps1_quiets_dependency_commands_and_keeps_logs() -> None:
     assert "1> $log 2> $errLog" in text
     assert "$LASTEXITCODE" in text
     progress = text[text.index("function Invoke-WithProgress"):text.index("# 结尾汇总", text.index("function Invoke-WithProgress"))]
-    assert "Start-Process" not in progress, "不要用空 ExitCode 的 Start-Process 判定 pip/npm 成功与否"
+    assert "New-Object System.Diagnostics.ProcessStartInfo" in progress, "TUI 长任务需要异步轮询以即时响应展开/收起按键"
+    assert "$process.StartInfo = $startInfo" in progress
+    assert "$exitCode = $process.ExitCode" in progress
+    assert "function ConvertTo-ProcessArgument" in text
+    assert "$startInfo.RedirectStandardOutput = $true" in progress
+    assert "$startInfo.RedirectStandardError = $true" in progress
+    assert "while (-not $process.HasExited)" in progress
+    assert "Start-Sleep -Milliseconds 100" in progress
+    assert "if (Update-TuiDetailsFromKeys) { Render-TuiProgress" in progress
     assert "Get-Content $f -Tail 40" in text
     assert "Remove-Item $log" not in text
 
@@ -375,6 +383,17 @@ def test_setup_ps1_tui_covers_choices_recovery_and_progress() -> None:
     assert "Invoke-WithRecovery 'Playwright Chromium'" in text
 
 
+def test_setup_ps1_tui_progress_uses_unicode_completion_and_pending_markers() -> None:
+    """TUI 进度页用绿色勾和白色空心圈，其他状态保持现有标识。"""
+    text = _read(SETUP_PS1)
+    progress = text[text.index("function Render-TuiProgress"):text.index("function Read-TuiMenu")]
+    assert "'complete' { $mark = '✓   '; $color = 'Green' }" in progress
+    assert "$mark = '○   '; $color = 'White'" in progress
+    assert "'running' { $mark = '⠋   '; $color = 'Yellow' }" in progress
+    assert "'skipped' { $mark = '[--]'; $color = 'DarkGray' }" in progress
+    assert "'failed' { $mark = '[!!]'; $color = 'Red' }" in progress
+
+
 def test_setup_ps1_tui_does_not_replace_noninteractive_flags() -> None:
     """原有显式安装参数仍然优先于 TUI。"""
     text = _read(SETUP_PS1)
@@ -391,14 +410,62 @@ def test_setup_ps1_tui_does_not_replace_noninteractive_flags() -> None:
 def test_setup_ps1_tui_keeps_instructions_colors_and_messages_inside_frame() -> None:
     """每个交互页都要有操作提示，进度消息不能再跑到框外。"""
     text = _read(SETUP_PS1)
-    assert "操作：安装进行中；按 Ctrl+C 放弃安装。" in text
-    assert "操作：Up/Down 选择，Enter 确认，Esc 返回/放弃。" in text
+    assert "操作：按 ↓ 展开详细安装信息，按 ↑ 收起；按 Ctrl+C 放弃安装。" in text
+    assert "操作：详细信息已展开；按 ↑ 收起，按 Ctrl+C 放弃安装。" in text
+    assert "操作：↑/↓ 选择，Enter 确认，Esc 返回/放弃。" in text
     assert "操作：输入内容后按 Enter；Ctrl+C 放弃安装。" in text
     assert "function Split-TuiLine" in text
     assert "function Add-TuiMessage" in text
     assert "['BackgroundColor'] = 'DarkCyan'" in text
     assert "'放弃安装'" in text
     assert "Write-TuiFrame $lines" in text
+
+
+def test_setup_ps1_progress_details_are_collapsed_by_default_and_toggle_with_arrows() -> None:
+    """进度页默认只显示摘要，Down/Up 控制详细消息展开和收起。"""
+    text = _read(SETUP_PS1)
+    assert "$script:TuiDetailsExpanded = $false" in text
+    assert "function Update-TuiDetailsFromKeys" in text
+    assert "[ConsoleKey]::DownArrow" in text
+    assert "[ConsoleKey]::UpArrow" in text
+    progress = text[text.index("function Render-TuiProgress"):text.index("function Read-TuiMenu")]
+    assert "if ($script:TuiDetailsExpanded -and $script:TuiMessages.Count -gt 0)" in progress
+    assert "详细安装信息" in progress
+    assert "if ($script:TuiDetailsExpanded)" in progress
+
+
+def test_setup_ps1_native_capture_polls_keys_during_late_install_steps() -> None:
+    """第 6 步后的 OpenClaw/Python 原生命令也必须支持即时展开收起。"""
+    text = _read(SETUP_PS1)
+    assert "function Invoke-TuiProcessCapture" in text
+    native = text[text.index("function Invoke-NativeCapture"):text.index("function Invoke-OpenClawRaw")]
+    assert "return Invoke-TuiProcessCapture $Exe $Arguments" in native
+    python_capture = text[text.index("function Invoke-PythonStdinCapture"):text.index("function Invoke-OpenClawRaw")]
+    assert "return Invoke-TuiProcessCapture $Python $Arguments $Code" in python_capture
+    assert "if ((Update-TuiDetailsFromKeys) -and $script:CurrentStepIndex)" in text
+
+
+def test_setup_ps1_tui_resolves_windows_command_shims_before_dotnet_start() -> None:
+    """.NET Process 不能直接解析 openclaw 这类 PATHEXT 命令名，必须先解析 .cmd/.exe。"""
+    text = _read(SETUP_PS1)
+    assert "function Resolve-TuiExecutable" in text
+    resolver = text[text.index("function Resolve-TuiExecutable"):text.index("function Start-TuiSpinner")]
+    assert '"$Exe.cmd"' in resolver
+    assert '"$Exe.exe"' in resolver
+    process = text[text.index("function Invoke-TuiProcessCapture"):text.index("# 任何对原生命令")]
+    assert "$resolvedExe = Resolve-TuiExecutable $Exe" in process
+    assert "$startInfo.FileName = $resolvedExe" in process
+
+
+def test_setup_ps1_retries_transient_openclaw_batch_read_failures() -> None:
+    """批量配置遇到临时 config read 错误时等待并重试，避免把瞬时竞态暴露给用户。"""
+    text = _read(SETUP_PS1)
+    assert "function Wait-TuiRetryDelay" in text
+    batch = text[text.index("function Set-OpenClawConfigBatch"):text.index("function Write-AnthropicProvider")]
+    assert "$maxAttempts = 3" in batch
+    assert "config could not be read" in batch
+    assert "Wait-TuiRetryDelay 500" in batch
+    assert "正在重试（$attempt/$maxAttempts）" in batch
 
 
 def test_setup_ps1_tui_completion_visual_keeps_launch_commands() -> None:

@@ -231,8 +231,10 @@ process loads the new settings.
 
 In an interactive PowerShell terminal, the installer enables a lightweight TUI. Use the arrow
 keys to choose the installation mode, model service, and retry, skip, or abandon actions after a
-failure; press Enter to confirm. Each page shows its controls, and progress, log tails, and the
-result are refreshed inside a colored frame. CI, redirected output, and `-NonInteractive`
+failure; press Enter to confirm. The progress page hides detailed installation messages by default;
+press `↓` to expand them and `↑` to collapse them; the toggle responds while long-running
+tasks are still active. Each page shows its controls, and progress,
+log tails, and the result are refreshed inside a colored frame. CI, redirected output, and `-NonInteractive`
 automatically use plain text mode. Pass `-Plain` to explicitly disable the TUI.
 
 Open `http://localhost:7860` for the Web workspace. Run `easel doctor` to check the environment and `easel ping` to verify the gateway and Agent connection.
