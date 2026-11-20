@@ -432,6 +432,10 @@ def test_setup_ps1_progress_details_are_collapsed_by_default_and_toggle_with_arr
     assert "if ($script:TuiDetailsExpanded -and $script:TuiMessages.Count -gt 0)" in progress
     assert "详细安装信息" in progress
     assert "if ($script:TuiDetailsExpanded)" in progress
+    assert "安装模式：已跳过 OpenClaw，相关步骤将显示为 [--]。" not in progress
+    assert "Set-TuiStepStatus '2/8' 'skipped' '检测 OpenClaw（因为选择跳过 OpenClaw，从而跳过本步）'" in text
+    assert "Set-TuiStepStatus '7/8' 'skipped' '同步 skills 与配置（因为选择跳过 OpenClaw，从而跳过本步）'" in text
+    assert "Set-TuiStepStatus '8/8' 'skipped' '启动并验证（因为选择跳过 OpenClaw，从而跳过本步）'" in text
 
 
 def test_setup_ps1_native_capture_polls_keys_during_late_install_steps() -> None:

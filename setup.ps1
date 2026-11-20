@@ -1013,9 +1013,9 @@ if (-not $SkipOpenClaw -and -not $OpenClaw -and $script:TuiEnabled) {
 }
 if ($script:TuiEnabled) { Write-TuiHeader '准备开始安装' '操作：安装过程中按 Ctrl+C 放弃；此页无需选择。' }
 if ($SkipOpenClaw) {
-    Set-TuiStepStatus '2/8' 'skipped'
-    Set-TuiStepStatus '7/8' 'skipped'
-    Set-TuiStepStatus '8/8' 'skipped'
+    Set-TuiStepStatus '2/8' 'skipped' '检测 OpenClaw（因为选择跳过 OpenClaw，从而跳过本步）'
+    Set-TuiStepStatus '7/8' 'skipped' '同步 skills 与配置（因为选择跳过 OpenClaw，从而跳过本步）'
+    Set-TuiStepStatus '8/8' 'skipped' '启动并验证（因为选择跳过 OpenClaw，从而跳过本步）'
     Info '只安装 Easel 与 Web 依赖，不安装、配置或启动 OpenClaw；已有底座与凭证保留。'
 }
 Step '1/8' '检查系统环境' 'Python · Node.js · Git · FFmpeg'
