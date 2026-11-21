@@ -20,6 +20,8 @@ def workspace_documents(root: Path) -> list[Path]:
 
 
 def harness_instructions(request: RunRequest) -> str:
+    project = request.env.get("REMOTION_PROJECT")
+    video = f"视频渲染优先使用已选本机 Remotion 工程 {project}。" if project else ""
     root = request.cwd.resolve()
     python = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     runtime = request.env.get("EASEL_AGENT_RUNTIME", "当前所选引擎")
@@ -34,6 +36,7 @@ def harness_instructions(request: RunRequest) -> str:
         f"技能库：{root / 'skills' / 'builtin'}；共享脚本：{root / 'skills' / 'shared' / 'scripts'}。"
         "每个 SKILL.md 是流程规范，不要求使用原生 /skill 命令；先读取对应技能再执行。"
         f"Python 优先使用 {python}；产物保存到 {root / 'outputs'}。"
+        f"{video}"
         f"账号画像位于 {root / 'profiles'}；直接使用该实际路径，"
         "easel-profiles/ 仅在另有工作区链接时可用，不是项目根中的必需目录。"
         "遵循用户选择的画像和每轮技能提醒。配置检查只使用项目 .env 的脱敏结果，不回显凭证。"

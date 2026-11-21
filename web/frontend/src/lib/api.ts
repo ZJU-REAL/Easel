@@ -928,6 +928,7 @@ export function fetchLastTurn(sessionId: string, turnId?: string): Promise<{ sta
 // ═══ 设置面板 · 环境安装（install_tool 引擎桥） ═══
 
 export interface EnvTool {
+  location?: string;
   id: string;
   state: 'ok' | 'missing' | 'no_dir' | 'fail';
   version: string | null;
@@ -1145,3 +1146,5 @@ export function fetchAvailableModels(
     body: JSON.stringify({ baseUrl, key, protocol, slot, name }),
   });
 }
+
+export { request };

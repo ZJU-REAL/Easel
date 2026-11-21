@@ -51,6 +51,8 @@ from easel.persona import (load_profile_text, persona_prefix, chat_turn_message,
                            profile_exists, valid_persona_name, _FILE_ORDER)
 from easel.timeouts import TIMEOUT_CHAT, TIMEOUT_DIRECT, TIMEOUT_PRODUCE
 from easel.manual_publish import build_package, publishing_mode
+from easel import remotion_env
+from easel.timeouts import TIMEOUT_ENV_INSPECTION
 from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_config, api_mode,
                               history_path, read_settings, stream_chat)
 from easel.chat_runs import DirectChatRun, durable_call
@@ -810,7 +812,7 @@ def _proxy_env() -> dict[str, str]:
                             'localhost,127.0.0.1,10.*,*.xiaohongshu.com,*.devops.xiaohongshu.com,*.douyin.com,*.kuaishou.com,*.zhihu.com,*.bilibili.com,*.weixin.qq.com,*.qq.com',
                             env_file=ENV_FILE)
     env.setdefault('EASEL_ROOT', str(PROJECT_ROOT))
-    return env
+    return remotion_env.environment(PROJECT_ROOT, env)
 
 
 def _publish_env() -> dict[str, str]:
@@ -1598,7 +1600,7 @@ async def api_env_tools(refresh: bool = False):
         proc = await asyncio.to_thread(lambda: subprocess.run(
             [sys.executable, str(INSTALL_TOOL), "--json", "check"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=240, cwd=str(PROJECT_ROOT)))
+            timeout=TIMEOUT_ENV_INSPECTION, cwd=str(PROJECT_ROOT), env=_proxy_env()))
     except subprocess.TimeoutExpired:
         raise HTTPException(504, "环境体检超时，请稍后再试")
     if proc.returncode != 0 or not (proc.stdout or "").strip():
@@ -1610,6 +1612,52 @@ async def api_env_tools(refresh: bool = False):
     data["cachedAt"] = int(time.time())
     _ENV_TOOLS_CACHE.update({"ts": time.time(), "data": data})
     return data
+
+
+class RemotionSelection(BaseModel):
+    path: str = Field(max_length=2048)
+
+
+@app.get("/api/env/remotion")
+async def remotion_status():
+    return await asyncio.to_thread(remotion_env.discover, PROJECT_ROOT, dict(os.environ))
+
+
+@app.post("/api/env/remotion")
+async def remotion_select(req: RemotionSelection, request: Request):
+    if not _loopback_peer(request):
+        raise HTTPException(403, "请在本机选择工程")
+    if _REMOTION_LOCK.locked():
+        raise HTTPException(409, "请等本次渲染测试完成后再更换工程")
+    async with _REMOTION_LOCK:
+        value = req.path.strip()
+        if value:
+            directory = Path(value)
+            if not directory.is_absolute() or str(directory).startswith(("//", chr(92) * 2)):
+                raise HTTPException(400, "请输入本机工程的绝对路径")
+            info = await asyncio.to_thread(remotion_env.project_info, directory)
+            if not info["ready"]:
+                raise HTTPException(400, info["detail"])
+            value = info["path"]
+        harness_store.write_json(OUTPUTS_DIR / "_harness/remotion.json", {"path": value})
+        _ENV_TOOLS_CACHE["data"] = None
+        return await remotion_status()
+
+
+_REMOTION_LOCK = asyncio.Lock()
+
+
+@app.post("/api/env/remotion/probe")
+async def remotion_probe(request: Request):
+    if not _loopback_peer(request):
+        raise HTTPException(403, "请在本机测试渲染")
+    if _REMOTION_LOCK.locked():
+        raise HTTPException(409, "渲染测试正在进行")
+    async with _REMOTION_LOCK:
+        try:
+            return await asyncio.to_thread(remotion_env.render_frame, PROJECT_ROOT, _proxy_env())
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            raise HTTPException(400, str(error)) from error
 
 
 class EnvInstallRequest(BaseModel):
