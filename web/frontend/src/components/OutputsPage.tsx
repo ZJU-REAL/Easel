@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteOutput, fetchOutputs, mediaUrl, type OutputNode } from '../lib/api';
 import { IconChevron, IconFile, IconFolder, IconImage, IconMusic, IconRefresh, IconSearch, IconTrash, IconVideo } from './icons';
-import OutputPreview, { fileLabel, sizeLabel } from './OutputPreview';
+import OutputPreview from './OutputPreview';
+import { fileLabel, sizeLabel } from '../lib/outputLabels';
 
 const formats = [['all','全部类型'],['text','文档与网页'],['image','图片'],['video','视频'],['audio','音频'],['binary','其他文件']];
 const statusLabels: Record<string,string> = { draft: '草稿', ready: '待发布', published: '已发布' };
@@ -48,19 +49,21 @@ export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProp
   const [query, setQuery] = useState('');
   const [format, setFormat] = useState('all');
   const [reading, setReading] = useState(false);
-  const seq = useRef(0);
+  const [revision, setRevision] = useState(0);
   const shell = useRef<HTMLDivElement>(null);
   const lastTrigger = useRef<HTMLElement | null>(null);
-  const load = useCallback(async () => {
-    const id = ++seq.current;
-    setBusy(true); setTreeError('');
-    try {
-      const rows = await fetchOutputs();
-      if (id === seq.current) { setRoots(rows); setLoaded(true); }
-    } catch { if (id === seq.current) setTreeError('内容库读取失败，请刷新重试。'); }
-    finally { if (id === seq.current) setBusy(false); }
-  }, []);
-  useEffect(() => { void load(); return () => { seq.current++; }; }, [load]);
+  const refresh = () => setRevision(value => value + 1);
+  useEffect(() => {
+    let active = true;
+    setBusy(true);
+    setTreeError('');
+    fetchOutputs().then(rows => {
+      if (active) { setRoots(rows); setLoaded(true); }
+    }).catch(() => {
+      if (active) setTreeError('内容库读取失败，请刷新重试。');
+    }).finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, [revision]);
   const index = useMemo(() => indexTree(roots), [roots]);
   let current = folder;
   while (current && index.nodes.get(current)?.type !== 'dir') current = parentOf(current);
@@ -125,7 +128,7 @@ export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProp
   const remove = async (node: OutputNode) => {
     const name = node.type === 'dir' ? '文件夹「' + title(node) + '」及其中所有文件' : '文件「' + node.name + '」';
     if (!window.confirm('确定删除' + name + '？此操作不可恢复。')) return;
-    try { await deleteOutput(node.path); await load(); }
+    try { await deleteOutput(node.path); refresh(); }
     catch { setTreeError('删除失败，请刷新后重试。'); }
   };
   const entry = (node: OutputNode, showPath = false) => {
@@ -150,7 +153,7 @@ export default function OutputsPage({ jumpPath, onJumpHandled }: OutputsPageProp
     <div className={'lib-shell' + (focusMode ? ' is-reading' : '')} ref={shell}>
       <header className="lib-mast">
         <div><h1 className="page-title">内容库</h1><p>{roots.filter(n => n.type === 'dir').length} 个项目 · {index.files.length} 个文件</p></div>
-        <button className="lib-refresh" disabled={busy} onClick={() => void load()}><IconRefresh size={14}/>{busy ? '刷新中…' : '刷新'}</button>
+        <button className="lib-refresh" disabled={busy} onClick={refresh}><IconRefresh size={14}/>{busy ? '刷新中…' : '刷新'}</button>
       </header>
       {treeError && <p className="lib-error" role="alert">{treeError}</p>}
       <div className="lib-layout">
