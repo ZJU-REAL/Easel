@@ -383,11 +383,19 @@ const BASE = (() => {
 })();
 
 async function api(path, opts = {}) {
-  const r = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
+  const options = { ...opts, headers: new Headers(opts.headers),
+    body: opts.body ? JSON.stringify(opts.body) : undefined };
+  options.headers.set('Content-Type', 'application/json');
+  let r = await fetch(BASE + path, options);
+  if (r.status === 428) {
+    const challenge = (await r.clone().json().catch(() => ({}))).detail;
+    if (challenge?.kind === 'studio-approval') {
+      const prompt = [challenge.action, challenge.target].filter(Boolean).join(' · ');
+      if (!window.confirm(prompt + '？')) throw new Error('已取消操作');
+      options.headers.set('X-Easel-Confirm', challenge.token);
+      r = await fetch(BASE + path, options);
+    }
+  }
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }

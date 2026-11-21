@@ -2036,7 +2036,9 @@ class AccessPreferences(BaseModel):
 @app.get("/api/settings/access")
 async def read_access(request: Request, target: str | None = None, session: str | None = None):
     config = _harness_settings()
-    target = target or _session_owner(session, config["runtime"]) or config["runtime"]
+    if target is None:
+        owner = _session_owner(session, config["runtime"])
+        target = config["runtime"] if config["runtime"] == "api" and owner == "openclaw" else owner or config["runtime"]
     if target not in access.TARGETS:
         raise HTTPException(400, "未知执行引擎")
     scope, approval = access.policy(config, target)

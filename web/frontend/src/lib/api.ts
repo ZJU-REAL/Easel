@@ -49,7 +49,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const address = BASE + url;
   let res = await fetch(address, { cache: 'no-store', ...options });
   if (res.status === 428) {
-    const challenge = (await res.clone().json()).detail;
+    const challenge = (await res.clone().json().catch(() => ({}))).detail;
     if (challenge?.kind === 'studio-approval') {
       if (!await confirmStudioAction(challenge.action, challenge.target)) throw new ApiError('已取消操作', 428);
       const headers = new Headers(options?.headers);
