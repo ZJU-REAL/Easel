@@ -1,3 +1,4 @@
+import { calendarDate as ymd } from '../lib/calendarDate';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchSchedule, createSchedule, updateSchedule, deleteSchedule, fetchScheduleContext } from '../lib/api';
 import type { ScheduleItem, ScheduleInput, ScheduleContext } from '../lib/api';
@@ -18,9 +19,6 @@ const PLATFORMS = ['小红书', '抖音', 'B站', '微信视频号', '快手', '
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 type Filter = 'all' | 'content' | 'event';
 
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 const kindOf = (it: ScheduleItem) => (it.kind === 'event' ? 'event' : 'content');
 const MAX_VISIBLE = 3;   // 每格最多显示几条，超出折叠成「+N 更多」→ 点开当天详情
 const EMPTY: ScheduleInput = {
@@ -28,20 +26,25 @@ const EMPTY: ScheduleInput = {
   kind: 'content', url: '', source: 'manual', event_type: '', end_date: '',
 };
 
-export default function CalendarPage() {
+export default function CalendarPage({ initialDate = '' }: { initialDate?: string }) {
   const today = useMemo(() => new Date(), []);
-  const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [cursor, setCursor] = useState(() => {
+    const date = initialDate ? new Date(initialDate + 'T12:00:00') : today;
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  });
   const [items, setItems] = useState<ScheduleItem[]>([]);
+  const [scheduleState, setScheduleState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [editing, setEditing] = useState<ScheduleItem | null>(null);   // 现有项
   const [form, setForm] = useState<ScheduleInput | null>(null);        // 弹窗表单（null=关闭）
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [ctx, setCtx] = useState<ScheduleContext | null>(null);
   const [showSuggest, setShowSuggest] = useState(true);
-  const [dayView, setDayView] = useState<string | null>(null);   // 展开查看某天全部（date，null=关闭）
+  const [dayView, setDayView] = useState<string | null>(initialDate || null);   // 展开查看某天全部（date，null=关闭）
 
   const load = useCallback(() => {
-    fetchSchedule().then(setItems).catch(() => {});
+    setScheduleState('loading');
+    fetchSchedule().then(rows => { setItems(rows); setScheduleState('ready'); }).catch(() => setScheduleState('error'));
     fetchScheduleContext(14).then(setCtx).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -82,24 +85,24 @@ export default function CalendarPage() {
   const renderChip = (it: ScheduleItem) => {
     if (kindOf(it) === 'event') {
       return (
-        <div key={it.id} className="cal-event is-event"
+        <button type="button" key={it.id} className="cal-event is-event"
           title={it.event_type ? `${it.event_type}·${it.title}` : it.title}
           style={{ ['--ev' as string]: EVENT_COLOR }}
           onClick={(e) => { e.stopPropagation(); openEdit(it); }}>
           <span className="cal-event-dot" />
           <span className="cal-event-title">{it.title}</span>
-        </div>
+        </button>
       );
     }
     return (
-      <div key={it.id} className="cal-event" title={it.title}
+      <button type="button" key={it.id} className="cal-event" title={it.title}
         style={{ ['--ev' as string]: STATUS_META[it.status]?.color || 'var(--text-tertiary)' }}
         onClick={(e) => { e.stopPropagation(); openEdit(it); }}>
         <span className="cal-event-dot" />
         <span className="cal-event-title">{it.platform ? `[${it.platform}] ` : ''}{it.title}</span>
         {it.status === 'published' && it.source && SOURCE_LABEL[it.source]
           && <span className="cal-src">{SOURCE_LABEL[it.source]}</span>}
-      </div>
+      </button>
     );
   };
 
@@ -129,20 +132,20 @@ export default function CalendarPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title"><IconCalendar size={21} /> 内容日历</h1>
-          <p className="page-subtitle">每天各平台发什么一目了然——发布自动落库，可记录排期与平台活动。</p>
+          <p className="page-subtitle">选择日期，查看或添加内容排期与平台活动。</p>
         </div>
         <div className="cal-nav">
-          <button className="btn btn-sm" onClick={() => shift(-1)}><span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><IconChevron size={14} /></span></button>
+          <button className="btn btn-sm" aria-label="上个月" onClick={() => shift(-1)}><span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><IconChevron size={14} /></span></button>
           <button className="btn btn-sm" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>本月</button>
           <span className="cal-month">{monthLabel}</span>
-          <button className="btn btn-sm" onClick={() => shift(1)}><IconChevron size={14} /></button>
+          <button className="btn btn-sm" aria-label="下个月" onClick={() => shift(1)}><IconChevron size={14} /></button>
         </div>
       </div>
 
       {showSuggest && suggestions.length > 0 && (
         <div className="cal-suggest">
           <div className="cal-suggest-head">
-            <span>📅 日历建议（近 {ctx?.window_days ?? 14} 天）</span>
+            <span>日历建议（近 {ctx?.window_days ?? 14} 天）</span>
             <button className="icon-btn" onClick={() => setShowSuggest(false)}>×</button>
           </div>
           <ul>{suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul>
@@ -179,9 +182,9 @@ export default function CalendarPage() {
           const shown = dayItems.slice(0, MAX_VISIBLE);
           const hidden = dayItems.length - shown.length;
           return (
-            <div key={i} className={`cal-cell ${inMonth ? '' : 'dim'} ${ds === todayStr ? 'today' : ''}`}
-              onClick={() => (dayItems.length ? setDayView(ds) : openNew(ds))}>
-              <div className="cal-daynum">{d.getDate()}</div>
+            <div key={i} className={`cal-cell ${inMonth ? '' : 'dim'} ${ds === todayStr ? 'today' : ''}`}>
+              <button className="cal-daynum" aria-label={ds + (dayItems.length ? '，' + dayItems.length + ' 项安排' : '，添加安排')}
+                onClick={() => dayItems.length ? setDayView(ds) : openNew(ds)}>{d.getDate()}</button>
               <div className="cal-events">
                 {shown.map(renderChip)}
                 {hidden > 0 && (
@@ -202,10 +205,12 @@ export default function CalendarPage() {
           <div className="overlay" onClick={() => setDayView(null)}>
             <div className="modal" style={{ width: 420, maxWidth: '100%' }} onClick={(e) => e.stopPropagation()}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <h3 style={{ margin: 0 }}>{dayView}（{list.length} 项）</h3>
+                <h3 style={{ margin: 0 }}>{dayView}{scheduleState === 'ready' ? '（' + list.length + ' 项）' : ''}</h3>
                 <button className="icon-btn" onClick={() => setDayView(null)}>×</button>
               </div>
               <div className="cal-dayview-list">
+                {scheduleState === 'loading' && <p role="status">正在读取日程…</p>}
+                {scheduleState === 'error' && <p role="alert">日程读取失败 <button className="btn btn-sm" onClick={load}>重试</button></p>}
                 {list.map(renderChip)}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
