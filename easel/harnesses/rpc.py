@@ -8,7 +8,7 @@ import os
 import signal
 from contextlib import asynccontextmanager
 
-from .base import HarnessError, RunRequest
+from .base import CodexWriterBusy, HarnessError, RunRequest
 from .workspace import harness_instructions
 
 
@@ -47,7 +47,7 @@ async def connection(request: RunRequest, command: list[str], notify, respond, *
     key = (acp, request.session_key)
     signature = hashlib.sha256(json.dumps([
         str(request.cwd.resolve()), sorted(request.env.items()), command,
-        request.model, request.sandbox, request.codex_effort, harness_instructions(request),
+        request.permission_scope, request.permission_approval, request.model, request.sandbox, request.codex_auto_approve, request.codex_never_ask, request.codex_effort, harness_instructions(request),
     ], ensure_ascii=True).encode("utf-8")).hexdigest()
     entry = pool.get(key)
     previous = None
@@ -170,6 +170,10 @@ class RPC:
             if self.client_error:
                 raise self.client_error
             return result
+        except CodexWriterBusy as error:
+            if method == "thread/resume":
+                raise
+            raise HarnessError("Codex 原生会话被其他窗口占用，请检查本轮状态。") from error
         except asyncio.TimeoutError as error:
             raise HarnessError(f"Agent 协议请求超时：{method}") from error
         finally:
@@ -222,6 +226,10 @@ class RPC:
                     if future is not None and not future.done():
                         if "error" in message:
                             error = message["error"]
+                            if (not self.acp and error.get("code") == -32600
+                                    and "already has an active writer" in str(error.get("message", "")).lower()):
+                                future.set_exception(CodexWriterBusy("另一个 Codex 窗口正占用这条对话，画板尚未发送本轮消息。"))
+                                continue
                             if error.get("code") in (-32700, -32600, -32602, "INVALID_REQUEST"):
                                 detail = "请求格式或参数无效，请检查 Agent CLI 协议版本"
                             else:

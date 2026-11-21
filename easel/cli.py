@@ -270,6 +270,8 @@ def cmd_web(args) -> int:
     _warn_unwritable_profiles_dir()
     env = web_environment(_proxy_env())
     env["EASEL_PORT"] = str(port)
+    if getattr(args, "local", False):
+        env["EASEL_LOCAL_DESKTOP"] = "1"
     script = PROJECT_ROOT / "web" / "app.py"
     if not script.is_file():
         print(f"{RED}未找到 web/app.py{NC} — 安装可能不完整，请重跑 `bash setup.sh`。",
@@ -319,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # web
     p_web = sub.add_parser("web", help="启动 Web UI")
+    p_web.add_argument("--local", action="store_true", help="仅监听本机，允许在工作台选择完整访问")
     p_web.add_argument("--port", type=int, default=7860, help="端口（默认 7860）")
     p_web.set_defaults(func=cmd_web)
 

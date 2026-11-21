@@ -42,6 +42,23 @@ test('approval cards preserve long multiline commands and both permission choice
   assert.match(rendered, /disabled="">提交<\/button>/);
 });
 
+test('native approval shows one-click choices and collapses the command for old and new runs', () => {
+  for (const legacy of [false, true]) {
+    const script = 'python example.py\\n' + 'long '.repeat(300);
+    const item = { questionId: 'permission', header: '执行授权', question: legacy ? script : '运行命令需要授权',
+      options: [{ label: '允许本次' }, { label: '拒绝' }] };
+    if (!legacy) item.commandDetail = script;
+    const html = renderToStaticMarkup(React.createElement(component.exports.default, {
+      questions: [{ id: 'harness_ab12', questions: [item] }],
+    }));
+    assert.match(html, /<details><summary>查看执行详情<\/summary><pre>/);
+    assert.match(html, />允许本次<\/button>/);
+    assert.match(html, />拒绝<\/button>/);
+    assert.doesNotMatch(html, /提交<\/button>/);
+    assert.ok(html.includes(script));
+  }
+});
+
 test('approval card grids can shrink and wrap commands without clipping their content', () => {
   const styles = readFileSync(new URL('../../web/frontend/src/styles/index.css', import.meta.url), 'utf8');
   const rule = selector => {

@@ -67,6 +67,11 @@ export default function App() {
   const [agentRuntime, setAgentRuntime] = useState('openclaw');
   const [showRecommend, setShowRecommend] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [settingsEntry, setSettingsEntry] = useState<{ section: 'model' | 'access'; engine?: string }>({ section: 'model' });
+  const openStudio = (section: 'model' | 'access', engine?: string) => {
+    setSettingsEntry({ section, engine });
+    setSettingsOpen(true);
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   // 装完还没配模型时，首开要把用户直接带到模型设置页（安装脚本不再在终端问 Key）
   const [needModelSetup, setNeedModelSetup] = useState(false);
@@ -423,7 +428,7 @@ export default function App() {
       () => {
         if (streamAcc.current[sessionId] !== owner) return;
         setStreams((p) => (p[sessionId]
-          ? { ...p, [sessionId]: { ...p[sessionId], activity: '⏳ 连接中断，正在自动续接…' } } : p));
+          ? { ...p, [sessionId]: { ...p[sessionId], activity: '连接中断，正在自动续接…' } } : p));
       },
       turnId,
       false,
@@ -450,7 +455,7 @@ export default function App() {
     try { turnId = sessionStorage.getItem(`easel_pending_turn:${sessionId}`) || turnId; } catch { /* use persisted id */ }
     const owner = { content: '', thinking: '', steps: [] as string[], questions: [] as ChatQuestion[] };
     streamAcc.current[sessionId] = owner;
-    setStreams((p) => ({ ...p, [sessionId]: { content: '', thinking: '', activity: '⏳ 正在接回上一轮结果…', questions: [] } }));
+    setStreams((p) => ({ ...p, [sessionId]: { content: '', thinking: '', activity: '正在接回上一轮结果…', questions: [] } }));
     typingBuf.current[sessionId] = '';
     startTypingPump(sessionId);
     if (!turnId) {
@@ -481,7 +486,7 @@ export default function App() {
         setStreams((p) => (p[sessionId] ? { ...p, [sessionId]: { ...p[sessionId], activity: status } } : p));
       },
       () => { if (streamAcc.current[sessionId] === owner) setStreams((p) => (p[sessionId]
-        ? { ...p, [sessionId]: { ...p[sessionId], activity: '⏳ 正在自动续接…' } } : p)); },
+        ? { ...p, [sessionId]: { ...p[sessionId], activity: '正在自动续接…' } } : p)); },
       turnId,
       true,
       () => {
@@ -750,7 +755,7 @@ export default function App() {
         );
       case 'chat':
         return activeSession ? (
-          <ChatPage
+          <ChatPage agentRuntime={agentRuntime} onOpenStudio={openStudio}
             apiDirect={apiDirect}
             key={activeSession.id}
             session={activeSession}
@@ -841,7 +846,7 @@ export default function App() {
         gatewayStatus={gatewayStatus}
         apiDirect={apiDirect}
         agentRuntime={agentRuntime}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => openStudio("model")}
       />
       <main className="main-content">
         {sessionSaveError && <div className="notice-error" role="alert">会话未能写入浏览器存储，内容仍保留在当前页面。请检查存储空间或权限。<button className="btn btn-sm" onClick={() => setSessionSaveError(false)}>关闭提示</button></div>}
@@ -857,7 +862,6 @@ export default function App() {
       {showRecommend && (
         <div className="overlay">
           <div className="modal" style={{ width: 420, maxWidth: '100%', textAlign: 'center' }}>
-            <div style={{ fontSize: 40 }}>👋</div>
             <h2 style={{ margin: '12px 0 8px', fontSize: 20 }}>欢迎使用 Easel</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6 }}>
               配置你的账号画像，生成的内容会更贴合你的风格、受众和平台调性。<br />
@@ -878,7 +882,7 @@ export default function App() {
 
       {/* 设置（统一入口：模型配置 · 环境安装 · 更多设置） */}
       {settingsOpen && (
-        <SettingsPanel
+        <SettingsPanel initialSection={settingsEntry.section} initialEngine={settingsEntry.engine}
           banner={needModelSetup
             ? '还没有配置模型 —— 填一个 API Key 才能开始对话。保存后会自动同步配置并重启网关。'
             : ''}

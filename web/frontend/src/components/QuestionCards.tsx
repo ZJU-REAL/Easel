@@ -14,7 +14,7 @@ import { answerQuestion, questionStatus } from '../lib/api';
  * （gateway 对 multiSelect=false 的多值直接报 "does not allow multiple answers"，
  * 前端只按数据渲染，不绕过校验）。
  */
-function QuestionCard({ question, onAnswered, onClosed }: { question: ChatQuestion; onAnswered: () => void;
+function QuestionCard({ question, onAnswered, onClosed, onAccess }: { onAccess?: () => void; question: ChatQuestion; onAnswered: () => void;
   onClosed?: (status: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -81,11 +81,11 @@ function QuestionCard({ question, onAnswered, onClosed }: { question: ChatQuesti
     setCustomVals((c) => ({ ...c, [it.questionId]: (c[it.questionId] || []).filter((x) => x !== v) }));
   };
 
-  const submit = async () => {
-    if (locked || !allAnswered) return;
+  const submit = async (decision?: string) => {
+    if (locked || (!decision && !allAnswered)) return;
     setBusy(true); setError('');
     const answers: Record<string, string[]> = {};
-    for (const it of items) answers[it.questionId] = valsOf(it);
+    for (const it of items) answers[it.questionId] = decision ? [decision] : valsOf(it);
     try {
       const res = await answerQuestion({ questionId: question.id, answers });
       if (!res.ok && (res.expired || (res.status && res.status !== 'pending'))) {
@@ -100,6 +100,28 @@ function QuestionCard({ question, onAnswered, onClosed }: { question: ChatQuesti
       setBusy(false);
     }
   };
+
+  const permission = items.length === 1 && items[0].questionId === 'permission' &&
+    items[0].header === '执行授权' && question.id.startsWith('harness_') ? items[0] : null;
+  if (permission) {
+    const legacy = !permission.commandDetail;
+    const detail = permission.commandDetail || permission.question || '';
+    const preview = detail.trim().split('\n', 1)[0];
+    return <section className="studio-approval" aria-label="执行授权">
+      <div className="approval-heading"><span className="approval-mark" aria-hidden="true">↗</span>
+        <strong>{legacy ? 'Agent 请求额外权限' : permission.question}</strong>
+        <small>{expired ? '已结束' : '等待确认'}</small></div>
+      {preview && <code className="approval-preview">{preview.slice(0, 160)}{preview.length > 160 ? "…" : ""}</code>}
+      {permission.approvalCwd && <p className="approval-dir">工作目录 <code>{permission.approvalCwd}</code></p>}
+      <details><summary>查看执行详情</summary><pre>{detail}</pre></details>
+      <div className="approval-actions">
+        {permission.options?.map(opt => <button key={opt.label} disabled={locked}
+          className={(opt.displayLabel || opt.label) === '允许本次' ? 'studio-primary' : 'studio-button'}
+          onClick={() => void submit(opt.label)}>{opt.displayLabel || opt.label}</button>)}
+        <button className="studio-link" onClick={onAccess}>权限设置</button>
+      </div>{error && <p role="alert">{error}</p>}
+    </section>;
+  }
 
   return (
     <div className="message-row assistant">
@@ -192,7 +214,7 @@ function QuestionCard({ question, onAnswered, onClosed }: { question: ChatQuesti
 }
 
 /** 流式中的 ask_user 问答题列表（一次性卡片，答完即从当前流移除）。 */
-export default function QuestionCards({ questions, onDone, onClosed }: { questions: ChatQuestion[];
+export default function QuestionCards({ questions, onDone, onClosed, onAccess }: { onAccess?: () => void; questions: ChatQuestion[];
   onDone?: (questionId: string) => void; onClosed?: (id: string, status: string) => void }) {
   const [answered, setAnswered] = useState<Record<string, boolean>>({});
   const visible = useMemo(
@@ -203,7 +225,7 @@ export default function QuestionCards({ questions, onDone, onClosed }: { questio
   return (
     <>
       {visible.map((q) => (
-        <QuestionCard key={q.id} question={q} onClosed={status => onClosed?.(q.id, status)} onAnswered={() => {
+        <QuestionCard onAccess={onAccess} key={q.id} question={q} onClosed={status => onClosed?.(q.id, status)} onAnswered={() => {
           setAnswered((a) => ({ ...a, [q.id]: true }));
           onDone?.(q.id);   // 通知 App：此题已答，重放/恢复不再出现
         }} />

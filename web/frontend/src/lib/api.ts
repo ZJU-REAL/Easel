@@ -1,3 +1,4 @@
+import { statusText } from './statusText';
 import { parsePersonas } from './personas';
 
 function getBasePath(): string {
@@ -18,10 +19,44 @@ export class ApiError extends Error {
   }
 }
 
+function confirmStudioAction(action: string, target: string): Promise<boolean> {
+  const panel = document.createElement('dialog');
+  panel.className = 'studio-confirm';
+  panel.setAttribute('aria-label', '画板请求执行操作');
+  const title = document.createElement('h3');
+  title.textContent = action;
+  const note = document.createElement('p');
+  note.textContent = target ? '操作对象 · ' + target : '画板正在等待你的确认。';
+  const actions = document.createElement('div');
+  const cancel = document.createElement('button');
+  cancel.className = 'studio-button'; cancel.textContent = '取消';
+  const allow = document.createElement('button');
+  allow.className = 'studio-primary'; allow.textContent = '允许本次';
+  actions.append(cancel, allow); panel.append(title, note, actions);
+  document.body.append(panel);
+  return new Promise(resolve => {
+    panel.addEventListener('close', () => { panel.remove(); resolve(panel.returnValue === 'allow'); }, { once: true });
+    cancel.onclick = () => panel.close();
+    allow.onclick = () => panel.close('allow');
+    panel.showModal();
+    cancel.focus();
+  });
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   // 全部是动态应用接口（登录态/数据等），禁止浏览器 HTTP 缓存——否则 /api/accounts 等可能被启发式
   // 缓存住旧响应（曾表现为“扫码登录后卡片仍显示未登录”）。调用方可用 options.cache 覆盖。
-  const res = await fetch(`${BASE}${url}`, { cache: 'no-store', ...options });
+  const address = BASE + url;
+  let res = await fetch(address, { cache: 'no-store', ...options });
+  if (res.status === 428) {
+    const challenge = (await res.clone().json().catch(() => ({}))).detail;
+    if (challenge?.kind === 'studio-approval') {
+      if (!await confirmStudioAction(challenge.action, challenge.target)) throw new ApiError('已取消操作', 428);
+      const headers = new Headers(options?.headers);
+      headers.set('X-Easel-Confirm', challenge.token);
+      res = await fetch(address, { cache: 'no-store', ...options, headers });
+    }
+  }
   if (!res.ok) {
     // 优先显示后端返回的实质错误信息（FastAPI 的 {detail}），而不是无意义的 "API error: 400"
     let detail = '';
@@ -71,7 +106,7 @@ export function fetchHarnessModels(runtime: string): Promise<{ runtime: string; 
   return request(`/api/settings/harness/models/${encodeURIComponent(runtime)}`, { method: 'POST' });
 }
 
-export function saveHarnessSettings(runtime: string, model: string, sandbox: string, codexAutoApprove?: boolean, codexEffort?: string): Promise<HarnessSettingsResponse> {
+export function saveHarnessSettings(runtime: string, model: string, sandbox?: string, codexAutoApprove?: boolean, codexEffort?: string): Promise<HarnessSettingsResponse> {
   return request('/api/settings/harness', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -473,8 +508,10 @@ export function deleteOutput(path: string): Promise<{ ok: boolean; deleted: stri
 export interface UploadedFile { id: string; name: string; path: string; }
 
 /** OpenClaw ask_user 问答题（SSE question 事件 payload）。 */
-export interface ChatQuestionOption { label: string; description?: string; }
+export interface ChatQuestionOption { label: string; description?: string; displayLabel?: string; }
 export interface ChatQuestionItem {
+  commandDetail?: string;
+  approvalCwd?: string;
   questionId: string;
   header?: string;
   question: string;
@@ -815,7 +852,7 @@ export function streamChat(
         } else if (currentEvent === 'error') {
           let msg = '执行失败';
           try { msg = JSON.parse(data) as string; } catch { msg = data; }
-          onError(new Error(msg));
+          onError(new Error(statusText(msg)));
           return true;
         } else if (currentEvent === 'done') {
           try { onDone((JSON.parse(data) as { sessionKey?: string }).sessionKey); } catch { onDone(); }
@@ -1145,3 +1182,5 @@ export function fetchAvailableModels(
     body: JSON.stringify({ baseUrl, key, protocol, slot, name }),
   });
 }
+
+export { request };

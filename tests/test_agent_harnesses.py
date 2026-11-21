@@ -404,6 +404,36 @@ def test_binding_cannot_silently_replace_native_history(tmp_path):
     assert store.binding(tmp_path, "conversation")["native_id"] == "original"
 
 
+@pytest.mark.parametrize("mode,success,expected_forks", [
+    ("writer-completed", True, 1), ("writer-active", False, 0), ("writer-wrong", False, 1)])
+def test_codex_writer_conflict_preserves_verified_history_before_dispatch(tmp_path, mode, success, expected_forks):
+    from dataclasses import replace
+    from easel.harnesses.base import CodexWriterBusy
+    sessions = tmp_path / "sessions"
+    store.bind(sessions, "web", "codex", "original")
+    request = replace(request_for(tmp_path, "codex", mode, native_id="original"),
+                      bind_fork=lambda parent, child: store.bind_codex_fork(sessions, "web", parent, child))
+    async def answer(_):
+        pytest.fail("unexpected approval")
+    async def run():
+        await CodexAdapter().run(request, lambda *_: None, answer,
+                                 lambda native: store.bind(sessions, "web", "codex", native))
+    if success:
+        asyncio.run(run())
+        record = store.binding(sessions, "web")
+        assert record["native_id"] != "original" and record["original_native_id"] == record["forked_from"] == "original"
+    else:
+        with pytest.raises(CodexWriterBusy):
+            asyncio.run(run())
+        assert store.binding(sessions, "web")["native_id"] == "original"
+    messages = audit(tmp_path)
+    forks = [m["params"] for m in messages if m.get("method") == "thread/fork"]
+    assert len(forks) == expected_forks
+    assert all(fork["lastTurnId"] == "last" and fork["approvalPolicy"] == "on-request"
+               and fork["sandbox"] == "read-only" for fork in forks)
+    assert len([m for m in messages if m.get("method") == "turn/start"]) == int(success)
+
+
 def test_codex_rejects_replacement_thread_on_resume(tmp_path):
     async def reject(questions):
         raise AssertionError("No permissions expected")
@@ -902,6 +932,124 @@ def sandbox(tmp_path, monkeypatch):
     local = "http://127.0.0.1:7860"
     with TestClient(web.app, base_url=local, headers={"Origin": local}) as client:
         yield client
+
+
+@pytest.mark.parametrize(("scope", "policy"), [
+    ("read-only", "readOnly"), ("workspace-write", "workspaceWrite"),
+    ("danger-full-access", "dangerFullAccess"),
+])
+def test_native_never_ask_preserves_selected_sandbox(tmp_path, scope, policy):
+    from dataclasses import replace
+    request = replace(request_for(tmp_path, "codex", mode="stable-resume"),
+                      sandbox=scope, codex_never_ask=True)
+
+    async def unexpected_question(_):
+        pytest.fail("The native never policy should not prompt")
+
+    asyncio.run(CodexAdapter().run(request, lambda *_: None, unexpected_question, lambda _: None))
+    params = {item["method"]: item["params"] for item in audit(tmp_path)
+              if item.get("method") in ("thread/start", "turn/start")}
+    assert params["thread/start"]["sandbox"] == scope
+    assert params["turn/start"]["sandboxPolicy"]["type"] == policy
+    assert all(item["approvalPolicy"] == "never" for item in params.values())
+
+
+def test_access_preferences_upgrade_local_boundary_and_stale_write(sandbox, monkeypatch):
+    url = "/api/settings/access"
+    base = "http://127.0.0.1:7860"
+    with TestClient(web.app, base_url=base, client=("127.0.0.1", 50700)) as local:
+        initial = local.get(url).json()
+        assert (initial["scope"], initial["approval"]) == ("read-only", "ask")
+        full = {"scope": "full", "approval": "allow"}
+        monkeypatch.delenv("EASEL_LOCAL_DESKTOP", raising=False)
+        assert local.post(url, json=full).status_code == 403
+        monkeypatch.setenv("EASEL_LOCAL_DESKTOP", "1")
+        assert local.post(url, json=full).status_code == 200
+        assert local.get(url).json()["approval"] == "allow"
+        assert sandbox.post(url, json=full).status_code == 403
+        updated = {"scope": "workspace-write", "approval": "auto", "previousScope": "full"}
+        assert local.post(url, json=updated).status_code == 200
+        assert local.post(url, json=updated).status_code == 409
+        assert local.get(url).json()["approval"] == "auto"
+
+
+@pytest.mark.parametrize("scope,approval,kind,path,expected", [
+    ("native", "allow", "execute", "", "once"),
+    ("read-only", "allow", "edit", "draft.md", "deny"),
+    ("workspace-write", "allow", "edit", "../external.md", "deny"),
+    ("workspace-write", "allow", "edit", "draft.md", "once"),
+    ("read-only", "auto", "read", "draft.md", "once"),
+    ("native", "auto", "execute", "draft.md", "manual"),
+    ("workspace-write", "auto", "read", "", "deny"),
+])
+def test_acp_permissions_bind_single_use_choice_to_declared_scope(tmp_path, scope, approval, kind, path, expected):
+    from dataclasses import replace
+    request = request_for(tmp_path, "acp", mode="permission")
+    tool = {"title": "read public file", "kind": kind, "locations": [{"path": path}] if path else []}
+    request = replace(request, env={**request.env, "FAKE_ACP_TOOL": json.dumps(tool)},
+                      permission_scope=scope, permission_approval=approval)
+    asked = []
+
+    async def ask(questions):
+        asked.append(questions)
+        return {"permission": [questions[0]["options"][1]["label"]]}
+
+    asyncio.run(ACPAdapter().run(request, lambda *_: None, ask, lambda _: None))
+    decision = next(msg["result"]["outcome"] for msg in audit(tmp_path)
+                    if msg.get("id") == "permission-request")
+    assert decision["optionId"] == ("deny" if expected == "manual" else expected)
+    assert bool(asked) == (expected == "manual")
+
+
+def test_studio_policy_is_engine_specific_and_confirmation_binds_one_request(sandbox, monkeypatch):
+    with TestClient(web.app, base_url="http://127.0.0.1:7860", client=("127.0.0.1", 50700)) as local:
+        url = "/api/settings/access"
+        def save(target, scope, approval):
+            result = local.post(url, json={"target": target, "scope": scope, "approval": approval})
+            assert result.status_code == 200, result.text
+        save("easel", "read-only", "auto")
+        assert local.post("/api/env/install", json={"id": "test"}).status_code == 403
+        save("opencode", "read-only", "auto")
+        assert local.get(url + "?target=hermes").json()["approval"] == "ask"
+        assert local.get(url + "?target=api").json()["scope"] == "chat"
+        assert local.post(url, json={"target": "api", "scope": "full", "approval": "allow"}).status_code == 400
+        save("easel", "native", "ask")
+        monkeypatch.setattr(web, "_install_tool_ids", lambda: ())
+        endpoint = "/api/env/install"
+        payload = {"id": "not-an-installed-tool"}
+        token = local.post(endpoint, json=payload).json()["detail"]["token"]
+        assert local.post(endpoint, json={"id": "pw"}, headers={"X-Easel-Confirm": token}).status_code == 409
+        token = local.post(endpoint, json=payload).json()["detail"]["token"]
+        response = local.post(endpoint, json=payload, headers={"X-Easel-Confirm": token})
+        assert response.status_code == 400 and "无效的工具" in response.json()["detail"]
+        assert local.post(endpoint, json=payload, headers={"X-Easel-Confirm": token}).status_code == 409
+
+
+def test_openclaw_patch_and_restore_only_for_managed_session(sandbox, monkeypatch):
+    from subprocess import CompletedProcess, CalledProcessError
+    calls = []
+    def run(command, **kwargs):
+        calls.append(json.loads(command[command.index("--params") + 1]))
+        return CompletedProcess(command, 0, json.dumps({"ok": True, "entry": {"permissionMode": calls[-1]["permissionMode"]}}), "")
+    monkeypatch.setattr(web, "openclaw_base_cmd", lambda: ["openclaw"])
+    monkeypatch.setattr(web.subprocess, "run", run)
+    default = {"agent_access": {}}
+    web._apply_openclaw_access("old", default)
+    assert not calls
+    config = {"agent_access": {"openclaw": {"scope": "workspace-write", "approval": "native"}}}
+    web._apply_openclaw_access("one", config)
+    web._apply_openclaw_access("one", default)
+    assert calls == [{"permissionMode": mode, "key": "agent:main:one"} for mode in ("workspace", None)]
+    web._apply_openclaw_access("one", default)
+    assert len(calls) == 2
+    monkeypatch.setattr(web.subprocess, "run", lambda *a, **kw: CompletedProcess([], 0, '{"ok":true}', ""))
+    with pytest.raises(HarnessError, match="未确认"):
+        web._apply_openclaw_access("one", config)
+    def fail(*args, **kwargs):
+        raise CalledProcessError(1, "command")
+    monkeypatch.setattr(web.subprocess, "run", fail)
+    with pytest.raises(HarnessError, match="未确认"):
+        web._apply_openclaw_access("one", config)
 
 
 def test_codex_auto_approval_setting_is_persisted_and_isolated(sandbox):

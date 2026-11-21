@@ -1,5 +1,8 @@
+import '../styles/controls.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import AccessControls from './AccessControls';
+import { IconAccounts, IconChat, IconMic, IconImage, IconVideo, IconMusic, IconChevron } from './icons';
 import EnvBoard from './EnvBoard';
 import HarnessSettings from './HarnessSettings';
 import SettingsSelect, { OptionsDropdown } from './SettingsSelect';
@@ -11,24 +14,26 @@ import {
   fetchProxySettings, saveProxySettings,
 } from '../lib/api';
 import type { EnvTool, ModelRow, SelftestResult, LocalAgentInfo, ProxySettings } from '../lib/api';
-import { IconSlidersHorizontal, IconPackage, IconEllipsis } from './settingsIcons';
+import { IconSlidersHorizontal, IconPackage, IconEllipsis, IconGear, IconAudioWaveform } from './settingsIcons';
 
 interface Props {
   onClose: () => void;
   /** 非空时在面板顶部显示一条提示条。首开未配置模型时由 App 传入。 */
   banner?: string;
+  initialSection?: 'model' | 'access';
+  initialEngine?: string;
 }
 
-type Sec = 'model' | 'env' | 'more';
+type Sec = 'model' | 'access' | 'env' | 'more';
 type Chan = 'chat' | 'transcribe' | 'speech' | 'image' | 'video' | 'music';
 
-const CHANNELS: { id: Chan; label: string }[] = [
-  { id: 'chat', label: '对话与脚本' },
-  { id: 'transcribe', label: '语音转写' },
-  { id: 'speech', label: '配音' },
-  { id: 'image', label: '生图' },
-  { id: 'video', label: '视频' },
-  { id: 'music', label: '音乐' },
+const CHANNELS: { id: Chan; label: string; Icon: typeof IconChat }[] = [
+  { id: 'chat', Icon: IconChat, label: '对话与脚本' },
+  { id: 'transcribe', Icon: IconMic, label: '语音转写' },
+  { id: 'speech', Icon: IconAudioWaveform, label: '配音' },
+  { id: 'image', Icon: IconImage, label: '生图' },
+  { id: 'video', Icon: IconVideo, label: '视频' },
+  { id: 'music', Icon: IconMusic, label: '音乐' },
 ];
 
 /** 后台繁忙（整机高负载）时的抗抖动取数：单次超时即重试，撑过多秒级接口延迟。 */
@@ -60,12 +65,12 @@ const hhmm = (ts: number) => {
 };
 
 /** 设置（统一入口）：竖＝功能分类（模型配置 / 环境安装 / 更多设置），横＝模型六通道。 */
-export default function SettingsPanel({ onClose, banner = '' }: Props) {
-  const [sec, setSec] = useState<Sec>('model');
+export default function SettingsPanel({ onClose, banner = '', initialSection = 'model', initialEngine }: Props) {
+  const [sec, setSec] = useState<Sec>(initialSection);
   const [chan, setChan] = useState<Chan>('chat');
   const [harness, setHarness] = useState('');
   const [selectedHarness, setSelectedHarness] = useState('');
-  const [harnessPreview, setHarnessPreview] = useState<{ runtime: string }>();
+  const [harnessPreview, setHarnessPreview] = useState<{ runtime: string } | undefined>(() => initialEngine ? { runtime: initialEngine } : undefined);
   const harnessSection = useRef<HTMLDivElement>(null);
   const clearHarnessPreview = useCallback(() => setHarnessPreview(undefined), []);
 
@@ -77,17 +82,21 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
   const [jobs, setJobs] = useState<Record<string, JobView>>({});
   const runningRef = useRef(false);
 
+  const scanId = useRef(0);
   const refreshEnv = useCallback(async (force = false) => {
+    const scan = ++scanId.current;
     setEnvLoading(true);
     setEnvError('');
     try {
       const d = await fetchWithRetry(() => fetchEnvTools(force));
+      if (scan !== scanId.current) return;
       setTools(d.tools || []);
       setPython(d.python || '');
     } catch (e) {
+      if (scan !== scanId.current) return;
       setEnvError(e instanceof Error ? `环境体检失败：${e.message}` : '环境体检失败');
     } finally {
-      setEnvLoading(false);
+      if (scan === scanId.current) setEnvLoading(false);
     }
   }, []);
 
@@ -393,7 +402,9 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     custom: { model: true, base: true },
   };
 
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const addProvider = () => {
+    setExpandedRows(previous => ({ ...previous, ['chat#' + chatRows.length]: true }));
     setChatRows((rs) => [...rs, {
       slot: 'custom', order: 0, name: '', sub: '自定义', type: 'openai',
       model: '', baseUrl: '', keyMasked: '', role: '备', result: '待保存',
@@ -423,6 +434,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
       setModelLists(shift);
       setOpenDd(shift);
       setProtoDd(shift);
+      setExpandedRows(shift);
     };
     shiftBoardKeys('chat');
     setChatRows((rs) => {
@@ -447,8 +459,6 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
 
   const setMediaPrimary = (ch: string, i: number) =>
     setMediaRows((m) => ({ ...m, [ch]: (m[ch] || []).map((r, j) => ({ ...r, role: j === i ? '主' : '备' })) }));
-
-  const mediaOk = (ch: string) => (mediaRows[ch] || []).some((r) => r.result === '已配置');
 
   const cacheKeyFor = (r: ModelRow) => {
     const base = (r.baseUrl || '').trim().replace(/\/+$/, '');
@@ -477,36 +487,41 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     ) : rows.length === 0 ? (
       <div className="board"><div className="empty">还没有配置。<span className="hint">可在「环境安装」先补齐本地能力。</span></div></div>
     ) : (
-      <div className="board">
-        <div className="prow head">
-          <span>顺序</span><span>供应商</span><span>类型</span><span>模型</span>
-          <span>Base URL</span><span>API Key</span><span>角色</span><span>上次结果</span>
-          <span />
-        </div>
+      <div className="provider-list">
         {rows.map((r, i) => {
+          const rowKey = k(i);
+          const expanded = !!expandedRows[rowKey];
           const rt = resultText(r);
-          const ed = SLOT_EDIT[r.slot || '']
-            || (ops?.media && r.slot
-              ? { model: r.modelEditable !== false, base: r.baseEditable !== false }
-              : undefined);
+          const status = rt.text === '未配置' && r.baseOptional === false && !r.baseUrl ? '待填服务地址' : rt.text;
+          const ed = SLOT_EDIT[r.slot || ''] || (ops?.media && r.slot
+            ? { model: r.modelEditable !== false, base: r.baseEditable !== false } : undefined);
           const isCustom = r.slot === 'custom';
-          return (
-            <div className="prow" key={i}>
-              <span className={`step${r.order === 0 ? ' ghost' : ''}`}>{isCustom ? i + 1 : r.order}</span>
-              {isCustom ? (
-                <span className="pname">
-                  <input
-                    className="mock"
-                    value={r.name}
-                    placeholder="名称"
-                    onChange={(e) => ops?.onRow?.(i, { name: e.target.value.toLowerCase() })}
-                  />
-                </span>
-              ) : (
-                <span className="pname">{r.name}<small>{r.sub}</small></span>
-              )}
-              {isCustom && ed && ed.base ? (
-                <span
+          const name = r.name || '自定义供应商';
+          const role = r.role === '主' ? '默认' : r.role === '备' ? '备用' : r.role;
+          return <section key={rowKey} className="provider-item">
+            <button type="button" className="provider-summary" aria-expanded={expanded} aria-controls={'provider-' + rowKey}
+              aria-label={name + (expanded ? '，收起配置' : '，展开配置')}
+              onClick={() => {
+                setExpandedRows(previous => ({ ...previous, [rowKey]: !expanded }));
+                if (expanded) {
+                  setOpenDd(previous => ({ ...previous, [rowKey]: false }));
+                  setProtoDd(previous => ({ ...previous, [rowKey]: false }));
+                }
+              }}>
+              <span className="provider-id"><strong>{name}</strong>
+                <span className="provider-meta">{isCustom ? r.protocol || 'openai' : r.type}{!ops?.media && r.sub && ' · ' + r.sub}</span>
+              </span>
+              <span className={'provider-role' + (r.role === '主' ? ' primary' : '')}>{role}</span>
+              <span className={'provider-status ' + rt.cls} title={status}>{status}</span>
+              <span className="provider-disclose">{expanded ? '收起' : '配置'}<IconChevron size={13} /></span>
+            </button>
+            <div id={'provider-' + rowKey} className="provider-editor" hidden={!expanded}>
+              {expanded && <>
+                {isCustom && <label className="provider-field"><span>供应商名称</span>
+                  <input className="mock" value={r.name} placeholder="名称" onChange={e => ops?.onRow?.(i, { name: e.target.value.toLowerCase() })} />
+                </label>}
+                {isCustom && <div className="provider-field"><span>上游协议</span>
+                  <span
                   className="proto-trigger"
                   role="button"
                   tabIndex={0}
@@ -543,17 +558,63 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                     />
                   )}
                 </span>
-              ) : isCustom ? (
-                <span title="保存后可切换协议">{r.protocol === 'anthropic' ? 'anthropic' : 'openai'}</span>
-              ) : (
-                <span>{r.type}</span>
-              )}
-              {ed && ed.model && (!ops?.media || r.adv) ? (
-                <span className={`model-cell${isCustom ? ' custom-model-cell' : ''}`} ref={(el) => { modelCellRefs.current[k(i)] = el; }}>
+                </div>}
+                {(ed || (r.keyMasked && r.keyMasked !== '—')) && <div className="provider-field">
+                  <span>{r.key2Label ? 'API Key / ' + r.key2Label : 'API Key'}</span>
+                  {ed ? (
+                r.key2Label ? (
+                  <span className="key-stack">
+                    <input
+                      className="mock key-input"
+                      type="password" autoComplete="off"
+                      aria-label="API Key" value={r.keyNew || ''}
+                      placeholder={r.keyMasked || 'Key'}
+                      onChange={(e) => ops?.onRow?.(i, { keyNew: e.target.value })}
+                    />
+                    <input
+                      className="mock key-input"
+                      type="password" autoComplete="off"
+                      aria-label={r.key2Label} value={r.keyNew2 || ''}
+                      placeholder={r.key2Masked || r.key2Label}
+                      onChange={(e) => ops?.onRow?.(i, { keyNew2: e.target.value })}
+                    />
+                  </span>
+                ) : (
                   <input
+                    className="mock key-input"
+                    type="password" autoComplete="off"
+                    aria-label="API Key" value={r.keyNew || ''}
+                    placeholder={r.keyMasked || '粘贴 Key'}
+                    onChange={(e) => ops?.onRow?.(i, { keyNew: e.target.value })}
+                  />
+                )
+              ) : (
+                <span className="cell-text key-mask" title="密钥不显示明文">{r.keyMasked || '—'}</span>
+              )}
+                </div>}
+                {(ed?.base || (r.baseUrl && r.baseUrl !== '—')) && <div className="provider-field">
+                  <span>服务地址{r.baseOptional === false && <small>必填</small>}</span>
+                  {ed?.base ? (
+                <input aria-label="服务地址" className="mock" value={r.baseUrl} placeholder="https://…" onChange={(e) => ops?.onRow?.(i, { baseUrl: e.target.value })} />
+              ) : (
+                <span className={`cell-text${ops?.media && !r.baseUrl ? ' dim' : ''}`} title={r.baseUrl || '内建默认'}>
+                  {r.baseUrl
+                    || (ops?.media
+                      ? r.baseOptional === false
+                        ? '需填写'
+                        : '默认（内建）'
+                      : '')}
+                </span>
+              )}
+                </div>}
+                {(ed?.model || (r.model && r.model !== '—')) && <div className="provider-field provider-model">
+                  <span>模型</span>
+                  {ed?.model ? (
+                <span className={`model-cell${isCustom ? ' custom-model-cell' : ''}`} ref={(el) => { modelCellRefs.current[k(i)] = el; }}>
+                  <input aria-label="模型"
                     className="mock"
                     value={r.model}
-                    placeholder={isCustom ? '模型名' : ''}
+                    placeholder="使用默认模型"
                     onChange={(e) => ops?.onRow?.(i, { model: e.target.value })}
                     onFocus={() => setOpenDd((s) => ({ ...s, [k(i)]: true }))}
                   />
@@ -592,7 +653,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                     );
                   })()}
                   {modelLists[k(i)]?.err && (
-                    <span className="fetch-err" title={modelLists[k(i)].err}>⚠</span>
+                    <span className="fetch-err" role="status" title={modelLists[k(i)].err}>拉取失败</span>
                   )}
                   {isCustom ? (
                     <span className="thinking-controls">
@@ -621,71 +682,18 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                   {r.model || (ops?.media ? '默认（内建）' : '')}
                 </span>
               )}
-              {ed && ed.base && (!ops?.media || r.adv) ? (
-                <input className="mock" value={r.baseUrl} placeholder="https://…" onChange={(e) => ops?.onRow?.(i, { baseUrl: e.target.value })} />
-              ) : (
-                <span className={`cell-text${ops?.media && !r.baseUrl ? ' dim' : ''}`} title={r.baseUrl || '内建默认'}>
-                  {r.baseUrl
-                    || (ops?.media
-                      ? r.baseOptional === false
-                        ? '需填写（点「高级」）'
-                        : '默认（内建）'
-                      : '')}
-                </span>
-              )}
-              {ed ? (
-                r.key2Label ? (
-                  <span className="key-stack">
-                    <input
-                      className="mock key-input"
-                      type="password"
-                      value={r.keyNew || ''}
-                      placeholder={r.keyMasked || 'Key'}
-                      onChange={(e) => ops?.onRow?.(i, { keyNew: e.target.value })}
-                    />
-                    <input
-                      className="mock key-input"
-                      type="password"
-                      value={r.keyNew2 || ''}
-                      placeholder={r.key2Masked || r.key2Label}
-                      onChange={(e) => ops?.onRow?.(i, { keyNew2: e.target.value })}
-                    />
-                  </span>
-                ) : (
-                  <input
-                    className="mock key-input"
-                    type="password"
-                    value={r.keyNew || ''}
-                    placeholder={r.keyMasked || '粘贴 Key'}
-                    onChange={(e) => ops?.onRow?.(i, { keyNew: e.target.value })}
-                  />
-                )
-              ) : (
-                <span className="cell-text key-mask" title="密钥不显示明文">{r.keyMasked || '—'}</span>
-              )}
-              {r.slot && ops?.onPrimary ? (
-                <button
-                  className={`tag ${r.role === '主' ? 'main' : 'backup'}`}
-                  onClick={() => ops.onPrimary?.(i)}
-                  title="设为主通道"
-                >
-                  {r.role}
-                </button>
-              ) : (
-                <span className={`tag ${r.role === '主' ? 'main' : 'backup'}`}>{r.role}</span>
-              )}
-              <span className={`stt ${rt.cls}`}>{rt.text}</span>
-              {isCustom && ops?.onRemove ? (
-                <button className="row-del" onClick={() => ops.onRemove?.(i)} title="删除该供应商">✕</button>
-              ) : ops?.media && r.slot ? (
-                <button className="adv-btn" onClick={() => ops?.onRow?.(i, { adv: !r.adv })}>
-                  {r.adv ? '收起' : '高级'}
-                </button>
-              ) : (
-                <span />
-              )}
+                </div>}
+                {!ed && (!r.model || r.model === '—') && (!r.baseUrl || r.baseUrl === '—') && <p className="provider-note">此来源无需配置。</p>}
+                {((r.slot && ops?.onPrimary && r.role !== '主') || (isCustom && ops?.onRemove)) &&
+                  <div className="provider-actions">
+                    {r.slot && ops?.onPrimary && r.role !== '主' &&
+                      <button type="button" className="btn btn-sm" onClick={() => ops.onPrimary?.(i)}>设为默认</button>}
+                    {isCustom && ops?.onRemove &&
+                      <button type="button" className="btn btn-sm" onClick={() => ops.onRemove?.(i)}>删除供应商</button>}
+                  </div>}
+              </>}
             </div>
-          );
+          </section>;
         })}
       </div>
     )
@@ -702,28 +710,28 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
     >
       <div className="settings-panel" role="dialog" aria-modal="true" aria-label="设置">
         <div className="settings-head">
-          <div>
-            <h2 className="settings-title">设置</h2>
-            <div className="settings-sub">模型配置 · 环境安装 · 更多设置</div>
+          <div className="settings-heading"><IconGear size={21} />
+            <h2 className="settings-title">工作室设置</h2>
           </div>
           <div className="settings-actions">
-            <button
+            {sec === 'model' && (chan !== 'chat' || ['api', 'openclaw'].includes(selectedHarness)) && <><button
               className="btn btn-sm btn-primary"
               onClick={() => void saveCurrent()}
-              disabled={saving || modelLoading || sec !== 'model' || (chan === 'chat' && (selectedHarness !== harness || !['api', 'openclaw'].includes(harness)))}
-              title={chan === 'chat' && !['api', 'openclaw'].includes(harness) ? '请使用下方「保存底座」保存原生配置' : undefined}
+              disabled={saving || modelLoading || (chan === 'chat' && selectedHarness !== harness)}
+              title={chan === 'chat' && selectedHarness !== harness ? '请先应用所选引擎，再保存 API 配置' : undefined}
             >
               {saving ? '保存中…' : '保存配置'}
             </button>
             <button
               className="btn btn-sm"
-              onClick={() => void doSelftest(sec === 'model' ? chan : 'all')}
-              disabled={testing || modelLoading || selectedHarness !== harness || (!['api', 'openclaw'].includes(harness) && (sec !== 'model' || chan === 'chat'))}
-              title={!['api', 'openclaw'].includes(harness) ? '原生对话请发送消息或运行 easel ping 验证' : undefined}
+              onClick={() => void doSelftest(chan)}
+              disabled={testing || modelLoading || (chan === 'chat' && selectedHarness !== harness)}
+              title="测试当前通道"
             >
-              {testing ? '自测中…' : '全部自测'}
+              {testing ? '自测中…' : '测试通道'}
             </button>
-            <button className="settings-close" onClick={onClose} title="关闭（Esc）">✕</button>
+            </>}
+            <button className="settings-close" aria-label="关闭设置" onClick={onClose} title="关闭（Esc）">✕</button>
           </div>
         </div>
 
@@ -743,10 +751,11 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
         <div className="settings-body">
           <nav className="settings-nav">
             <button className={`snav${sec === 'model' ? ' active' : ''}`} onClick={() => setSec('model')}>
-              <IconSlidersHorizontal size={16} />模型配置<small>六个通道</small>
+              <IconSlidersHorizontal size={16} />模型配置
             </button>
+            <button className={sec === 'access' ? 'snav active' : 'snav'} onClick={() => setSec('access')}><IconAccounts size={16} />访问权限</button>
             <button className={`snav${sec === 'env' ? ' active' : ''}`} onClick={() => setSec('env')}>
-              <IconPackage size={16} />环境安装<small>{total ? (okCount === total ? '全就绪' : `${okCount}/${total}`) : '…'}</small>
+              <IconPackage size={16} />环境安装<small>{total ? (okCount === total ? '全就绪' : `${okCount}/${total}`) : ''}</small>
             </button>
             <button className={`snav${sec === 'more' ? ' active' : ''}`} onClick={() => setSec('more')}>
               <IconEllipsis size={16} />更多设置
@@ -756,19 +765,19 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
           <div className="settings-main">
             {sec === 'model' && (
               <section className="st-sec active">
-                <div className="tabbar">
+                <nav className="tabbar" aria-label="模型通道">
                   {CHANNELS.map((c) => (
-                    <button key={c.id} className={`tab${chan === c.id ? ' active' : ''}`} onClick={() => setChan(c.id)}>
-                      <span className="cdot" />{c.label}
+                    <button key={c.id} className={`tab${chan === c.id ? ' active' : ''}`} aria-current={chan === c.id ? 'page' : undefined} onClick={() => setChan(c.id)}>
+                      <c.Icon size={15} />{c.label}
                     </button>
                   ))}
-                </div>
+                </nav>
                 {savedNote ? <div className={`save-note${savedNote.startsWith('保存失败') || savedNote.startsWith('没有') ? ' err' : ''}`}>{savedNote}</div> : null}
 
-                {chan === 'chat' && <div ref={harnessSection} tabIndex={-1}>
+                <div className="harness-host" hidden={chan !== 'chat'} ref={harnessSection} tabIndex={-1}>
                   <HarnessSettings onChange={setHarness} onSelect={setSelectedHarness}
                     previewRequest={harnessPreview} onPreviewHandled={clearHarnessPreview} />
-                </div>}
+                </div>
                 {chan === 'chat' && (selectedHarness === 'api' || selectedHarness === 'openclaw') && (
                   <section className="st-panel active">
                     <div className="panel-top">
@@ -780,7 +789,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                     </div>
                     {renderBoard(chatRows, { onRow: (i, p) => updateRow(setChatRows, i, p), onPrimary: setPrimaryRow, onRemove: removeRow }, 'chat')}
                     {selectedHarness === 'api' ? <div className="foot-note">此通道使用独立的 EASEL_DIRECT_API_* 配置，与原有 OpenAI 通道分开保存。支持聊天、画像、文本和图片附件（需模型支持图片）。没有本机文件、浏览器或技能执行工具。</div>
-                      : <div className="add-row" onClick={addProvider}>＋ 添加供应商（填名称 / 模型 / Base URL / Key；点「设为主」切换生效通道）</div>}
+                      : <button type="button" className="btn btn-sm provider-add" onClick={addProvider}>添加供应商</button>}
                     {harness === 'openclaw' && (() => {
                       // 本机 agent 区块：装了 Claude Code / Gemini CLI 并登录过的用户不需要填 API Key。
                       // 只展示「已装」的行 —— 没装的用户看一眼全是灰的只会困惑。
@@ -855,50 +864,14 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
                   </section>
                 )}
 
-                {chan === 'speech' && (
-                  <section className="st-panel active">
-                    <div className="panel-top">
-                      <span className={`pill ${mediaOk('speech') ? 'ok' : 'off'}`}><span className="dot" />{mediaOk('speech') ? '有可用提供商' : '未配置'}</span>
-                      <span className="desc">只填 Key 即用（地址/模型内建）；「主/备」= 默认</span>
-                      <span className="spacer" />
+                {chan !== 'chat' && chan !== 'transcribe' && (
+                  <section className="st-panel active media-provider-panel">
+                    <div className="provider-list-head"><h3>{CHANNELS.find(c => c.id === chan)?.label}供应商</h3>
+                      {(!modelLoading || mediaRows[chan]?.length > 0) && <span>{(mediaRows[chan] || []).length} 家</span>}
                     </div>
-                    {renderBoard(mediaRows.speech || [], { onRow: (i, p) => updateMediaRow('speech', i, p), onPrimary: (i) => setMediaPrimary('speech', i), media: true }, 'speech')}
-                    <div className="foot-note">配音脚本按「主」provider 合成；本地 VoxCPM / edge-tts 在视频产线里可直接替代。</div>
-                  </section>
-                )}
-
-                {chan === 'image' && (
-                  <section className="st-panel active">
-                    <div className="panel-top">
-                      <span className={`pill ${mediaOk('image') ? 'ok' : 'off'}`}><span className="dot" />{mediaOk('image') ? '已配置' : '未配置'}</span>
-                      <span className="desc">只填 Key 即用（地址/模型内建，点「高级」可覆盖）</span>
-                      <span className="spacer" />
-                    </div>
-                    {renderBoard(mediaRows.image || [], { onRow: (i, p) => updateMediaRow('image', i, p), media: true }, 'image')}
-                    <div className="foot-note">按 Base URL 自动选同步 / 异步（apimart）模式；模型名留空用服务端默认。</div>
-                  </section>
-                )}
-
-                {chan === 'video' && (
-                  <section className="st-panel active">
-                    <div className="panel-top">
-                      <span className={`pill ${mediaOk('video') ? 'ok' : 'off'}`}><span className="dot" />{mediaOk('video') ? '有可用提供商' : '未配置'}</span>
-                      <span className="desc">只填 Key 即用（地址/模型内建，点「高级」可覆盖）；「主/备」= 默认</span>
-                      <span className="spacer" />
-                    </div>
-                    {renderBoard(mediaRows.video || [], { onRow: (i, p) => updateMediaRow('video', i, p), onPrimary: (i) => setMediaPrimary('video', i), media: true }, 'video')}
-                    <div className="foot-note">脚本按「主」provider 出片；同类多家的自动降级随统一网关接入开放。</div>
-                  </section>
-                )}
-
-                {chan === 'music' && (
-                  <section className="st-panel active">
-                    <div className="panel-top">
-                      <span className={`pill ${mediaOk('music') ? 'ok' : 'off'}`}><span className="dot" />{mediaOk('music') ? '有可用提供商' : '未配置'}</span>
-                      <span className="desc">只填 Key 即用；「主/备」= 默认</span>
-                      <span className="spacer" />
-                    </div>
-                    {renderBoard(mediaRows.music || [], { onRow: (i, p) => updateMediaRow('music', i, p), onPrimary: (i) => setMediaPrimary('music', i), media: true }, 'music')}
+                    {renderBoard(mediaRows[chan] || [], { onRow: (i, patch) => updateMediaRow(chan, i, patch),
+                      onPrimary: chan === 'image' ? undefined : i => setMediaPrimary(chan, i), media: true }, chan)}
+                    {chan === 'image' && <p className="provider-note">服务地址决定同步或异步模式。模型留空时使用服务端默认值。</p>}
                   </section>
                 )}
 
@@ -907,6 +880,7 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
               </section>
             )}
 
+            {sec === 'access' && <AccessControls />}
             {sec === 'env' && (
               <section className="st-sec active">
                 <EnvBoard
@@ -924,64 +898,39 @@ export default function SettingsPanel({ onClose, banner = '' }: Props) {
             )}
 
             {sec === 'more' && (
-              <section className="st-sec active">
-                <div className="panel-top">
-                  <span className={`pill ${proxyCfg?.proxy ? 'ok' : 'off'}`}><span className="dot" />
-                    {proxyCfg?.proxy ? '代理已配置' : '代理未配置'}</span>
-                  <span className="desc">用于 X 等外网访问；各入口保留已有代理与直连配置，微信固定出口独立生效</span>
-                  <span className="spacer" />
-                </div>
-                <div className="board">
-                  <div style={{ padding: 14 }}>
-                    <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>
-                      网络代理（EASEL_PROXY）
-                    </label>
-                    <input
-                      className="field"
-                      style={{ width: '100%', boxSizing: 'border-box' }}
-                      value={proxyInput}
-                      disabled={proxyCfg?.source === 'env' || proxyBusy}
-                      onChange={(e) => { setProxyInput(e.target.value); setProxyErr(''); setProxyMsg(''); }}
-                      placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080"
-                    />
-                    {proxyCfg?.source === 'env' && (
-                      <div className="foot-note" style={{ marginTop: 8 }}>
-                        启动环境已固定 EASEL_PROXY 环境变量，此处只读；要修改请调整启动环境后重启。
-                      </div>
+              <section className="st-sec active proxy-settings">
+                <header className="proxy-head">
+                  <h3>网络代理</h3>
+                  <span className={'pill ' + (proxyCfg?.proxy ? 'ok' : 'off')}>
+                    {proxyCfg ? (proxyCfg.proxy ? '代理已配置' : '使用系统代理') : proxyErr ? '读取失败' : '读取中…'}
+                  </span>
+                </header>
+                <p className="proxy-note">登录和发布工具在启动时读取此地址。微信固定出口单独配置。</p>
+                <div className="proxy-form">
+                  <label htmlFor="studio-proxy">代理地址</label>
+                  <input id="studio-proxy" className="field" value={proxyInput}
+                    disabled={proxyCfg?.source === 'env' || proxyBusy}
+                    onChange={(e) => { setProxyInput(e.target.value); setProxyErr(''); setProxyMsg(''); }}
+                    placeholder="http://127.0.0.1:7890" aria-describedby="proxy-help" />
+                  <p id="proxy-help" className="proxy-note">{proxyCfg?.source === 'env'
+                    ? '地址由启动环境中的 EASEL_PROXY 指定。修改后需重启服务。'
+                    : '支持 HTTP 和 SOCKS5。留空使用系统代理。'}</p>
+                  <div className="proxy-actions">
+                    <button className="btn btn-sm btn-primary" disabled={proxyBusy || proxyCfg?.source === 'env'}
+                      onClick={() => void saveProxy()}>{proxyBusy ? '保存中…' : '保存代理'}</button>
+                    {proxyCfg?.proxy && proxyCfg.source === 'envfile' && (
+                      <button className="btn btn-sm btn-ghost" disabled={proxyBusy} onClick={clearProxy}>清除代理</button>
                     )}
-                    {proxyErr && <div className="env-error" style={{ marginTop: 8 }}>{proxyErr}</div>}
-                    {proxyMsg && <div className="foot-note" style={{ marginTop: 8 }}>{proxyMsg}</div>}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={proxyBusy || proxyCfg?.source === 'env'}
-                        onClick={() => void saveProxy()}
-                      >
-                        {proxyBusy ? '保存中…' : '保存'}
-                      </button>
-                      {proxyCfg?.proxy && proxyCfg.source === 'envfile' && (
-                        <button className="btn btn-sm btn-ghost" disabled={proxyBusy} onClick={clearProxy}>
-                          清除代理
-                        </button>
-                      )}
-                    </div>
-                    <div className="foot-note" style={{ marginTop: 10 }}>
-                      保存后立即生效（登录/发布等子进程每次启动都重新读取），无需重启服务。
-                      当前生效：{proxyCfg?.proxy || '（未配置，回退系统代理）'}
-                    </div>
                   </div>
-                  <div className="stub-row"><span className="tag2">预留</span>通用设置（语言 / 更新 / 数据目录）<span className="future">按需加</span></div>
+                  {proxyErr && <p className="env-error" role="alert">{proxyErr}</p>}
+                  {proxyMsg && <p className="proxy-note" role="status">{proxyMsg}</p>}
                 </div>
               </section>
             )}
           </div>
         </div>
 
-        <div className="settings-foot">
-          {harness === 'api' || harness === 'openclaw'
-            ? 'ⓘ 供应商配置保存到 .env；API 直连仅聊天、无工具。切换底座或对话模式后请新建对话。'
-            : 'ⓘ 原生 Agent 认证由其 CLI 管理；「保存底座」只保存底座、模型覆盖和权限设置。媒体通道仍单独配置。'}
-        </div>
+
       </div>
     </div>
   );

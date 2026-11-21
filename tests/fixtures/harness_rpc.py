@@ -44,7 +44,7 @@ def permission():
                          "command": os.environ.get("FAKE_HARNESS_COMMAND", "read public file")}})
     else:
         send({"id": "permission-request", "method": "session/request_permission",
-              "params": {"sessionId": session_id, "toolCall": {"title": "read public file"},
+              "params": {"sessionId": session_id, "toolCall": json.loads(os.environ.get("FAKE_ACP_TOOL", '{"title": "read public file"}')),
                          "options": [{"optionId": "always", "name": "Always", "kind": "allow_always"},
                                      {"optionId": "once", "name": "Allow", "kind": "allow_once"},
                                      {"optionId": "deny", "name": "Reject", "kind": "reject_once"}]}})
@@ -100,6 +100,12 @@ while True:
             reply(message, {"data": [{"model": "first-model", "displayName": "First", "isDefault": True},
                                     {"model": "hidden-model", "hidden": True},
                                     {"model": "bad\nmodel"}], "nextCursor": "next"})
+    elif method == "thread/resume" and mode.startswith("writer-") and message["params"]["threadId"] == "original":
+        send({"id": message["id"], "error": {"code": -32600, "message": "thread original already has an active writer"}})
+    elif method == "thread/turns/list" and mode.startswith("writer-"):
+        reply(message, {"data": [{"id": "last", "status": "inProgress" if mode == "writer-active" else "completed"}]})
+    elif method == "thread/fork" and mode.startswith("writer-"):
+        reply(message, {"thread": {"id": thread_id, "forkedFromId": "other" if mode == "writer-wrong" else "original"}})
     elif method in ("thread/start", "thread/resume"):
         if mode == "stable-resume" and method == "thread/resume":
             thread_id = message["params"]["threadId"]

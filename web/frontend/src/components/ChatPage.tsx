@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import AccessControls from './AccessControls';
 import MessageBubble from './MessageBubble';
 import QuestionCards from './QuestionCards';
 import BrushEntry from './BrushEntry';
@@ -6,9 +7,11 @@ import RunRecovery from './RunRecovery';
 import type { ChatSession, ChatMessage, StreamState } from '../lib/store';
 import { uploadFiles, adoptOversize } from '../lib/api';
 import type { UploadedFile } from '../lib/api';
-import { IconArrowUp, IconStop, IconPlus, IconFile } from './icons';
+import { IconArrowUp, IconStop, IconFile, IconFire, IconEdit, IconLayers, IconMic, IconChat } from './icons';
 
 interface ChatPageProps {
+  agentRuntime: string;
+  onOpenStudio: (section: 'model' | 'access', engine?: string) => void;
   apiDirect: boolean;
   session: ChatSession;
   stream?: StreamState;          // 进行中的流式态（来自 App，切页也不丢）
@@ -26,19 +29,13 @@ interface ChatPageProps {
 
 // 空态推荐（贴合 Easel 社媒创作场景）
 const SUGGESTIONS = [
-  { icon: '🔥', title: '蹭个热点', prompt: '看看现在微博和抖音有什么热搜，挑几个适合我做二创的选题' },
-  { icon: '✍️', title: '写小红书文案', prompt: '帮我写一条小红书种草文案，主题先问我' },
-  { icon: '🎴', title: '做金句卡片', prompt: '把一句走心的话做成一张适合发朋友圈的金句卡片' },
-  { icon: '🎬', title: '口播脚本', prompt: '帮我写一条 60 秒的口播短视频脚本，主题先问我' },
+  { Icon: IconFire, title: '找热点选题', prompt: '看看现在微博和抖音有什么热搜，挑几个适合我做二创的选题' },
+  { Icon: IconEdit, title: '写小红书文案', prompt: '帮我写一条小红书种草文案，主题先问我' },
+  { Icon: IconLayers, title: '做金句卡片', prompt: '把一句走心的话做成一张适合发朋友圈的金句卡片' },
+  { Icon: IconMic, title: '口播脚本', prompt: '帮我写一条 60 秒的口播短视频脚本，主题先问我' },
 ];
 
-function greeting(): string {
-  const h = new Date().getHours();
-  const g = h < 6 ? '夜深了' : h < 12 ? '上午好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
-  return `${g}，想创作点什么？`;
-}
-
-export default function ChatPage({ apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered, onQuestionClosed }: ChatPageProps) {
+export default function ChatPage({ agentRuntime, onOpenStudio, apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered, onQuestionClosed }: ChatPageProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -148,7 +145,7 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder={dragOver ? '松手上传素材…' : hero ? '把你的想法告诉我，选题 / 文案 / 卡片 / 视频 / 发布都行…（可拖入图片/文档当素材）' : '发消息…（Enter 发送，Shift+Enter 换行，可拖入/粘贴素材）'}
+          placeholder={dragOver ? '松手上传素材…' : hero ? '说说你的选题，或拖入一份素材…' : '继续聊，或添加素材…'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onCompositionStart={() => { isComposingRef.current = true; }}
@@ -163,10 +160,11 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
       <input ref={fileInputRef} type="file" multiple hidden
         onChange={(e) => { if (e.target.files) doUpload(e.target.files); e.target.value = ''; }} />
       <div className="composer-bar">
-        <button className="composer-attach-btn" onClick={() => fileInputRef.current?.click()}
+        <button className="composer-attach-btn" aria-label={uploading ? '正在上传素材' : '添加素材'} onClick={() => fileInputRef.current?.click()}
           disabled={isStreaming || uploading} title={`添加素材（图片/文档）；超过 ${maxMb}MB 的大文件将自动存为本地素材（不走上传）`}>
-          <IconPlus size={15} /> {uploading ? '上传中…' : '素材'}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m8 12 7-7a4 4 0 0 1 5.7 5.6l-9 9a6 6 0 0 1-8.5-8.4l9-9"/><path d="m6.8 14.1 8.4-8.4a1.7 1.7 0 0 1 2.4 2.4l-8.5 8.5"/></svg><span>{uploading ? '上传中…' : '素材'}</span>
         </button>
+        <AccessControls compact session={session.id} current={agentRuntime} onEngine={runtime => onOpenStudio('model', runtime !== agentRuntime ? runtime : undefined)} />
         <span className="composer-hint">{isStreaming ? '生成中…' : 'Enter 发送 · Shift+Enter 换行'}</span>
         {isStreaming ? (
           <button className="send-btn" onClick={onStop} title="停止生成"><IconStop size={15} /></button>
@@ -182,19 +180,17 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
     return (
       <div className="chat-page">
         <div className="chat-hero">
-          <div className="chat-hero-brand">
-            <img src="./static/easel-icon-transparent.png" alt="" />
-            <span>Easel</span>
-          </div>
-          <h1 className="chat-hero-title">{greeting()}</h1>
-          <p className="chat-hero-sub">{apiDirect ? 'API 直连：写文案、策划选题、分析附件。本机工具和自动发布未启用。'
-            : '从选题到发布，一站式帮你把想法做成能发的内容。'}</p>
+          <header className="chat-opening">
+            <div><h1 className="chat-hero-title">今天想创作什么？</h1>
+              {apiDirect && <p className="chat-mode-note">API 直连支持文案、选题和附件分析。</p>}</div>
+            <div className="chat-art" aria-hidden="true"><img src="./static/studio-still-life.webp" alt="" /></div>
+          </header>
           {inputBox(true)}
           <div className="suggestions">
             {SUGGESTIONS.filter((s) => !apiDirect || ['写小红书文案', '口播脚本'].includes(s.title)).map((s) => (
               <button key={s.title} className="card card-hover suggestion-card"
                 onClick={() => { if (!isStreaming) onSend(s.prompt); }}>
-                <span className="suggestion-icon">{s.icon}</span>
+                <span className="suggestion-icon"><s.Icon size={20} /></span>
                 <span className="suggestion-body">
                   <span className="suggestion-title">{s.title}</span>
                   <span className="suggestion-text">{s.prompt}</span>
@@ -213,6 +209,9 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
 
   return (
     <div className="chat-page">
+      <header className="conversation-head"><IconChat size={18} />
+        <h2>{session.title && session.title !== 'New Chat' ? session.title : '创作对话'}</h2>
+      </header>
       <div className="chat-messages">
         <div className="chat-thread">
           {displayMessages.map((msg, i) => {
@@ -255,14 +254,14 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
                 stillWorking={live ? stream!.stillWorking : ''}
                 actions={actions}
               />
-              {!live && msg.questions && <QuestionCards questions={msg.questions} onDone={onQuestionAnswered} onClosed={onQuestionClosed} />}
+              {!live && msg.questions && <QuestionCards onAccess={() => onOpenStudio('access')} questions={msg.questions} onDone={onQuestionAnswered} onClosed={onQuestionClosed} />}
               </div>
             );
           })}
           {isStreaming && (stream!.questions?.length ?? 0) > 0 && (
-            <QuestionCards questions={stream!.questions || []} onDone={(qid) => onQuestionAnswered?.(qid)} onClosed={onQuestionClosed} />
+            <QuestionCards onAccess={() => onOpenStudio('access')} questions={stream!.questions || []} onDone={(qid) => onQuestionAnswered?.(qid)} onClosed={onQuestionClosed} />
           )}
-          {session.pendingTurnId && <RunRecovery key={session.pendingTurnId} turnId={session.pendingTurnId} />}
+          {!isStreaming && session.pendingTurnId && <RunRecovery key={session.pendingTurnId} turnId={session.pendingTurnId} />}
           <div ref={messagesEndRef} />
         </div>
       </div>

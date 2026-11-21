@@ -1,0 +1,21 @@
+/* Easel's paper, ink and mist palette across the studio. */
+:root {
+  --studio-paper: #faf9f6;
+  --studio-cover: #f1eee6;
+  --studio-rail: #f3f3f0;
+  --studio-ink: #20283a;
+  --studio-muted: #5c6472;
+  --studio-rule: #dcdedb;
+  --studio-blue: #354c9e;
+  --studio-display: 'Noto Serif SC', 'STZhongsong', 'Songti SC', 'SimSun', serif;
+  --studio-width: 1180px;
+}
+:root[data-theme='dark'] {
+  --studio-paper: #191e27;
+  --studio-cover: #252d3c;
+  --studio-rail: #151a23;
+  --studio-ink: #eef0f5;
+  --studio-muted: #aeb9ca;
+  --studio-rule: #3b4351;
+  --studio-blue: #b5c6ff;
+}

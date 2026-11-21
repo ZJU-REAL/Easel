@@ -13,8 +13,6 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
   const [settings, setSettings] = useState<HarnessSettingsResponse | null>(null);
   const [runtime, setRuntime] = useState('api');
   const [model, setModel] = useState('');
-  const [sandbox, setSandbox] = useState('workspace-write');
-  const [autoApprove, setAutoApprove] = useState(false);
   const [effort, setEffort] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -35,8 +33,6 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
       setSettings(value);
       setRuntime(value.runtime);
       setModel(value.models[value.runtime] || '');
-      setSandbox(value.sandbox);
-      setAutoApprove(value.codex_auto_approve ?? false);
       setEffort(value.codex_effort || '');
       onChange(value.runtime);
       onSelect(value.runtime);
@@ -48,7 +44,7 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
     return () => { alive = false; modelRequest.current += 1; };
   }, [onChange, onSelect, refresh]);
 
-  // A detected local CLI opens a preview here; saving remains the only mutation.
+  // A session or a detected local CLI can request a preview without changing the saved engine.
   useEffect(() => {
     if (!previewRequest || previewRequest === handledPreview.current || settingsLoading || !settings || busy) return;
     handledPreview.current = previewRequest;
@@ -93,11 +89,11 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
     setBusy(true);
     setNote('');
     try {
-      const value = await saveHarnessSettings(runtime, model, sandbox, runtime === 'codex' ? autoApprove : undefined,
+      const value = await saveHarnessSettings(runtime, model, undefined, undefined,
         runtime === 'codex' ? effort : undefined);
       setSettings(value);
       onChange(value.runtime);
-      setNote('已保存，请新建对话；旧对话仍保留在原底座，不迁移历史。');
+      setNote('已保存，请新建对话以使用这组设置。');
     } catch (error) {
       setNote(`保存失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -105,22 +101,28 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
     }
   };
 
+  const hasCatalog = ['codex', 'opencode', 'hermes'].includes(runtime);
+  const native = runtime !== 'api' && runtime !== 'openclaw';
+  const changed = settings && (runtime !== settings.runtime || model !== (settings.models[runtime] || '')
+    || (runtime === 'codex' && effort !== (settings.codex_effort || '')));
+
+  const modelInput = (
+    <input id="harness-model" className="mock" value={model} disabled={busy || settings?.locked} maxLength={240}
+      onChange={event => { setModel(event.target.value); setEffort(''); }}
+      placeholder={runtime === 'codex' ? '留空使用 Codex 原生配置'
+        : runtime === 'hermes' ? '留空使用 Hermes 原生配置' : 'provider/model；留空使用原生配置'} />
+  );
+  const effortOptions = nativeModels.find(item => model ? item.id === model : item.default)?.efforts || [];
+
   return (
     <section className="st-panel active harness-settings" aria-label="Agent 底座设置">
-      <div className="panel-top">
-        <strong>Agent 底座</strong>
-        <span className="desc">选择仅聊天，或使用 Agent 执行工具</span>
-        <span className="spacer" />
-        <button className="btn btn-sm" disabled={!settings || settingsLoading || busy || settings.locked || !selected?.installed}
-          onClick={() => void save()}>{busy ? '保存中…' : '保存底座'}</button>
-        <button className="btn btn-sm" disabled={settingsLoading || busy}
-          onClick={() => setRefresh((previous) => previous + 1)}>{settingsLoading ? '读取中…' : '重新读取'}</button>
-      </div>
-      <div className="settings-field">
-        <span className="settings-field-label">执行引擎</span>
-        <div className="settings-field-body">
-          <div className="settings-engine-control">
-            <SettingsSelect label="执行引擎" value={runtime} disabled={!settings || settingsLoading || busy || settings.locked}
+      <div className="engine-summary">
+        <div className="engine-identity">
+          <span className="engine-symbol" aria-hidden="true"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 6.5 6 5.5-6 5.5M13 17.5h6.5" /></svg></span>
+          <div className="engine-choice"><div className="form-caption">执行引擎
+            {settings && <span className={'engine-state' + (changed ? ' pending' : '')}>{changed ? '待应用' : '已应用'}</span>}
+          </div>
+          <SettingsSelect label="执行引擎" value={runtime} disabled={!settings || settingsLoading || busy || settings.locked}
               options={(settings?.agents || [{ id: 'api', label: '仅聊天模式', installed: true }])
                 .map((agent) => ({
                 value: agent.id,
@@ -136,7 +138,22 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
                 setNote('');
                 onSelect(value);
               }} />
-            <span className="settings-help">
+          </div>
+        </div>
+        <div className="engine-actions">
+          <button className="btn btn-sm engine-apply" disabled={!settings || settingsLoading || busy || settings.locked || !selected?.installed}
+            onClick={() => void save()}>{busy ? '保存中…' : '应用设置'}</button>
+          <button className="btn btn-sm engine-reload" disabled={settingsLoading || busy}
+            onClick={() => setRefresh(previous => previous + 1)}>{settingsLoading ? '读取中…' : '重新读取'}</button>
+        </div>
+      </div>
+      {note && <div className={'save-note' + (note.includes('失败') ? ' err' : '')} role="status">{note}</div>}
+      {settings?.locked && <p className="engine-notice">启动环境 EASEL_AGENT_RUNTIME 已固定底座，请修改启动环境后重启。</p>}
+      {settings && runtime !== settings.runtime && <p className="engine-notice">当前为配置预览。应用后，新对话将使用所选引擎。</p>}
+      {selected && !selected.installed && <div className="engine-notice" role="status">未检测到 {selected.label}。原有配置未删除。请确认 CLI 已安装在服务所用账户，更新 PATH 后重启画板。
+        {selected.install_hint && <code>{selected.install_hint}</code>}</div>}
+      {!native && <div className="engine-api-note">{runtime === 'api' ? '模型 API 直连，无需安装 Agent。' : 'OpenClaw 的模型、API 地址和 Key 在下方配置。'}
+        {runtime === 'api' && <span className="settings-help">
               <button type="button" className="settings-help-trigger" aria-label="仅聊天模式说明"
                 aria-describedby="chat-only-help">ⓘ</button>
               <span id="chat-only-help" className="settings-help-tooltip" role="tooltip">
@@ -144,105 +161,49 @@ export default function HarnessSettings({ onChange, onSelect, previewRequest, on
                 不能操作本机文件、运行命令、使用浏览器或执行技能。请在下方配置模型、API 地址和 Key；
                 需要工具时可切换到 OpenClaw、OpenCode、Codex、Hermes 或其它 Agent。切换后请新建对话，旧历史保留。
               </span>
-            </span>
-          </div>
-          <p className="desc">{runtime === 'api' ? '模型 API 直连 · 无需安装 Agent，模型在下方配置'
-            : runtime === 'openclaw' ? 'OpenClaw 的模型、API 地址和 Key 在下方配置，保存后同步到 gateway'
-            : `${selected?.protocol || ''} · 连接由适配器管理，无需另选连接方式`}</p>
-          <p className="desc">安装时可选择 OpenClaw，也可先跳过，进入这里选择已安装的其它引擎。选择引擎可查看对应配置，只有「保存底座」才切换；认证沿用各引擎自身配置。</p>
-          {runtime === 'hermes' && <p className="desc">Hermes 使用独立的 easel profile；请按安装提示创建并配置它。Easel 不复制默认 profile 的配置或凭证。</p>}
-          {selected && !selected.installed && (
-            <p className="desc" role="status">未检测到 {selected.label}。请确认 CLI 已安装在运行 Web 的服务器账户下，并检查启动 PATH；
-              安装或调整路径后重启 Web。原有配置未删除，安装前不能保存为执行引擎。</p>
-          )}
-          {runtime !== settings?.runtime && <p className="desc">当前为配置预览；请先「保存底座」，再保存下方 API 配置。旧对话不迁移。</p>}
-        </div>
-      </div>
-      {runtime !== 'openclaw' && runtime !== 'api' && (
-        <>
-          <div className="settings-field">
-            <label className="settings-field-label" htmlFor="harness-model">模型覆盖</label>
-            <div className="settings-field-body">
-              {(runtime === 'codex' || runtime === 'opencode' || runtime === 'hermes') && (
-                <div className="settings-native-models">
-                  <SettingsSelect label="原生模型" value={model} disabled={busy || settings?.locked}
+            </span>}</div>}
+      {native && <section className="engine-form">
+        <h3>生成参数</h3>
+        <div className="engine-form-grid">
+          <div className="engine-field">
+            <span className="form-caption">模型</span>
+            {hasCatalog ? <div className="engine-model-row">
+              <SettingsSelect label="原生模型" value={model} disabled={busy || settings?.locked}
                     options={[
-                      { value: '', label: '使用原生默认模型' },
+                      { value: '', label: '引擎默认模型' },
                       ...nativeModels.map((item) => ({ value: item.id,
                         label: `${item.label}${item.default ? '（原生默认）' : ''}` })),
                       ...(model && !nativeModels.some((item) => item.id === model)
-                        ? [{ value: model, label: `${model}（当前 / 自定义）` }] : []),
+                        ? [{ value: model, label: model }] : []),
                     ]} onChange={(value) => { setModel(value); setEffort(''); }} />
                   <button className="btn btn-sm" disabled={modelLoading || busy || !selected?.installed}
                     onClick={() => void pullModels()}>{modelLoading ? '读取中…' : '拉取模型'}</button>
-                </div>
-              )}
-              <input id="harness-model" className="mock" value={model} disabled={busy || settings?.locked} maxLength={240}
-              onChange={(event) => { setModel(event.target.value); setEffort(''); }}
-              placeholder={runtime === 'codex' ? '留空使用 Codex 原生配置'
-                : runtime === 'hermes' ? '留空使用 Hermes 原生配置' : 'provider/model；留空使用原生配置'} />
-              <p className="desc">可从原生 CLI 列表选择，也可手动填写；留空沿用原生默认模型，不修改其它底座的供应商配置。
-                模型是否可用仍取决于当前账号、供应商和原生 CLI 支持。</p>
-              {modelNote && <p className="desc" role="status">{modelNote}</p>}
-            </div>
+            </div> : <label className="manual-model">模型标识{modelInput}</label>}
           </div>
-          {runtime === 'codex' && (
-            <>
-            <div className="settings-field">
-              <span className="settings-field-label">推理强度</span>
-              <div className="settings-field-body">
-                <SettingsSelect label="Codex 推理强度" value={effort} disabled={busy || settings?.locked}
+          {runtime === 'codex' && <div className="engine-field">
+            <span className="form-caption">推理强度</span>
+            <SettingsSelect label="Codex 推理强度" value={effort} disabled={busy || settings?.locked}
                   options={[
-                    { value: '', label: '使用原生默认强度' },
-                    ...((nativeModels.find(item => model ? item.id === model : item.default)?.efforts || [])
-                      .map(value => ({ value, label: value }))),
-                    ...(effort && !(nativeModels.find(item => model ? item.id === model : item.default)?.efforts || []).includes(effort)
-                      ? [{ value: effort, label: `${effort}（已保存，请拉取模型核对）` }] : []),
+                    { value: '', label: '引擎默认强度' },
+                    ...effortOptions.map(value => ({ value, label: value })),
+                    ...(effort && !effortOptions.includes(effort)
+                      ? [{ value: effort, label: effort }] : []),
                   ]} onChange={setEffort} />
-                <p className="desc">拉取模型后显示该模型支持的强度；更换模型时恢复默认，避免沿用不兼容的选项。</p>
-              </div>
-            </div>
-            <CodexConnection model={model} effort={effort} disabled={!selected?.installed || settingsLoading} />
-            <div className="settings-field">
-              <span className="settings-field-label">Codex 沙箱</span>
-              <div className="settings-field-body">
-                <SettingsSelect label="Codex 沙箱" value={sandbox} disabled={busy || settings?.locked}
-                  options={[
-                    { value: 'workspace-write', label: '项目工作区写入' },
-                    { value: 'read-only', label: '只读' },
-                  ]}
-                  onChange={setSandbox} />
-                <p className="desc">保留所选沙箱边界，不授予系统完全访问权限。</p>
-              </div>
-            </div>
-            <div className="settings-field">
-              <label className="settings-field-label" htmlFor="codex-auto-approve">永久通过授权</label>
-              <div className="settings-field-body">
-                <button id="codex-auto-approve" type="button" role="switch"
-                  aria-checked={autoApprove} aria-label="永久通过授权"
-                  aria-describedby="codex-auto-approve-help" className="settings-permission-switch"
-                  disabled={busy || settingsLoading || !settings || settings.locked}
-                  onClick={() => setAutoApprove((previous) => !previous)}>
-                  <span className="settings-permission-switch__thumb" />
-                </button>
-                <p id="codex-auto-approve-help" className="desc">保存后持续生效，仅影响 Easel 的 Codex：
-                  自动批准普通文件读取、搜索、Git 查看/拉取，以及项目工作区内的文件修改授权。
-                  sudo、删除、系统修改、执行脚本及无法判断安全性的操作仍需确认；不是无限权限，可随时关闭。</p>
-              </div>
-            </div>
-            </>
-          )}
-          <p className="desc">认证由原生 CLI 管理，Easel 不迁移密钥。未自动批准的额外权限需在对话中确认；
-            OpenCode / 通用 ACP 使用其原生权限策略，不是 Codex 沙箱。</p>
-          {!selected?.installed && <p className="desc"><code>{selected?.install_hint}</code></p>}
-          {runtime === 'hermes' && <p className="desc">Easel 固定使用 Hermes 的独立 easel profile；认证仍由 Hermes 管理。请先创建并配置该 profile，再把 Easel 技能同步到它的 HERMES_HOME。</p>}
-          <p className="desc">{runtime === 'codex'
-            ? '登录后可点击「测试连接」确认模型可用，再保存底座并新建对话。'
-            : '“已安装”仅表示找到 CLI，不代表模型已登录；保存后请发送消息验证。'}</p>
-        </>
-      )}
-      {settings?.locked && <p className="desc">启动环境 EASEL_AGENT_RUNTIME 已固定底座，请修改启动环境后重启。</p>}
-      {note && <div className={`save-note${note.includes('失败') ? ' err' : ''}`} role="status">{note}</div>}
+          </div>}
+        </div>
+        {modelNote && <p className="engine-note" role="status">{modelNote}</p>}
+        {hasCatalog && <details className="engine-details" key={runtime}><summary>手动填写模型</summary>
+          <label className="manual-model">模型标识{modelInput}</label>
+          <p>留空使用引擎默认模型。拉取模型后可选择它支持的推理强度。</p>
+        </details>}
+      </section>}
+      {runtime === 'codex' && <CodexConnection model={model} effort={effort} disabled={!selected?.installed || settingsLoading} />}
+      {native && <details className="engine-details engine-info"><summary>引擎与认证说明</summary>
+        <p>{selected?.protocol ? selected.protocol + ' · ' : ''}连接由适配器管理，无需另选连接方式。认证沿用本机 CLI 配置，工具审批在「访问权限」中设置。</p>
+        {runtime === 'codex' && <p>登录后可用「测试连接」确认模型可用。</p>}
+        {runtime !== 'codex' && <p>检测到 CLI 不代表模型已登录。应用后可发送消息验证。</p>}
+        {runtime === 'hermes' && <p>Hermes 使用独立的 easel profile。请先创建并配置该 profile，再将 Easel 技能同步到它的 HERMES_HOME。</p>}
+      </details>}
     </section>
   );
 }

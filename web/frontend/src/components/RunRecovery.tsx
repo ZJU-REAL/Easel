@@ -50,18 +50,18 @@ export default function RunRecovery({ turnId }: { turnId: string }) {
     }
   };
 
-  return <section className="card" style={{ padding: '16px', marginBlock: '12px' }} aria-label="任务恢复" aria-busy={busy}>
-    <p role="status">任务状态：{run ? labels[run.state] : '尚未读取'}</p>
-    <p>这里显示上次保存的状态。接回结果不会重新执行任务。</p>
-    {run?.state === 'running' && <p>核验只检查本地执行锁。远端 Agent 或工具可能仍在运行；无法确认的结果会标记为未知，不会自动重试。</p>}
-    {run?.state === 'queued' && <p>取消排队会撤回尚未开始的请求，包括服务重启后遗留的排队记录。</p>}
-    {run?.state === 'unknown' && <p>请先检查已有结果及外部操作记录，再决定是否发起新任务。</p>}
-    {run?.tracking === 'legacy' && <p>此旧任务只有回放记录，暂不支持状态核验。</p>}
-    {error && <p role="alert">{error}</p>}
-    <button type="button" disabled={busy} onClick={() => void inspect()}>刷新状态</button>
+  return <section className="studio-recovery" aria-label="任务恢复" aria-busy={busy}>
+    <div className="recovery-line"><span aria-hidden="true" className="recovery-dot" />
+      <strong role="status">{run ? labels[run.state] : '正在读取任务记录'}</strong>
+      <button type="button" disabled={busy} onClick={() => void inspect()}>刷新状态</button>
     {run?.tracking === 'persisted' && run.state === 'running' &&
       <button type="button" disabled={busy} onClick={() => void inspect('reconcile')}>核验执行状态</button>}
     {run?.tracking === 'persisted' && run.state === 'queued' &&
       <button type="button" disabled={busy} onClick={() => void inspect('cancel-queued')}>取消排队</button>}
+    </div>
+    {run && <details><summary>任务记录说明</summary><p>{run.tracking === 'legacy' ? '旧任务仅保存了回放记录。' :
+      run.state === 'running' ? '核验本地执行锁后更新状态。远端工具可能仍在运行，请先检查已有结果。' :
+      run.state === 'queued' ? '任务仍在队列中，可以撤回。' : '此处显示上次保存的执行结果。'}</p></details>}
+    {error && <p role="alert">{error}</p>}
   </section>;
 }

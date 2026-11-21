@@ -1,3 +1,4 @@
+import { statusText } from '../lib/statusText';
 import { useMemo, useState } from 'react';
 import type { ChatMessage } from '../lib/store';
 import { renderMarkdown } from '../lib/sanitize';
@@ -70,9 +71,9 @@ export default function MessageBubble({ message, isStreaming, thinking, activity
   // ---- 助手消息 ----
   // 思考 / 活动：流式时用实时值；结束后用消息里持久化的值 —— 一直保留，不隐藏
   const effThinking = isStreaming ? (thinking || '') : (message.thinking || '');
-  const liveActivity = isStreaming ? (activity || '') : '';
-  const liveHint = isStreaming ? (stillWorking || '') : '';   // 防呆「未卡住」提示，附着显示、不顶掉真实状态
-  const doneSteps = !isStreaming ? (message.activity || '') : '';
+  const liveActivity = isStreaming ? statusText(activity || '') : '';
+  const liveHint = isStreaming ? statusText(stillWorking || '') : '';   // 防呆「未卡住」提示，附着显示、不顶掉真实状态
+  const doneSteps = !isStreaming ? statusText(message.activity || '') : '';
 
   const livePanel = (effThinking || liveActivity || liveHint || doneSteps) ? (
     <div className="live-panel">
@@ -86,13 +87,13 @@ export default function MessageBubble({ message, isStreaming, thinking, activity
       ) : null}
       {doneSteps && (
         <details className="thinking-block">
-          <summary>🧠 执行过程（{doneSteps.split('\n').length} 步）</summary>
+          <summary>执行过程（{doneSteps.split('\n').length} 步）</summary>
           <div className="thinking-text">{doneSteps}</div>
         </details>
       )}
       {effThinking && (
         <details className="thinking-block" open={isStreaming && !message.content}>
-          <summary>💭 思考过程</summary>
+          <summary>思考过程</summary>
           <div className="thinking-text">{effThinking}</div>
         </details>
       )}
@@ -123,7 +124,7 @@ export default function MessageBubble({ message, isStreaming, thinking, activity
           {!isStreaming && (rendered.artifacts.length > 0 || rendered.archives.length > 0) && (
             <ArtifactGallery artifacts={rendered.artifacts} archives={rendered.archives} />
           )}
-          {isStreaming && <span className="streaming-cursor" />}
+          {isStreaming && message.content && <span className="streaming-cursor" />}
         </div>
         {actions && !isStreaming && <ActionBar actions={actions} />}
       </div>

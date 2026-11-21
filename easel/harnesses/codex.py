@@ -6,7 +6,7 @@ import re
 
 from easel import __version__
 
-from .base import Descriptor, HarnessError, RunRequest
+from .base import CodexWriterBusy, Descriptor, HarnessError, RunRequest
 from .commands import base_command
 from .permissions import can_auto_approve
 from .rpc import connection
@@ -27,9 +27,27 @@ class CodexAdapter:
                 raise HarnessError(detail["message"]) from error
             raise
 
+    async def _fork_completed_history(self, rpc, options, parent):
+        try:
+            history = await rpc.call("thread/turns/list", {
+                "threadId": parent, "sortDirection": "desc", "itemsView": "notLoaded", "limit": 1})
+            turns = history.get("data") or []
+            if not turns or turns[0].get("status") != "completed" or not turns[0].get("id"):
+                raise CodexWriterBusy("原对话正被其他 Codex 窗口使用，最近一轮尚未确认完成。请稍后再发。")
+            result = await rpc.call("thread/fork", {**options, "threadId": parent,
+                                     "lastTurnId": turns[0]["id"], "excludeTurns": True})
+        except CodexWriterBusy:
+            raise
+        except HarnessError as error:
+            raise CodexWriterBusy("原对话被其他 Codex 窗口占用，未能复制历史。请在原窗口继续，或新建画板对话。") from error
+        child = result.get("thread") or {}
+        if child.get("forkedFromId") != parent or not child.get("id") or child["id"] == parent:
+            raise CodexWriterBusy("Codex 未确认分支来源，画板保留了原对话绑定。")
+        return child["id"]
+
     async def _run(self, request: RunRequest, emit, ask, bind):
-        if request.sandbox not in ("read-only", "workspace-write"):
-            raise HarnessError("Codex 只允许只读或工作区写入权限")
+        if request.sandbox not in ("read-only", "workspace-write", "danger-full-access"):
+            raise HarnessError("Codex 访问范围无效")
         if request.codex_effort not in CODEX_EFFORTS:
             raise HarnessError("Codex 推理强度设置无效")
         completion = asyncio.get_running_loop().create_future()
@@ -137,14 +155,20 @@ class CodexAdapter:
                     turn_id and params.get("turnId", turn_id) != turn_id):
                 raise HarnessError("不属于当前会话的请求")
             if method in ("item/commandExecution/requestApproval", "item/fileChange/requestApproval"):
+                if request.codex_never_ask:
+                    return {"decision": "decline"}
                 if can_auto_approve(method, params, request):
                     emit("activity", "Codex：已自动通过普通操作授权")
                     return {"decision": "accept"}
                 detail = params.get("command") or params.get("reason") or params.get("itemId", "")
+                detail = safe_detail(detail)
+                if len(detail) > 65536:
+                    detail = detail[:65536] + "\n（内容过长，已截断）"
                 answers = await ask([{
                     "questionId": "permission", "header": "执行授权",
-                    "question": f"Codex 请求额外权限（仅本次）：{safe_detail(detail)[:3000]}" + (
-                        "\n此操作不属于可自动批准的普通操作，请确认风险。" if request.codex_auto_approve else ""),
+                    "question": "运行命令需要授权" if method.startswith("item/command") else "修改文件需要授权",
+                    "commandDetail": detail,
+                    "approvalCwd": safe_detail(params.get("cwd") or str(request.cwd)),
                     "options": [{"label": "允许本次"}, {"label": "拒绝"}],
                 }])
                 return {"decision": "accept" if answers.get("permission") == ["允许本次"] else "decline"}
@@ -164,19 +188,30 @@ class CodexAdapter:
                     "clientInfo": {"name": "easel", "version": __version__},
                     "capabilities": {"experimentalApi": True}})
                 await rpc.send({"method": "initialized"})
-            options = {"cwd": str(request.cwd), "approvalPolicy": "on-request",
+            approval = "never" if request.codex_never_ask else "on-request"
+            options = {"cwd": str(request.cwd), "approvalPolicy": approval,
                        "sandbox": request.sandbox,
                        "developerInstructions": harness_instructions(request)}
             if request.model:
                 options["model"] = request.model
+            expected_id = thread_id
             if thread_id and rpc.native_id == thread_id:
                 result = {"thread": {"id": thread_id}}
             elif thread_id:
-                result = await rpc.call("thread/resume", {**options, "threadId": thread_id})
+                try:
+                    result = await rpc.call("thread/resume", {**options, "threadId": thread_id})
+                except CodexWriterBusy:
+                    if request.bind_fork is None:
+                        raise
+                    child = await self._fork_completed_history(rpc, options, thread_id)
+                    request.bind_fork(thread_id, child)
+                    expected_id = child
+                    result = {"thread": {"id": child}}
+                    emit("activity", "原对话在其他 Codex 窗口打开。画板已接续到包含相同历史的分支，后续消息分别保存。")
             else:
                 result = await rpc.call("thread/start", options)
             resumed_id = (result.get("thread") or {}).get("id", "")
-            if request.native_id and resumed_id != request.native_id:
+            if expected_id and resumed_id != expected_id:
                 raise HarnessError("Codex 返回了不同的原生会话 ID，不会替换已有历史")
             thread_id = resumed_id
             if not thread_id:
@@ -186,8 +221,10 @@ class CodexAdapter:
             policy = {"type": "readOnly"} if request.sandbox == "read-only" else {
                 "type": "workspaceWrite", "writableRoots": [str(request.cwd)],
                 "networkAccess": False}
+            if request.sandbox == "danger-full-access":
+                policy = {"type": "dangerFullAccess"}
             params = {"threadId": thread_id, "input": [{"type": "text", "text": request.prompt}],
-                      "approvalPolicy": "on-request", "sandboxPolicy": policy}
+                      "approvalPolicy": approval, "sandboxPolicy": policy}
             params["input"].extend({"type": "localImage", "path": path} for path in request.images)
             if request.codex_effort:
                 params["effort"] = request.codex_effort

@@ -221,36 +221,30 @@ test('changing harness is local until save and retains its model override', asyn
   assert.equal(nodes(tree, 'input')[0].props.value, 'codex-model');
   assert.deepEqual(view.changes, ['openclaw']);
   assert.equal(view.saves.length, 0);
-  nodes(tree, 'settings-select').find(node => node.props.label === 'Codex 沙箱').props.onChange('read-only');
+  assert.equal(nodes(tree, 'settings-select').some(node => node.props.label === 'Codex 沙箱'), false);
   nodes(tree, 'input')[0].props.onChange({ target: { value: 'custom-model' } });
   tree = view.render();
   nodes(tree, 'button')[0].props.onClick();
   assert.equal(nodes(view.render(), 'button')[0].props.disabled, true);
   await settle();
-  assert.deepEqual(view.saves, [{ runtime: 'codex', model: 'custom-model', sandbox: 'read-only', codexAutoApprove: false }]);
+  assert.deepEqual(view.saves, [{ runtime: 'codex', model: 'custom-model', sandbox: undefined }]);
   assert.deepEqual(view.changes, ['openclaw', 'codex']);
   assert.match(text(view.render()), /已保存，请新建对话/);
 });
 
-test('Codex permanent approval defaults off, saves explicitly and stays exclusive to Codex', async () => {
+test('saving model settings leaves access preferences untouched for all engines', async () => {
   const view = setup({ runtime: 'codex' });
   view.render();
   await settle();
-  let tree = view.render();
-  const toggle = nodes(tree, 'button').find(node => node.props.role === 'switch');
-  assert.equal(toggle.props['aria-checked'], false);
-  assert.match(text(tree), /sudo、删除、系统修改、执行脚本/);
-  toggle.props.onClick();
-  tree = view.render();
-  assert.equal(nodes(tree, 'button').find(node => node.props.role === 'switch').props['aria-checked'], true);
-  nodes(tree, 'button')[0].props.onClick();
-  await settle();
-  assert.equal(view.saves[0].codexAutoApprove, true);
-  nodes(view.render(), 'settings-select')[0].props.onChange('opencode');
-  assert.equal(nodes(view.render(), 'button').some(node => node.props.role === 'switch'), false);
-  nodes(view.render(), 'button')[0].props.onClick();
-  await settle();
-  assert.equal(view.saves[1].codexAutoApprove, undefined);
+  for (const runtime of ['codex', 'opencode']) {
+    nodes(view.render(), 'settings-select')[0].props.onChange(runtime);
+    const tree = view.render();
+    assert.equal(nodes(tree, 'button').some(node => node.props.role === 'switch'), false);
+    nodes(tree, 'button')[0].props.onClick();
+    await settle();
+    assert.equal(view.saves.at(-1).sandbox, undefined);
+    assert.equal(view.saves.at(-1).codexAutoApprove, undefined);
+  }
 });
 
 test('environment-locked harness cannot be changed or saved', async () => {
