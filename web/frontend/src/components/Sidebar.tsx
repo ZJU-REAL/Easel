@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ChatSession } from '../lib/store';
 import type { ComponentType } from 'react';
 import {
@@ -27,7 +27,6 @@ interface SidebarProps {
   onOpenSettings: () => void;
 }
 
-// 主导航（精简）；热点雷达/选题库/内容日历/发布中心 收进「工作台」，不占侧栏
 const NAV: { page: Page; Icon: ComponentType<{ size?: number }>; label: string }[] = [
   { page: 'dashboard', Icon: IconDashboard, label: '工作台' },
   { page: 'chat', Icon: IconChat, label: '对话' },
@@ -54,6 +53,13 @@ export default function Sidebar({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  function navigate(action: () => void) {
+    setMenuOpen(false);
+    action();
+  }
 
   const startRename = (s: ChatSession) => { setRenamingId(s.id); setRenameValue(s.title); };
   const commitRename = () => {
@@ -87,9 +93,9 @@ export default function Sidebar({
       <div
         key={s.id}
         className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
-        onClick={() => onSessionSelect(s.id)}
+        onClick={() => navigate(() => onSessionSelect(s.id))}
       >
-        <span className="session-item-title">{s.title}</span>
+        <span className="session-item-title">{s.title === 'New Chat' && s.messages.length === 0 ? '新对话' : s.title}</span>
         <div className="session-actions">
           <button className="session-act" title="重命名"
             onClick={(e) => { e.stopPropagation(); startRename(s); }}><IconEdit size={14} /></button>
@@ -105,58 +111,70 @@ export default function Sidebar({
   };
 
   return (
-    <div className="sidebar">
+    <div className={menuOpen ? 'sidebar is-open' : 'sidebar'} onKeyDown={event => {
+      if (event.key === 'Escape' && menuOpen) { setMenuOpen(false); menuButton.current?.focus(); }
+    }}>
       <div className="sidebar-header">
         <div className="sidebar-logo">
           <img className="sidebar-logo-icon" src="./static/easel-icon-transparent.png" alt="" />
           <h1>Easel</h1>
           <ThemeToggle />
+          <button ref={menuButton} className="mobile-menu" aria-label={menuOpen ? '收起导航' : '打开导航'}
+            aria-expanded={menuOpen} aria-controls="studio-navigation" onClick={() => setMenuOpen(open => !open)}>
+            <IconDashboard size={18} /><span>导航</span>
+          </button>
         </div>
       </div>
 
-      <nav className="sidebar-nav">
-        {NAV.map(({ page, Icon, label }) => (
-          <button
-            key={page}
-            className={`nav-item ${currentPage === page ? 'active' : ''}`}
-            onClick={() => onPageChange(page)}
-          >
-            <span className="nav-icon"><Icon size={18} /></span>
-            {label}
-          </button>
-        ))}
-      </nav>
+      <div id="studio-navigation" className="sidebar-body">
+        <nav className="sidebar-nav" aria-label="主导航">
+          <div className="studio-nav-group">
+            <div className="studio-nav-label">工作空间</div>
+            {NAV.map(({ page, Icon, label }) => (
+              <button
+                key={page}
+                className={`nav-item ${currentPage === page ? 'active' : ''}`}
+                aria-current={currentPage === page ? 'page' : undefined}
+                onClick={() => navigate(() => onPageChange(page))}
+              >
+                <span className="nav-icon"><Icon size={18} /></span>
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
 
-      <div className="sidebar-section">
-        <div className="sidebar-section-header">
-          <span className="sidebar-section-title">对话</span>
-          <button className="new-chat-btn" onClick={onNewChat} title="新建对话">
-            <IconNewChat size={13} /> 新对话
+        <div className="sidebar-section">
+          <div className="sidebar-section-header">
+            <span className="sidebar-section-title">对话</span>
+            <button className="new-chat-btn" onClick={() => navigate(onNewChat)} title="新建对话">
+              <IconNewChat size={13} /> 新对话
+            </button>
+          </div>
+          {active.map((s) => renderItem(s, false))}
+
+          {archived.length > 0 && (
+            <>
+              <div className="archived-header" onClick={() => setShowArchived((v) => !v)}>
+                <span className={`archived-chevron ${showArchived ? 'open' : ''}`}><IconChevron size={12} /></span>
+                已归档 · {archived.length}
+              </div>
+              {showArchived && archived.map((s) => renderItem(s, true))}
+            </>
+          )}
+        </div>
+
+        <div className="sidebar-status">
+          <span className={`status-dot ${gatewayStatus === 'connected' ? '' : 'offline'}`} />
+          <span className="sidebar-status-text">{gatewayStatus === 'connected'
+            ? (apiDirect ? '文字对话' : '创作助手')
+            : gatewayStatus === 'disconnected'
+              ? '请检查设置'
+              : '加载中…'}</span>
+          <button className="settings-gear" onClick={() => navigate(onOpenSettings)} title="设置（模型 · 环境 · 更多）">
+            <IconGear size={13} /> 设置
           </button>
         </div>
-        {active.map((s) => renderItem(s, false))}
-
-        {archived.length > 0 && (
-          <>
-            <div className="archived-header" onClick={() => setShowArchived((v) => !v)}>
-              <span className={`archived-chevron ${showArchived ? 'open' : ''}`}><IconChevron size={12} /></span>
-              已归档 · {archived.length}
-            </div>
-            {showArchived && archived.map((s) => renderItem(s, true))}
-          </>
-        )}
-      </div>
-
-      <div className="sidebar-status">
-        <span className={`status-dot ${gatewayStatus === 'connected' ? '' : 'offline'}`} />
-        <span className="sidebar-status-text">{gatewayStatus === 'connected'
-          ? (apiDirect ? '文字对话' : '创作助手')
-          : gatewayStatus === 'disconnected'
-            ? '请检查设置'
-            : '加载中…'}</span>
-        <button className="settings-gear" onClick={onOpenSettings} title="设置（模型 · 环境 · 更多）">
-          <IconGear size={13} /> 设置
-        </button>
       </div>
     </div>
   );

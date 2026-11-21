@@ -47,6 +47,10 @@ function onboardingSeen(): boolean {
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const [calendarDate, setCalendarDate] = useState('');
+  useEffect(() => {
+    if (currentPage !== 'calendar') setCalendarDate('');
+  }, [currentPage]);
   const [personas, setPersonas] = useState<PersonaItem[]>([]);
   const [personasLoaded, setPersonasLoaded] = useState(false);
   const personaRequestId = useRef(0);
@@ -740,10 +744,12 @@ export default function App() {
       case 'dashboard':
         return (
           <DashboardPage
+            onNewChat={handleNewChat}
             persona={selectedPersona}
-            gatewayStatus={gatewayStatus}
-            apiDirect={apiDirect}
-            agentRuntime={agentRuntime}
+            session={activeSession && !activeSession.archived && (activeSession.messages.length || activeSession.pendingTurnId)
+              ? activeSession : sessions.find(s => !s.archived && (s.messages.length || s.pendingTurnId))}
+            onResume={handleSessionSelect}
+            onOpenDate={date => { setCalendarDate(date); setCurrentPage('calendar'); }}
             onNavigate={setCurrentPage}
             onUseTopic={handleUseTopic}
           />
@@ -786,7 +792,7 @@ export default function App() {
       case 'ideas':
         return <IdeasPage onUseTopic={handleUseTopic} />;
       case 'calendar':
-        return <CalendarPage />;
+        return <CalendarPage initialDate={calendarDate} />;
       case 'publish':
         return <PublishPage persona={selectedPersona} />;
       case 'breakdown':
