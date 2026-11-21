@@ -1,3 +1,5 @@
+import '../styles/sections.css';
+import { statusText } from '../lib/statusText';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchAccounts, startLogin, loginStatus, mediaUrl,
@@ -6,7 +8,7 @@ import {
 } from '../lib/api';
 import type { AccountItem, AccountWhoami } from '../lib/api';
 import { getWhoamiCache, setWhoamiCache, verifyStale } from '../lib/whoami';
-import { IconRefresh } from './icons';
+import { IconRefresh, IconCheck } from './icons';
 
 type QRState = {
   platform: string;
@@ -24,7 +26,7 @@ const STATE_LABEL: Record<string, string> = {
   sms_required: '需短信验证',
   verifying: '验证中…',
   window_login: '请在浏览器窗口登录',
-  success: '登录成功 ✅',
+  success: '登录成功',
   expired: '二维码已过期',
   error: '登录出错',
   unknown: '等待中…',
@@ -395,15 +397,14 @@ export default function AccountsPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title">账号登录</h1>
-          <p className="page-subtitle">管理平台账号及登录状态。</p>
+          <p className="page-subtitle">{accounts.length ? accounts.filter(effLoggedIn).length + ' 个已登录 · 共 ' + accounts.length + ' 个平台' : '登录状态保存在本机。'}</p>
         </div>
         <button className="btn btn-sm" onClick={load}><IconRefresh size={14} /> 刷新</button>
       </div>
-      <div className="accounts-notice">按平台通过扫码或浏览器窗口登录，登录状态保存在本地。若登录页面无法显示，请检查网络或代理环境。</div>
 
       {err && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 12 }}>{err}</div>}
       {terminalMsg && (
-        <div className="card" style={{ padding: 13, fontSize: 13, marginTop: 14 }}>{terminalMsg}</div>
+        <div className="card" style={{ padding: 13, fontSize: 13, marginTop: 14 }}>{statusText(terminalMsg)}</div>
       )}
 
       <div className="accounts-grid">
@@ -424,11 +425,9 @@ export default function AccountsPage() {
                   <span className="account-nick">{info.name || '（已登录）'}</span>
                 </div>
               )}
-              {!logged && (
-                <div className="account-card-note">{a.note ? a.note : `后端：${a.name}`}</div>
-              )}
+              {!logged && a.note && <div className="account-card-note">{a.note}</div>}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+              <div className="account-actions">
                 {logged ? (
                   <>
                     <button className="btn btn-sm" style={{ flex: 1 }}
@@ -503,7 +502,7 @@ export default function AccountsPage() {
               <div className="loading" style={{ padding: 40 }}><div className="spinner" />
                 {qr.message || '请在弹出的浏览器窗口中完成登录'}</div>
             ) : qr.state === 'success' ? (
-              <div style={{ fontSize: 48, padding: 40 }}>✅</div>
+              <div className="login-success-mark" aria-hidden="true"><IconCheck size={32} /></div>
             ) : ['error', 'expired'].includes(qr.state) ? (
               <div style={{ fontSize: 13, color: 'var(--red)', padding: 30 }}>
                 {qr.message || '登录失败'}<br />请根据上方具体原因排查；可关闭后重试，日志在 outputs/_login/。
@@ -524,7 +523,7 @@ export default function AccountsPage() {
             <h3 style={{ margin: '0 0 4px' }}>配置 {cred.name}</h3>
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
               公众号用官方接口发布，需填开发者凭证（公众平台 → 设置与开发 → 开发接口管理）。<br />
-              ⚠️ 需把本服务器出口 IP 加入公众号「IP 白名单」，否则报 40164。文章发到<b>草稿箱</b>，群发请到 mp 后台确认。
+              需把本服务器出口 IP 加入公众号「IP 白名单」，否则报 40164。文章发到<b>草稿箱</b>，群发请到 mp 后台确认。
             </div>
             {credMsg && <div style={{ fontSize: 12.5, color: 'var(--green)', marginBottom: 10 }}>{credMsg}</div>}
             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>AppID</label>

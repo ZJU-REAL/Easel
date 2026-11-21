@@ -260,10 +260,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     </button>
 
     <nav class="nav">
-      <div class="nav-item active" data-page="chat"><span class="nav-icon">&#x1F4AC;</span>Chat</div>
-      <div class="nav-item" data-page="skill"><span class="nav-icon">&#x26A1;</span>Skills</div>
-      <div class="nav-item" data-page="outputs"><span class="nav-icon">&#x1F4E6;</span>Outputs</div>
-      <div class="nav-item" data-page="profile"><span class="nav-icon">&#x1F464;</span>Profile</div>
+      <div class="nav-item active" data-page="chat"><span class="nav-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z"/></svg></span>Chat</div>
+      <div class="nav-item" data-page="skill"><span class="nav-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z"/></svg></span>Skills</div>
+      <div class="nav-item" data-page="outputs"><span class="nav-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7m-9 4v10"/></svg></span>Outputs</div>
+      <div class="nav-item" data-page="profile"><span class="nav-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a8 8 0 0 1 16 0v2"/></svg></span>Profile</div>
     </nav>
 
     <div class="history-section" id="historySection">
@@ -486,7 +486,7 @@ function renderHistory() {
   el.innerHTML = sessions.map(s => {
     const active = s.id === currentSessionId ? ' active' : '';
     return '<div class="history-item' + active + '" data-sid="' + s.id + '">'
-      + '<span class="hist-icon">&#x1F4AC;</span>'
+      + '<span class="hist-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z"/></svg></span>'
       + '<span class="hist-title">' + escapeHtml(s.title) + '</span>'
       + '<span class="hist-delete" data-del="' + s.id + '" title="Delete">&times;</span>'
       + '</div>';
@@ -815,13 +815,13 @@ async function loadOutputs() {
       if (item.type === 'dir') {
         const filesStr = item.files ? item.files.join(', ') : '';
         return '<div class="output-item" data-outdir="' + escapeHtml(item.name) + '">'
-          + '<span class="out-icon">&#x1F4C1;</span>'
+          + '<span class="out-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 6h7l2 2h9v11H3V6Z"/></svg></span>'
           + '<span class="out-name">' + escapeHtml(item.name) + '/</span>'
           + '<span class="out-meta">' + (item.files ? item.files.length : 0) + ' files</span>'
           + '</div>';
       }
       return '<div class="output-item" data-outfile="' + escapeHtml(item.name) + '">'
-        + '<span class="out-icon">&#x1F4C4;</span>'
+        + '<span class="out-icon"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6V3Zm8 0v5h4"/></svg></span>'
         + '<span class="out-name">' + escapeHtml(item.name) + '</span>'
         + '</div>';
     }).join('');

@@ -292,7 +292,7 @@ for (const status of [404, 403, 500]) {
     });
     render(input);
     await drain();
-    const button = nodes(render(input)).find(node => node.type === 'button' && node.props.children === '🗑 删除画像');
+    const button = nodes(render(input)).find(node => node.type === 'button' && node.props.children === '删除画像');
     await button.props.onClick();
     const alerts = nodes(render(input)).filter(node => node.props?.role === 'alert');
     if (status === 404) {
@@ -323,7 +323,7 @@ for (const outcome of ['cancel', 'success', 'network']) {
     }, outcome !== 'cancel');
     render(input);
     await drain();
-    const button = nodes(render(input)).find(node => node.type === 'button' && node.props.children === '🗑 删除画像');
+    const button = nodes(render(input)).find(node => node.type === 'button' && node.props.children === '删除画像');
     await button.props.onClick();
     assert.equal(requests, outcome === 'cancel' ? 0 : 1);
     assert.equal(deleted.length, outcome === 'success' ? 1 : 0);

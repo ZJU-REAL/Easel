@@ -6,7 +6,7 @@ import {
 import type { AccountItem, OutputFile } from '../lib/api';
 import { loadPublishDraft, savePublishDraft } from '../lib/store';
 import { renderMarkdown } from '../lib/sanitize';
-import { IconPublish, IconCopy, IconCheck, IconCalendar, IconSkills, IconEdit, IconStop, IconTrash } from './icons';
+import { IconPublish, IconVideo, IconCopy, IconCheck, IconCalendar, IconSkills, IconEdit, IconStop, IconTrash } from './icons';
 
 interface PublishPageProps {
   persona: string;
@@ -138,7 +138,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
       `请执行 /skill-content-repurposing：把下面这条内容改编到这些平台：${sel.map((p) => p.label).join('、')}。` +
       `务必参考该 SKILL 的 platform-specs 与改写配方，贴合各平台原生格式、语气与字数。\n` +
       `【硬性要求】输出各平台“可直接复制发布的纯文本正文”，禁止任何 Markdown 语法：不要 **加粗**、# 标题、---、表格、代码块、编号列表符号；` +
-      `小红书可用 emoji 和 #话题标签，按平台习惯自然分行即可。\n` +
+      `小红书可用 #话题标签，按平台习惯自然分行即可。\n` +
       `严格只按下面格式输出、每个平台之间用分隔线，不要任何额外说明：\n` +
       sel.map((p) => `===${p.label}===\n<该平台纯文本正文>`).join('\n') +
       `\n\n原始内容：\n标题：${title}\n正文：${body}`;
@@ -173,7 +173,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
       `你是社媒发布审核助手。针对下面这条待发内容做两项检查，用简洁中文分点输出：\n` +
       `1. **合规风险**：是否含极限词/医疗功效/敏感或违规表述，列出问题词+替换建议；无则写"未见明显风险"。\n` +
       `2. **标题/钩子**：给标题打 1-10 分，并给 1-2 个更好的备选。\n` +
-      `最后一行给「✅可发 / ⚠️建议修改」结论。\n\n待检内容：\n标题：${title}\n正文：${body}`;
+      `最后一行给「可发 / 建议修改」结论。\n\n待检内容：\n标题：${title}\n正文：${body}`;
     const content = `待发布内容：\n标题：${title}\n正文：${body}`;
     const [general, personaResult] = await Promise.all([
       runAgent(prompt),
@@ -249,7 +249,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
           setPub((r) => ({
             ...r,
             [t.key]: res.ok
-              ? { status: 'ok', msg: asDraftThis ? '已存草稿 ✅' : '已发布 ✅' }
+              ? { status: 'ok', msg: asDraftThis ? '已存草稿' : '已发布' }
               : { status: 'fail', msg: res.detail || res.message || '发布失败' },
           }));
         }
@@ -278,7 +278,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
         setPub((r) => ({ ...r, [key]: { status: 'publishing', msg: s.message || '需短信验证' } }));
       } else if (s.state === 'success') {
         clearInterval(iv); pollTimers.current.delete(iv); setPubSms(null);
-        setPub((r) => ({ ...r, [key]: { status: 'ok', msg: '已发布 ✅' } }));
+        setPub((r) => ({ ...r, [key]: { status: 'ok', msg: '已发布' } }));
         resolve();
       } else if (s.state === 'error') {
         clearInterval(iv); pollTimers.current.delete(iv); setPubSms(null);
@@ -332,18 +332,18 @@ export default function PublishPage({ persona }: PublishPageProps) {
     <div className="publish-page">
       <div className="publish-editor">
         <h1 className="page-title"><IconPublish size={21} /> 发布中心</h1>
-        <p className="page-subtitle">一次编辑 → AI 一键改写成各平台版本 → 预检 → 附媒体 → 一键真发布。</p>
+        <p className="page-subtitle">编辑原稿，按平台预览并检查后发布。</p>
 
-        <label className="field-label">标题</label>
-        <input className="field" value={title} placeholder="标题（部分平台需要）"
+        <label className="field-label" htmlFor="publish-title">标题</label>
+        <input id="publish-title" className="field" value={title} placeholder="标题（部分平台需要）"
           onChange={(e) => setTitle(e.target.value)} />
-        <label className="field-label">正文（母版）</label>
-        <textarea className="field" style={{ minHeight: 180 }} value={body}
+        <label className="field-label" htmlFor="publish-body">正文（母版）</label>
+        <textarea id="publish-body" className="field" style={{ minHeight: 180 }} value={body}
           placeholder="写下你的内容，右侧按各平台规则实时预览；点「一键适配」让 AI 分平台改写…"
           onChange={(e) => setBody(e.target.value)} />
 
-        <label className="field-label">话题标签 <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 12 }}>（逗号分隔，如「AI,职场,干货」；小红书会用 # 联想真正绑定话题）</span></label>
-        <input className="field" value={tags} placeholder="AI,职场,干货"
+        <label className="field-label" htmlFor="publish-tags">话题标签 <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 12 }}>（逗号分隔，如「AI,职场,干货」；小红书会用 # 联想真正绑定话题）</span></label>
+        <input id="publish-tags" className="field" value={tags} placeholder="AI,职场,干货"
           onChange={(e) => setTags(e.target.value)} />
 
         <label className="field-label">发布平台</label>
@@ -371,7 +371,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
           {selectedMedia.map((path) => (
             <div key={path} className="media-chip" onClick={() => toggleMedia(path)} title="点击移除">
               {mediaFiles.find((f) => f.path === path)?.kind === 'image'
-                ? <img src={mediaUrl(path)} alt="" /> : <span className="media-vid">🎬</span>}
+                ? <img src={mediaUrl(path)} alt="" /> : <span className="media-vid"><IconVideo size={20} /></span>}
               <span className="media-x">×</span>
             </div>
           ))}
@@ -385,7 +385,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
                 onClick={() => toggleMedia(f.path)} title={f.path}>
                 {f.kind === 'image'
                   ? <img src={mediaUrl(f.path)} alt={f.name} loading="lazy" />
-                  : <span className="media-vid">🎬<br />{f.name.slice(0, 12)}</span>}
+                  : <span className="media-vid"><IconVideo size={20} /><br />{f.name.slice(0, 12)}</span>}
                 {selectedMedia.includes(f.path) && <span className="media-check">✓</span>}
               </div>
             ))}
@@ -426,7 +426,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
         )}
       </div>
 
-      <div className="publish-previews">
+      <div className="publish-previews"><h2 className="preview-heading">平台预览</h2>
         {platforms.length === 0 && <div className="dash-empty">选择至少一个平台查看预览</div>}
         {PLATFORMS.filter((p) => platforms.includes(p.key)).map((p) => {
           const text = effective(p.key);
@@ -460,7 +460,7 @@ export default function PublishPage({ persona }: PublishPageProps) {
               {ps && (
                 <div className={`pv-pubstate ${ps.status}`}>
                   {ps.status === 'publishing' && <span className="live-pulse" />}
-                  {ps.status === 'ok' ? '✅ ' : ps.status === 'fail' ? '⚠️ ' : ''}{ps.msg}
+                  {ps.msg}
                 </div>
               )}
               <div className="pv-foot">

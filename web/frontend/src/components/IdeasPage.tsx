@@ -53,7 +53,7 @@ export default function IdeasPage({ onUseTopic }: IdeasPageProps) {
       <div className="page-head">
         <div>
           <h1 className="page-title"><IconIdea size={21} /> 选题库</h1>
-          <p className="page-subtitle">攒住每一个灵感——从热点收藏或手动新增，推进到「做内容」再进日历。</p>
+          <p className="page-subtitle">按进度整理选题，可从热点收藏或手动添加。</p>
         </div>
         <button className="btn btn-sm btn-primary" onClick={openNew}>+ 新建选题</button>
       </div>
@@ -66,7 +66,7 @@ export default function IdeasPage({ onUseTopic }: IdeasPageProps) {
               {col.label}<span className="kanban-count">{byStatus[col.key].length}</span>
             </div>
             <div className="kanban-list">
-              {byStatus[col.key].length === 0 && <div className="kanban-empty">拖点选题进来吧</div>}
+              {byStatus[col.key].length === 0 && <div className="kanban-empty">暂无选题</div>}
               {byStatus[col.key].map((it) => (
                 <div key={it.id} className="card idea-card">
                   <div className="idea-card-actions">

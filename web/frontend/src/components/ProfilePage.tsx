@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ApiError, fetchPersonaFiles, savePersonaFile, deletePersona, fetchAccountAnalytics } from '../lib/api';
 import type { PersonaItem, PersonaFile, AccountAnalytics } from '../lib/api';
 import { renderMarkdown } from '../lib/sanitize';
-import { IconProfile, IconPlus } from './icons';
+import { IconProfile, IconPlus, IconEdit, IconAccounts, IconLayout, IconSkills, IconBookmark, IconFile } from './icons';
 
 // 粉丝量级：把粉丝数映射成人话档位（画像里“粉丝量级”一栏要的是量级而非精确值）
 function fanTier(n: number): string {
@@ -58,13 +58,13 @@ interface ProfilePageProps {
   loadPersonas: () => Promise<PersonaItem[] | null>;
 }
 
-const DIM_META: Record<string, { label: string; icon: string }> = {
-  'identity.md': { label: '身份定位', icon: '🪪' },
-  'style.md': { label: '内容风格', icon: '🎨' },
-  'audience.md': { label: '目标受众', icon: '👥' },
-  'platforms.md': { label: '平台运营', icon: '📱' },
-  'preferences.md': { label: '偏好与红线', icon: '⚖️' },
-  'memory.md': { label: '经验沉淀', icon: '🧠' },
+const DIM_META: Record<string, { label: string; Icon: typeof IconProfile }> = {
+  'identity.md': { label: '身份定位', Icon: IconProfile },
+  'style.md': { label: '内容风格', Icon: IconEdit },
+  'audience.md': { label: '目标受众', Icon: IconAccounts },
+  'platforms.md': { label: '平台运营', Icon: IconLayout },
+  'preferences.md': { label: '偏好与红线', Icon: IconSkills },
+  'memory.md': { label: '经验沉淀', Icon: IconBookmark },
 };
 
 export default function ProfilePage(props: ProfilePageProps) {
@@ -115,9 +115,9 @@ export default function ProfilePage(props: ProfilePageProps) {
       <div className="profile-head">
         <div>
           <h1 className="page-title">用户画像</h1>
-          <p className="page-subtitle">管理你的定位、风格与受众，为每一种创作找到合适的身份。</p>
+          <p className="page-subtitle">管理创作身份、受众和内容风格。</p>
         </div>
-        <button className="btn btn-primary" onClick={props.onNewProfile}><IconPlus size={15} /> 新建画像</button>
+        {(personas.length > 0 || !!error) && <button className="btn btn-primary" onClick={props.onNewProfile}><IconPlus size={15} /> 新建画像</button>}
       </div>
       <div className="profile-mode-note">
         <IconProfile size={18} />
@@ -260,15 +260,15 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Omit
       <div className="profile-head">
         <div>
           <h1 className="page-title">{persona}</h1>
-          <p className="page-subtitle">六个维度构成一个完整人设，可随时编辑保存。</p>
+          <p className="page-subtitle">按维度编辑定位、风格与受众。</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className={`btn ${editing ? 'btn-primary' : ''}`} onClick={() => setEditing((v) => !v)}>
-            {editing ? '完成编辑' : '✏️ 编辑资料'}
+            {editing ? '完成编辑' : '编辑资料'}
           </button>
           <button className="btn" style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
             disabled={deleting} onClick={handleDelete}>
-            {deleting ? '删除中…' : '🗑 删除画像'}
+            {deleting ? '删除中…' : '删除画像'}
           </button>
         </div>
       </div>
@@ -279,18 +279,18 @@ function ProfileDetail({ persona, onDeleted, onBack, onUsePersona, inUse }: Omit
         <div className="loading"><div className="spinner" />加载中…</div>
       ) : (
         files.map((f) => {
-          const meta = DIM_META[f.filename] || { label: f.filename, icon: '📄' };
+          const meta = DIM_META[f.filename] || { label: f.filename, Icon: IconFile };
           const dirty = editing && (drafts[f.filename] ?? '') !== f.content;
           return (
             <div key={f.filename} className="profile-dim">
               <div className="profile-dim-head">
-                <div className="profile-dim-title">{meta.icon} {meta.label}</div>
+                <div className="profile-dim-title"><meta.Icon size={15} /> {meta.label}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {f.filename === 'platforms.md' && (
                     <button className="btn btn-sm" disabled={fetchingWx}
                       title="用已登录的公众号后台会话抓取粉丝/内容数据，写入本栏（与数据中心同源）"
                       onClick={() => handleFetchWechat(f.filename)}>
-                      {fetchingWx ? '抓取中…' : '📊 抓取公众号数据'}
+                      {fetchingWx ? '抓取中…' : '抓取公众号数据'}
                     </button>
                   )}
                   {editing && (

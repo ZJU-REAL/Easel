@@ -103,7 +103,7 @@ function TrendsPanel({ onUseTopic }: TrendsPageProps) {
         <div>
           <h1 className="page-title"><IconFire size={22} /> 热点雷达</h1>
           <p className="page-subtitle">
-            汇集平台热搜与自定义数据源，挑选题，一键交给 AI 做成你的内容。
+            从平台热榜收藏选题，或直接开始创作。
             {updated > 0 && <span style={{ color: 'var(--text-tertiary)' }}> · {new Date(updated * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 查询</span>}
           </p>
         </div>
