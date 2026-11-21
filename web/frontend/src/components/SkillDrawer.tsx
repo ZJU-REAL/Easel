@@ -95,7 +95,7 @@ export default function SkillDrawer({ skillName, persona, onClose, onConfigured 
                 {detail?.needsApi && (
                   detail.apiConfigured
                     ? <span className="badge badge-ok">✓ 已配置</span>
-                    : <span className="badge badge-warn">❗ 需配置 API</span>
+                    : <span className="badge badge-warn">需配置 API</span>
                 )}
               </div>
             </div>
@@ -109,7 +109,7 @@ export default function SkillDrawer({ skillName, persona, onClose, onConfigured 
           {/* API 配置 */}
           {detail?.needsApi && detail.apiSpec && (
             <div className="panel">
-              <div className="panel-title">🔑 {detail.apiSpec.label} · API 配置
+              <div className="panel-title">{detail.apiSpec.label} · API 配置
                 <span style={{ fontWeight: 400, color: 'var(--text-secondary)', fontSize: 12 }}>
                   （任选一个服务商填齐即可用）
                 </span>
@@ -191,7 +191,7 @@ export default function SkillDrawer({ skillName, persona, onClose, onConfigured 
 
           {/* 执行 */}
           <div className="panel">
-            <div className="panel-title">▶ 运行</div>
+            <div className="panel-title">运行</div>
             {blocked && (
               <div style={{ fontSize: 13, color: 'var(--amber)', marginBottom: 10 }}>
                 该 SKILL 需要先配置上面的 API 才能运行。
@@ -219,7 +219,7 @@ export default function SkillDrawer({ skillName, persona, onClose, onConfigured 
 
           {/* 描述 */}
           <div className="panel">
-            <div className="panel-title">📖 说明</div>
+            <div className="panel-title">说明</div>
             {detail
               ? <div className="skill-body-md" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
               : !loadErr && <div className="loading"><div className="spinner" />加载中…</div>}

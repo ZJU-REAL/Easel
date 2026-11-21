@@ -41,8 +41,8 @@ export default function PublishingPage({ persona }: { persona: string }) {
       </div>
       <span className="pv-hint">{!automaticAllowed
         ? '管理员已禁用自动发布，当前仅提供人工审核路径。'
-        : manual ? '审核后复制或导出，前往官方页面亲自提交；切换不更改全局自动发布权限。'
-          : '保留原有账号检查、预检、确认及自动提交流程。'}</span>
+        : manual ? '审核后复制或导出，在平台官方页面提交。'
+          : '检查账号和预览，确认后提交至所选平台。'}</span>
     </div>
     <div className="publishing-mode-content">
       {manual ? <ManualPublishPage persona={persona} /> : <AutomatedPublishPage persona={persona} />}

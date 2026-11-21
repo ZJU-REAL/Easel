@@ -46,12 +46,13 @@ export default function BreakdownPage({ persona }: BreakdownPageProps) {
       <div className="page-head">
         <div>
           <h1 className="page-title"><IconFire size={21} /> 爆款拆解</h1>
-          <p className="page-subtitle">贴一条对标/爆款内容，AI 拆出钩子、结构、火的原因，并给你可复制的模板与选题。</p>
+          <p className="page-subtitle">分析文案开头、结构和传播原因，提取可复用的写法。</p>
         </div>
       </div>
 
       <div className="breakdown-body">
-        <textarea className="field" style={{ minHeight: 160 }} value={input}
+        <label className="analysis-label" htmlFor="analysis-source">参考文案</label>
+        <textarea id="analysis-source" className="field" value={input}
           placeholder="把对标账号的爆款文案 / 你收藏的内容粘贴进来…"
           onChange={(e) => setInput(e.target.value)} />
         <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>

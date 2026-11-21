@@ -1,0 +1,158 @@
+@import './studioPalette.css';
+/* Shared page furniture stays quiet around the work and the connected accounts. */
+:is(.gallery-page:not(.library-page),.accounts-page,.profile-page,.skills-page) {
+  background: var(--studio-paper);
+  padding: clamp(20px,3.3vw,54px) clamp(20px,4vw,70px) 60px;
+}
+:is(.gallery-head,.accounts-page .page-head,.profile-head,.skills-page-head) {
+  padding-bottom: 16px; border-bottom: 1px solid var(--studio-rule);
+}
+:is(.gallery-page:not(.library-page),.accounts-page,.profile-page,.skills-page) .page-title {
+  font: 600 clamp(26px,2.6vw,38px)/1.3 var(--studio-display); color: var(--studio-ink);
+}
+:is(.gallery-page:not(.library-page),.accounts-page,.profile-page,.skills-page) .page-subtitle { color: var(--studio-muted); }
+.accounts-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 32px; }
+.accounts-page .account-card {
+  border: 0; border-radius: 0; border-bottom: 1px solid var(--studio-rule); box-shadow: none; background: transparent;
+  padding: 14px 0; gap: 7px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center;
+}
+.account-card-head { grid-column: 1; justify-content: flex-start; gap: 8px; flex-wrap: wrap; }
+.account-card-note, .account-identity { grid-column: 1 / -1; grid-row: 2; min-height: 0; color: var(--studio-muted); }
+.account-actions { grid-column: 2; grid-row: 1; display: flex; gap: 5px; }
+.account-actions .btn { box-shadow: none; width: auto; padding: 5px 9px; white-space: nowrap; font-size: 12px; }
+.accounts-page .account-actions .btn-primary { background: var(--bg-elev); border-color: var(--studio-rule); color: var(--studio-blue); }
+.accounts-page .account-actions .btn-primary:hover { background: var(--accent-soft); }
+@media(max-width: 1080px) { .accounts-grid { grid-template-columns: 1fr; } }
+/* The studio's reference and planning pages share the same text measure and type scale. */
+:is(.skills-page,.gallery-page:not(.library-page),.accounts-page,.profile-page,.page-scroll:not(.dash-page)) {
+  --section-width: 1060px;
+  background: var(--studio-paper);
+  padding: clamp(20px,3vw,38px) clamp(16px,3.8vw,58px) 48px;
+}
+:is(.skills-page,.gallery-page:not(.library-page),.accounts-page,.profile-page,.page-scroll:not(.dash-page),.publish-editor) .page-title {
+  font: 600 clamp(21px,1.8vw,25px)/1.32 var(--studio-display);
+  color: var(--studio-ink); letter-spacing: .01em;
+}
+:is(.skills-page,.gallery-page:not(.library-page),.accounts-page,.profile-page,.page-scroll:not(.dash-page),.publish-editor) .page-subtitle {
+  color: var(--studio-muted); font-size: 12.5px; line-height: 1.6; margin-top: 5px;
+}
+:is(.skills-page-head,.skills-body,.gallery-head,.gallery-grid,.gallery-filters,.accounts-page > .page-head,
+    .accounts-grid,.profile-head,.profile-grid,.profile-mode-note,.page-scroll > .page-head,
+    .trend-grid,.trend-platforms,.kanban,.cal-grid-head,.cal-grid,.cal-legend,.cal-suggest,.breakdown-body) {
+  max-width: var(--section-width);
+}
+.page-scroll > .page-head { padding-bottom: 14px; border-bottom: 1px solid var(--studio-rule); align-items: center; }
+.skills-page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.skill-search { margin: 0; width: min(53%,450px); min-width: 0; gap: 6px; }
+.skill-search .field { min-width: 0; flex: 1; height: 34px; font: inherit; font-size: 13px; }
+.skill-layer-picker {
+  max-width: 42%; height: 34px; padding: 0 7px; font: inherit; font-size: 12px;
+  background: var(--bg-elev); color: var(--studio-ink); border: 1px solid var(--studio-rule); border-radius: 6px;
+}
+.skills-body .section-title { margin: 23px 0 5px; font-size: 13px; letter-spacing: .02em; }
+.skills-body .section-title::after { content: none; }
+.skills-body .skill-grid { grid-template-columns: repeat(auto-fill,minmax(min(242px,100%),1fr)); gap: 0 20px; }
+.skills-body .skill-card {
+  gap: 10px; min-height: 61px; padding: 9px 3px; background: transparent;
+  border: 0; border-bottom: 1px solid var(--studio-rule); border-radius: 0; box-shadow: none;
+}
+.skills-body .skill-card:is(:hover,:focus-visible) { background: var(--accent-soft); transform: none; }
+.skill-card-icon { width: 31px; height: 34px; border-radius: 6px; }
+.skill-card-content { gap: 1px; }
+.skill-card-name { font-size: 13.5px; line-height: 20px; }
+.skill-card-desc { font-size: 12px; color: var(--studio-muted); }
+.skill-card .badge { font-size: 10.5px; }
+.accounts-grid { grid-template-columns: 1fr; margin-top: 6px; }
+.accounts-page .account-card {
+  grid-template-columns: minmax(100px,1.2fr) minmax(68px,.65fr) minmax(0,2.4fr) auto;
+  min-height: 52px; padding: 8px 0; column-gap: 14px;
+}
+.account-card-head { display: contents; }
+.account-card-head > * { grid-row: 1; justify-self: start; }
+.account-card-head > :nth-child(2) { grid-column: 2; }
+.account-card-name { font-size: 13.5px; }
+.account-card-note,.account-identity { grid-column: 3; grid-row: 1; }
+.account-actions { grid-column: 4; }
+.profile-page .profile-mode-note { margin-top: 14px; background: transparent; padding: 10px 12px; }
+.profile-page .profile-empty { align-items: flex-start; justify-content: flex-start; text-align: left; height: auto; min-height: 190px; padding: 22px 0; gap: 7px; }
+.profile-empty .profile-avatar { width: 34px; height: 34px; }
+.profile-empty .profile-avatar svg { width: 18px; }
+.profile-empty h3 { font-size: 16px; }
+.profile-empty p { font-size: 13px; }
+.profile-summary { padding: 16px; }
+.profile-summary-head { margin-bottom: 8px; }
+.profile-summary h2,.profile-dim-title { font-size: 14px; }
+.profile-page .profile-content { font-size: 13px; }
+.subnav .subnav-tabs { overflow-x: auto; min-width: 0; padding: 3px; }
+.subnav .subnav-tab,.subnav .subnav-back { flex: none; font-size: 12px; }
+.trend-grid { grid-template-columns: repeat(auto-fill,minmax(min(275px,100%),1fr)); gap: 16px; }
+.trend-grid .trend-col { box-shadow: none; border-color: var(--studio-rule); border-radius: 7px; }
+.kanban { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.kanban-col {
+  min-height: 132px; background: transparent; border: 0; border-top: 2px solid var(--studio-rule);
+  border-radius: 0; padding: 12px 0;
+}
+.kanban-count { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+.kanban-empty { padding: 10px 4px; font-size: 12px; }
+.kanban-dot { width: 7px; height: 7px; border-radius: 50%; }
+.breakdown-body { margin-top: 18px; }
+.analysis-label,.preview-heading,.proxy-form label { display: block; color: var(--studio-ink); font-size: 13px; font-weight: 600; }
+.analysis-label { margin-bottom: 7px; }
+.breakdown-body textarea { min-height: 152px; width: 100%; font-size: 13px; }
+.cal-legend { margin-top: 15px; gap: 6px 12px; }
+.cal-month { min-width: 6em; font-size: 13px; }
+.cal-grid-head,.cal-grid { grid-template-columns: repeat(7,minmax(0,1fr)); gap: 1px; }
+.cal-grid-head { margin-top: 14px; margin-bottom: 6px; }
+.cal-wd { font-size: 11px; color: var(--studio-muted); }
+.cal-grid { background: var(--studio-rule); border: 1px solid var(--studio-rule); border-radius: 7px; overflow: hidden; }
+.cal-cell {
+  position: relative; min-width: 0; min-height: clamp(66px,9vh,94px); height: auto; padding: 5px;
+  border: 0; border-radius: 0; background: var(--bg-elev); gap: 3px;
+}
+.cal-cell.dim { opacity: 1; background: var(--studio-paper); }
+.cal-cell.dim .cal-daynum { color: var(--studio-muted); }
+.cal-cell:is(:hover,:focus-within) { box-shadow: inset 0 0 0 1px var(--studio-blue); }
+.cal-cell.today { box-shadow: none; background: color-mix(in srgb,var(--accent-soft) 40%,var(--bg-elev)); }
+.cal-cell .cal-daynum {
+  align-self: flex-start; width: 23px; height: 23px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--studio-ink); font: inherit; font-weight: 550; font-size: 12px; cursor: pointer;
+}
+.cal-daynum::after { content: ''; position: absolute; inset: 0; }
+.cal-cell.today .cal-daynum { background: var(--studio-blue); color: var(--studio-paper); }
+.cal-events { pointer-events: none; }
+.cal-events > * { position: relative; z-index: 1; pointer-events: auto; }
+.cal-event { border: none; text-align: start; font-family: inherit; }
+.publish-editor { min-width: 0; padding: 22px clamp(16px,2.4vw,32px) 40px; background: var(--studio-paper); }
+.publish-previews { min-width: 0; padding: 24px clamp(16px,2.4vw,32px) 40px; gap: 10px; background: var(--bg-elev); }
+.preview-heading { margin: 0 0 4px; font-size: 14px; }
+.publish-previews .pv-card { flex: none; box-shadow: none; border-radius: 7px; }
+.publish-editor :is(.field,.field-label),.publish-previews .pv-text { font-size: 13px; }
+.publishing-mode-bar { padding: 7px 16px; background: var(--studio-paper); }
+@media(max-width:900px) {
+  .publish-page { display: block; overflow-y: auto; }
+  .publish-editor,.publish-previews { width: 100%; max-width: none; overflow: visible; padding: 18px 16px 24px; }
+  .skills-page-head { flex-wrap: wrap; }
+  .skill-search { flex: 1 1 290px; }
+}
+@media(max-width:720px) {
+  .subnav { padding: 4px 8px; gap: 4px; }
+  .page-scroll > .page-head { flex-wrap: wrap; align-items: flex-start; }
+  .skills-page-head { display: grid; gap: 10px; }
+  .skill-search { width: 100%; }
+  .accounts-page .account-card { grid-template-columns: minmax(0,1fr) auto; gap: 4px 8px; }
+  .account-card-head { display: flex; grid-column: 1; }
+  .account-actions { grid-column: 2; }
+  .account-card-note,.account-identity { grid-column: 1/-1; grid-row: 2; }
+  .kanban { grid-template-columns: 1fr; gap: 6px; }
+  .kanban-col { min-height: 0; }
+  .cal-legend-filter { flex-wrap: wrap; }
+  .cal-cell { min-height: 56px; padding: 2px; }
+  .cal-events .cal-event { padding: 1px 2px; }
+  .cal-events .cal-src { display: none; }
+}
+@media(max-width:460px) {
+  .calendar-page .cal-legend-filter { flex-basis: 100%; margin-left: 0; }
+  .calendar-page .cal-legend { gap: 7px; font-size: 11px; }
+  .cal-nav { gap: 4px; }
+  .publishing-mode-bar .pv-hint { flex-basis: 100%; }
+}

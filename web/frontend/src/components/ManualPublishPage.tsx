@@ -174,7 +174,7 @@ export default function ManualPublishPage({ persona }: { persona: string }) {
   return <div className="publish-page">
     <div className="publish-editor">
       <h1 className="page-title"><IconPublish size={21} /> 发布中心 · 人工发布</h1>
-      <p className="page-subtitle">AI 排版 → 人工审核 → 复制 / 导出 → 在官方发布页亲自提交。</p>
+      <p className="page-subtitle">检查各平台版本后，复制或导出到官方发布页。</p>
       <div className="panel" style={{ marginBottom: 16, fontSize: 13 }}>
         <strong>最终提交由你完成。</strong> 本页不自动登录、上传或点击发布。官方页面的登录与 Easel 账号页相互独立。
       </div>
@@ -207,7 +207,7 @@ export default function ManualPublishPage({ persona }: { persona: string }) {
       <p className="publish-saved-note">文案自动保存到当前浏览器。审核只针对当前版本；修改标题、正文、标签或素材后，需重新审核。AI 检查仅作参考。</p>
       {checkResult && <div className="panel"><div className="panel-title">AI 辅助检查</div><div className="skill-body-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(checkResult) }} /></div>}
     </div>
-    <div className="publish-previews">
+    <div className="publish-previews"><h2 className="preview-heading">平台预览与审核</h2>
       {!platforms.length && <div className="dash-empty">选择目标平台，在这里预览和审核。</div>}
       {PLATFORMS.filter((p) => platforms.includes(p.key)).map((p) => {
         const text = effective(p.key);

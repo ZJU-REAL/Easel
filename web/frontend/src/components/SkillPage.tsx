@@ -80,10 +80,12 @@ export default function SkillPage({ persona }: SkillPageProps) {
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [layerFilter, setLayerFilter] = useState('');
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
 
   const load = () => {
-    fetchSkills().then(setSkills).catch(() => setError('加载 SKILL 列表失败'));
+    fetchSkills().then(items => { setSkills(items); setError(''); }).catch(() => setError('技能列表加载失败')).finally(() => setLoading(false));
   };
   useEffect(load, []);
 
@@ -104,25 +106,29 @@ export default function SkillPage({ persona }: SkillPageProps) {
   }, [filtered]);
 
   const orderedLayers = [...LAYERS, OTHER].filter((l) => grouped[l.key]?.length);
+  const visibleLayers = orderedLayers.filter(layer => !layerFilter || layer.key === layerFilter);
   const needApiCount = skills.filter((s) => s.needsApi && !s.apiConfigured).length;
 
   return (
     <div className="skills-page">
       <div className="skills-page-head">
-        <h1 className="page-title">技能库</h1>
-        <p className="page-subtitle">
-          共 {skills.length} 个技能，按流水线层分区浏览。点卡片查看说明、就地运行；
-          标 <span className="badge badge-warn" style={{ padding: '1px 7px' }}>需 API</span> 的需先配置密钥
-          {needApiCount > 0 && `（当前 ${needApiCount} 个待配置）`}。
-        </p>
+        <div><h1 className="page-title">技能库</h1>
+          <p className="page-subtitle">{loading ? '正在读取技能…' : skills.length + ' 个技能 · ' + needApiCount + ' 个待配置 API'}</p>
+        </div>
         <div className="skill-search">
           <span className="skill-search-ic"><IconSearch size={16} /></span>
           <input
             className="field"
-            placeholder="搜索技能名或描述…"
+            aria-label="搜索技能" placeholder="搜索技能名或描述…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <select className="skill-layer-picker" value={layerFilter} aria-label="筛选技能分类" onChange={e => setLayerFilter(e.target.value)}>
+            <option value="">全部分类</option>
+            {[...LAYERS, OTHER].filter(layer => skills.some(skill =>
+              (Object.hasOwn(LAYER_META, skill.layer) ? skill.layer : 'other') === layer.key
+            )).map(layer => <option key={layer.key} value={layer.key}>{layer.label}</option>)}
+          </select>
           {query && <button className="btn btn-ghost btn-sm" onClick={() => setQuery('')}>清除</button>}
         </div>
       </div>
@@ -130,14 +136,14 @@ export default function SkillPage({ persona }: SkillPageProps) {
       {error && <div style={{ color: 'var(--red)', maxWidth: 1100, margin: '16px auto' }}>{error}</div>}
 
       <div className="skills-body">
-        {orderedLayers.length === 0 && !error && (
+        {visibleLayers.length === 0 && !error && !loading && (
           <div className="empty-state" style={{ height: 240 }}>
             <div className="empty-icon"><IconSearch size={40} /></div>
-            <p>没有匹配「{query}」的技能</p>
+            <p>{query ? '没有匹配「' + query + '」的技能' : '当前分类暂无技能'}</p>
           </div>
         )}
 
-        {orderedLayers.map((layer) => (
+        {visibleLayers.map((layer) => (
           <section key={layer.key}>
             <div className="section-title">
               <span className="section-ic" style={{ color: layer.color }}><layer.Icon size={15} /></span>
@@ -157,7 +163,7 @@ export default function SkillPage({ persona }: SkillPageProps) {
                     onClick={() => setSelected(s.name)}
                     onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(s.name); } }}
                   >
-                    <div className="skill-card-icon" style={{ color: meta.color }}><Icon size={26} /></div>
+                    <div className="skill-card-icon" style={{ color: meta.color }}><Icon size={19} /></div>
                     <div className="skill-card-content">
                       <div className="skill-card-head">
                         <div className="skill-card-name">{displayName(s.name)}</div>
