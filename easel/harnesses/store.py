@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from .base import HarnessError
+from easel import access
 
 IDS = ("api", "openclaw", "opencode", "codex", "acp", "hermes")
 CODEX_EFFORTS = ("", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
@@ -62,10 +63,20 @@ def settings(outputs: Path, env: dict[str, str]) -> dict:
     auto_approve = data.get("codex_auto_approve", False)
     if not isinstance(auto_approve, bool):
         raise HarnessError("Codex 自动授权设置必须为开关")
+    full = data.get("codex_full_access", False)
+    never_ask = data.get("codex_never_ask", False)
+    if not isinstance(full, bool) or not isinstance(never_ask, bool):
+        raise HarnessError("Codex 访问权限配置无效")
     effort = data.get("codex_effort", "")
     if effort not in CODEX_EFFORTS:
         raise HarnessError("Codex 推理强度设置无效")
-    return {"runtime": runtime, "models": models, "sandbox": sandbox,
+    overrides = data.get("agent_access", {})
+    if not isinstance(overrides, dict) or any(
+            not isinstance(value, dict) or not access.valid(target, value.get("scope"), value.get("approval"))
+            for target, value in overrides.items()):
+        raise HarnessError("执行引擎权限设置无效")
+    return {"runtime": runtime, "models": models, "sandbox": sandbox, "agent_access": overrides,
+            "codex_full_access": full, "codex_never_ask": never_ask,
             "codex_auto_approve": auto_approve, "codex_effort": effort}
 
 
@@ -90,4 +101,16 @@ def bind(sessions: Path, key: str, runtime: str, native_id: str = "") -> None:
         raise HarnessError("此会话属于其他 Agent 底座，请新建对话")
     if current.get("native_id") and current["native_id"] != native_id:
         raise HarnessError("Agent 返回了不同的原生会话 ID，不会替换已有历史")
-    write_json(binding_path(sessions, key), {"runtime": runtime, "native_id": native_id})
+    write_json(binding_path(sessions, key), {**current, "runtime": runtime, "native_id": native_id})
+
+
+def bind_codex_fork(sessions: Path, key: str, parent: str, child: str) -> None:
+    # The caller holds the web session's cross-process lock.
+    current = binding(sessions, key)
+    if (current.get("runtime") != "codex" or current.get("native_id") != parent
+            or not parent or not child or parent == child):
+        raise HarnessError("画板会话绑定已变更，请刷新后继续。")
+    write_json(binding_path(sessions, key), {
+        **current, "native_id": child, "forked_from": parent,
+        "original_native_id": current.get("original_native_id", parent),
+    })

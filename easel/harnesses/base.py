@@ -10,6 +10,10 @@ class HarnessError(Exception):
     pass
 
 
+class CodexWriterBusy(HarnessError):
+    """The native thread could not be resumed before a turn was submitted."""
+
+
 Emit = Callable[[str, str], None]
 Ask = Callable[[list[dict]], Awaitable[dict[str, list[str]]]]
 Bind = Callable[[str], None]
@@ -37,6 +41,10 @@ class RunRequest:
     codex_auto_approve: bool = False
     codex_effort: str = ""
     images: tuple[str, ...] = ()
+    codex_never_ask: bool = False
+    permission_scope: str = "native"
+    permission_approval: str = "ask"
+    bind_fork: Callable[[str, str], None] | None = None
 
 
 class Adapter(Protocol):

@@ -31,7 +31,7 @@ from dataclasses import asdict
 import ipaddress
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -55,9 +55,10 @@ from easel.direct_api import (DirectAPIError, SYSTEM_PROMPT, api_config, api_mod
                               history_path, read_settings, stream_chat)
 from easel.chat_runs import DirectChatRun, durable_call
 from easel.run_store import RunConflict, RunStore, UnsupportedSchema
+from easel import access
 from easel import harnesses
 from easel.harnesses import store as harness_store
-from easel.harnesses.base import HarnessError, RunRequest
+from easel.harnesses.base import CodexWriterBusy, HarnessError, RunRequest
 try:
     from easel.gateway_questions import (
         GatewayClient, GatewayQuestionError, GatewayQuestionClosedError, GatewayUnsupportedError,
@@ -196,7 +197,7 @@ from easel.openclaw_workspace import config_path as _oc_config_path, state_dir a
 OPENCLAW_SESSIONS_DIR = _oc_state_dir() / "agents" / "main" / "sessions"
 
 # 思考档位（每轮 --thinking）。前后端已完整支持展示思考：后端把 thinking_delta 转成 SSE
-# `thinking` 事件，前端 MessageBubble 渲染「💭 思考过程」并在流式结束后持久保留。面板里有没有
+# `thinking` 事件，前端 MessageBubble 渲染「思考过程」并在流式结束后持久保留。面板里有没有
 # 内容取决于网关——支持 extended-thinking 的网关会按档位回传思考流；不支持的（如内网 codewiz，
 # 实测 transcript 里 assistant 只有 text 块、thinking 恒为 0）面板留空，调高档位也不会有内容。
 # 默认 medium：让支持思考的部署直接显示较完整思考；EASEL_THINKING_LEVEL 可覆盖（low 提速 / high 更详尽）。
@@ -586,7 +587,58 @@ async def _lifespan(_app: FastAPI):
     _stop_mp_login_on_shutdown()
 
 
-app = FastAPI(title="Easel", docs_url=None, redoc_url=None, lifespan=_lifespan)
+_STUDIO_ACTIONS = {
+    "/api/env/remotion/probe": "测试渲染一帧", "/api/env/install": "安装环境依赖",
+    "/api/gateway/restart": "重启网关", "/api/login/{platform}/sms": "提交登录验证码",
+    "/api/accounts/{platform}/credentials": "保存平台凭据", "/api/publish/{platform}/sms": "提交发布验证码",
+    "/api/skill": "运行技能", "/api/profile/build": "生成账号画像",
+    "/api/login/{platform}": "开始平台登录", "/api/logout/{platform}": "退出平台账号",
+    "/api/accounts/{platform}/mp-login": "登录公众号", "/api/publish/{platform}": "发布内容",
+}
+_STUDIO_PENDING: dict[str, tuple[float, bytes]] = {}
+
+
+async def _studio_tool_access(request: Request):
+    route = request.scope["route"].path
+    if request.method != "POST" or route not in _STUDIO_ACTIONS:
+        return
+    scope, approval = access.policy(_harness_settings(), "easel")
+    action = _STUDIO_ACTIONS[route]
+    if scope == "read-only":
+        raise HTTPException(403, "画板已停用执行工具，请在访问权限中启用。")
+    if approval == "allow" or (approval == "auto" and route == "/api/env/remotion/probe"):
+        return
+    now = time.monotonic()
+    body = await request.body()
+    fingerprint = hashlib.sha256(request.url.path.encode() + b"?" +
+                                 request.scope["query_string"] + b"\x00" + body).digest()
+    for key, (expiry, _) in list(_STUDIO_PENDING.items()):
+        if expiry <= now:
+            _STUDIO_PENDING.pop(key, None)
+    token = request.headers.get("x-easel-confirm", "")
+    if token:
+        previous = _STUDIO_PENDING.pop(token, None)
+        if previous and previous[0] > now and previous[1] == fingerprint:
+            return
+        raise HTTPException(409, "本次确认已过期，请重新发起操作。")
+    data = {}
+    if body:
+        try:
+            data = json.loads(body)
+        except ValueError:
+            pass
+    target = request.path_params.get("platform", "")
+    if isinstance(data, dict):
+        target = target or data.get("id") or data.get("skill") or data.get("name") or ""
+    if len(_STUDIO_PENDING) >= 256:
+        _STUDIO_PENDING.pop(next(iter(_STUDIO_PENDING)))
+    token = uuid.uuid4().hex
+    _STUDIO_PENDING[token] = (now + 120, fingerprint)
+    raise HTTPException(428, detail={"kind": "studio-approval", "token": token,
+                                    "action": action, "target": str(target)[:120]})
+
+
+app = FastAPI(title="Easel", dependencies=[Depends(_studio_tool_access)], docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 def _local_ports(env_port: str) -> set[str]:
     """本机写守卫放行的端口集合：固定的 7860/7870/5173，加上 `--port`/EASEL_PORT
@@ -669,6 +721,8 @@ async def local_write_guard(request: Request, call_next):
     这一类跨站攻击，不是「网络可达即视为可信」的边界——不要把本服务暴露在
     不受信任的网络（公共 WiFi、无防火墙的公网主机）上。
     """
+    if os.environ.get("EASEL_LOCAL_DESKTOP") == "1" and not _loopback_peer(request):
+        return JSONResponse({"detail": "此工作台仅对本机开放。"}, status_code=403)
     origin = request.headers.get('origin')
     if request.url.path == '/api/clipper' and origin and re.fullmatch(r'chrome-extension://[a-p]{32}', origin):
         headers = {
@@ -1003,10 +1057,9 @@ def _harness_settings() -> dict:
         raise HTTPException(409, str(error)) from error
 
 
-def _chat_backend(session_id: str | None) -> str:
-    selected = "api" if _direct_api_enabled() else _harness_settings()["runtime"]
+def _session_owner(session_id: str | None, selected: str) -> str | None:
     if not session_id:
-        return selected
+        return None
     try:
         record = harness_store.binding(SESSIONS_DIR, session_id)
     except HarnessError as error:
@@ -1020,6 +1073,12 @@ def _chat_backend(session_id: str | None) -> str:
               or _transport_pin_file(session_id).is_file()
               or (selected != "api" and _turn_file(f"web:{session_id}").is_file())):
             owner = "openclaw"
+    return owner
+
+
+def _chat_backend(session_id: str | None) -> str:
+    selected = "api" if _direct_api_enabled() else _harness_settings()["runtime"]
+    owner = _session_owner(session_id, selected)
     if selected == "api" and owner == "openclaw":
         return selected
     if owner and owner != selected:
@@ -1133,6 +1192,34 @@ def _publishing_message(message: str) -> str:
     return message
 
 
+def _apply_openclaw_access(session: str, config: dict) -> None:
+    """Apply the chosen native mode under the same lock as the upcoming gateway turn."""
+    scope, _ = access.policy(config, "openclaw")
+    marker = harness_store.binding_path(SESSIONS_DIR, session).with_suffix(".gateway-access.json")
+    if scope == "native" and not marker.exists():
+        return
+    if scope == "full" and os.environ.get("EASEL_LOCAL_DESKTOP") != "1":
+        raise HarnessError("请在本机工作台使用 OpenClaw 完整访问")
+    mode = {"native": None, "workspace-write": "workspace"}.get(scope, scope)
+    payload = {"key": f"agent:main:{session}", "permissionMode": mode}
+    if mode is not None:
+        harness_store.write_json(marker, {"mode": mode})
+    try:
+        reply = subprocess.run(openclaw_base_cmd() + ["--profile", OPENCLAW_PROFILE, "gateway", "call",
+                               "sessions.patch", "--params", json.dumps(payload), "--json"],
+                               cwd=PROJECT_ROOT, env=_proxy_env(), capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", timeout=15, check=True)
+        ack = json.loads(reply.stdout)
+        if not isinstance(ack, dict) or ack.get("ok") is not True:
+            raise ValueError()
+        if not isinstance(ack.get("entry"), dict) or ack["entry"].get("permissionMode") != mode:
+            raise ValueError()
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raise HarnessError("网关未确认会话权限，任务未启动。请检查 OpenClaw 版本和网关连接。") from exc
+    if mode is None:
+        marker.unlink(missing_ok=True)
+
+
 def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | None = None) -> str:
     if _direct_api_enabled():
         raise HTTPException(409, "API 直连模式支持聊天；此操作需要具备文件和技能执行工具的 Agent 运行时")
@@ -1162,10 +1249,11 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
     # 跨进程锁：同一会话同时刻只跑一个 openclaw，防并发 takeover 崩溃（rc=1）
     xlock = _CrossProcLock(sk)
     if not xlock.acquire(timeout=min(timeout, 300)):
-        return '⏳ 这个会话正在另一个窗口运行，请稍候再试'
+        return '这个会话正在另一个窗口运行，请稍候再试'
     # 同 supervisor：先拿到锁再 heal，避免与正在追加 transcript 的进程并发重写丢行
     _heal_openclaw_session(sk)
     try:
+        _apply_openclaw_access(sk, _harness_settings())
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=timeout + 30, env=_proxy_env())
         out = clean_agent_output(r.stdout or '')
         if out:
@@ -1177,15 +1265,15 @@ def run_agent_sync(msg: str, timeout: int = TIMEOUT_DIRECT, session_id: str | No
         err = clean_agent_output(r.stderr or '')
         if r.returncode != 0:
             detail = _scrub_secrets(err)[-400:].strip() or f'退出码 {r.returncode}'
-            return f'❌ agent 执行失败（rc={r.returncode}）：{detail}'
+            return f'agent 执行失败（rc={r.returncode}）：{detail}'
         # rc=0 但没有任何产出：stderr 里通常有线索（如模型拒答、工具被拦）
         if err:
             return f'（无输出）\n\n{_scrub_secrets(err)[-400:].strip()}'
         return '（无输出）'
     except subprocess.TimeoutExpired:
-        return '⏱️ 请求超时'
+        return '请求超时'
     except Exception as e:
-        return f'❌ {e}'
+        return f'{e}'
     finally:
         xlock.release()
 
@@ -1886,7 +1974,7 @@ class ChatTransportRequest(BaseModel):
 class HarnessSettingsRequest(BaseModel):
     runtime: str
     model: str = Field(default="", max_length=240)
-    sandbox: str = "workspace-write"
+    sandbox: str | None = None
     codex_auto_approve: StrictBool | None = None
     codex_effort: str | None = Field(default=None, max_length=16)
 
@@ -1903,7 +1991,7 @@ async def api_harness_settings():
 async def api_harness_settings_save(req: HarnessSettingsRequest):
     if req.runtime not in harness_store.IDS:
         raise HTTPException(400, "未知 Agent 底座")
-    if req.sandbox not in ("read-only", "workspace-write"):
+    if req.sandbox is not None and req.sandbox not in ("read-only", "workspace-write"):
         raise HTTPException(400, "请选择只读或工作区写入权限")
     if any(ord(character) < 32 for character in req.model):
         raise HTTPException(400, "模型名称不能包含控制字符")
@@ -1924,7 +2012,8 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
             raise HTTPException(409, "运行环境已固定仅聊天模式，请修改 EASEL_CHAT_TRANSPORT 后重启")
         _write_env_direct({"EASEL_CHAT_TRANSPORT": "http"})
     config["runtime"] = req.runtime
-    config["sandbox"] = req.sandbox
+    if req.sandbox is not None:
+        config["sandbox"] = req.sandbox
     if req.runtime == "codex" and req.codex_auto_approve is not None:
         config["codex_auto_approve"] = req.codex_auto_approve
     if req.runtime == "codex" and req.codex_effort is not None:
@@ -1934,6 +2023,54 @@ async def api_harness_settings_save(req: HarnessSettingsRequest):
     from easel.harnesses.rpc import close_sessions
     await close_sessions()
     return await api_harness_settings()
+
+
+class AccessPreferences(BaseModel):
+    target: str | None = None
+    scope: str
+    approval: str
+    previousScope: str | None = None
+    previousApproval: str | None = None
+
+
+@app.get("/api/settings/access")
+async def read_access(request: Request, target: str | None = None, session: str | None = None):
+    config = _harness_settings()
+    target = target or _session_owner(session, config["runtime"]) or config["runtime"]
+    if target not in access.TARGETS:
+        raise HTTPException(400, "未知执行引擎")
+    scope, approval = access.policy(config, target)
+    scopes, approvals = access.choices(target)
+    return {"scope": scope, "approval": approval, "runtime": target, "targets": access.TARGETS,
+            "scopes": scopes, "approvals": approvals,
+            "localFull": os.environ.get("EASEL_LOCAL_DESKTOP") == "1" and _loopback_peer(request)}
+
+
+@app.post("/api/settings/access")
+async def save_access(req: AccessPreferences, request: Request):
+    if not _loopback_peer(request):
+        raise HTTPException(403, "请在本机画板修改权限")
+    config = _harness_settings()
+    target = req.target or config["runtime"]
+    if not access.valid(target, req.scope, req.approval):
+        raise HTTPException(400, "该引擎不支持此权限组合")
+    if req.scope == "full" and os.environ.get("EASEL_LOCAL_DESKTOP") != "1":
+        raise HTTPException(403, "请使用 easel web --local 启动本机工作台，再开启完整访问")
+    scope, approval = access.policy(config, target)
+    if ((req.previousScope is not None and req.previousScope != scope) or
+            (req.previousApproval is not None and req.previousApproval != approval)):
+        raise HTTPException(409, "权限已在另一个窗口更新，请重新选择")
+    config_path = OUTPUTS_DIR / "_harness" / "config.json"
+    saved = harness_store.read_json(config_path)
+    if target == "codex":
+        saved.update(codex_full_access=req.scope == "full", codex_never_ask=req.approval == "allow",
+                     codex_auto_approve=req.approval == "auto")
+        if req.scope != "full":
+            saved["sandbox"] = req.scope
+    else:
+        saved.setdefault("agent_access", {})[target] = {"scope": req.scope, "approval": req.approval}
+    harness_store.write_json(config_path, saved)
+    return await read_access(request, target)
 
 
 class CodexProbeRequest(BaseModel):
@@ -3368,8 +3505,17 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
         claimed = True
         env = {**read_settings(ENV_FILE), **_proxy_env(), "EASEL_AGENT_RUNTIME": runtime,
                "EASEL_ROOT": str(PROJECT_ROOT)}
+        scope = config["sandbox"]
+        if runtime == "codex" and config.get("codex_full_access"):
+            if os.environ.get("EASEL_LOCAL_DESKTOP") != "1":
+                raise HarnessError("请在本机工作台使用完整访问，或切换到项目内读写")
+            scope = "danger-full-access"
+        permission_scope, approval = access.policy(config, runtime)
         request = RunRequest(message, PROJECT_ROOT, env, native_id,
-                             config["models"].get(runtime, ""), config["sandbox"], timeout,
+                             config["models"].get(runtime, ""), scope, timeout,
+                             permission_scope=permission_scope, permission_approval=approval,
+                             codex_never_ask=config.get("codex_never_ask", False),
+                             bind_fork=lambda parent, child: harness_store.bind_codex_fork(SESSIONS_DIR, sk, parent, child),
                              session_key=sk, codex_auto_approve=config.get("codex_auto_approve", False),
                              codex_effort=config.get("codex_effort", ""),
                              images=_codex_images(req) if runtime == "codex" else ())
@@ -3386,6 +3532,10 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
     except asyncio.TimeoutError:
         reason = "timeout"
         error_message = "Agent 执行超时，已终止本轮进程"
+        emit("error", error_message)
+    except CodexWriterBusy as error:
+        dispatched = False
+        error_message = str(error)
         emit("error", error_message)
     except (HarnessError, HTTPException) as error:
         error_message = _scrub_secrets(str(error.detail if isinstance(error, HTTPException) else error))
@@ -3409,7 +3559,7 @@ async def _run_harness_chat(req: ChatRequest, sk: str, message: str, runtime: st
         finally:
             try:
                 if claimed:
-                    snapshot = "".join(full_text) + (f"\n\n❌ {error_message}" if error_message else "")
+                    snapshot = "".join(full_text) + (f"\n\n{error_message}" if error_message else "")
                     _save_turn(pk, "done", snapshot, {
                         "turn_id": turn_id, "runtime": runtime,
                         "clean_end": clean_end, "stop_reason": reason})
@@ -3447,7 +3597,7 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
     task = asyncio.current_task()
     _DIRECT_CHAT_TASKS.add(task)
     if lock.locked():
-        emit("activity", "⏳ 这个会话上一条还在跑，排队等它结束…")
+        emit("activity", "这个会话上一条还在跑，排队等它结束…")
     try:
         await lock.acquire()
         locked = True
@@ -3474,7 +3624,7 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
         claimed = True
         proc._task = asyncio.current_task()
         _RUNNING_CHAT[sk] = proc
-        emit("activity", "🧠 正在通过 API 思考…")
+        emit("activity", "正在通过 API 思考…")
 
         async def consume():
             nonlocal clean_end, reason
@@ -3504,7 +3654,7 @@ async def _run_direct_chat(req: ChatRequest, sk: str, content, system: str, emit
         emit("error", error_message)
     finally:
         proc.finish()
-        snapshot = "".join(full_text) + (f"\n\n❌ {error_message}" if error_message else "")
+        snapshot = "".join(full_text) + (f"\n\n{error_message}" if error_message else "")
         try:
             try:
                 if run is not None:
@@ -3832,7 +3982,7 @@ async def api_chat_stream(req: ChatRequest):
             client_q.put_nowait({"t": kind, "text": text, "id": event_seq, **extra})
 
         # 秒级反馈：发出即亮「已收到」，不等 agent 冷启动（首个 SSE 事件，随流回放必达）
-        to_client("activity", "⏳ 已收到…" if direct else "⏳ 已收到，正在唤醒 agent…")
+        to_client("activity", "已收到…" if direct else "已收到，正在启动创作助手…")
 
         if direct:
             try:
@@ -3881,7 +4031,7 @@ async def api_chat_stream(req: ChatRequest):
                             json=body, headers=headers) as resp:
                         if resp.status_code != 200:
                             raw = (await resp.aread())[:200].decode("utf-8", "replace")
-                            to_client("error", f"❌ 对话失败（HTTP {resp.status_code}）：{raw[:160]}")
+                            to_client("error", f"对话失败（HTTP {resp.status_code}）：{raw[:160]}")
                             return
                         async for line in resp.aiter_lines():
                             if not line.startswith("data:"):
@@ -3895,7 +4045,7 @@ async def api_chat_stream(req: ChatRequest):
                             except ValueError:
                                 continue
                             if isinstance(d.get("error"), dict):   # 200 里夹错误对象：不能当正常流吞掉
-                                to_client("error", f"❌ 网关返回错误：{str(d['error'])[:160]}")
+                                to_client("error", f"网关返回错误：{str(d['error'])[:160]}")
                                 return
                             delta = (d.get("choices") or [{}])[0].get("delta") or {}
                             # 思考流的两个可能来源，先到先得（`sse_thinking` 闩锁，防两路都来时重复）：
@@ -3917,18 +4067,18 @@ async def api_chat_stream(req: ChatRequest):
                                 q.put_nowait({"t": "token", "text": c})
                             if delta.get("tool_calls") and not tool_noted:
                                 tool_noted = True
-                                to_client("activity", "🔧 正在执行操作…")
+                                to_client("activity", "正在执行操作…")
                 run_info["http_completed"] = saw_done
                 # 流正常结束却既没正文也没 [DONE]：多半是端点没真开或中途断了。
                 # 不报错的话这一轮会静默落一条空回答，还会被 /api/chat/last 原样取回。
                 if not got_text and not saw_done:
-                    to_client("error", "❌ 网关流异常结束：没有收到任何内容（检查 "
+                    to_client("error", "网关流异常结束：没有收到任何内容（检查 "
                                        "gateway.http.endpoints.chatCompletions 是否开启，"
                                        "或设 EASEL_CHAT_TRANSPORT=cli 回退）")
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001
-                to_client("error", f"❌ 网关连接失败：{str(e)[:140]}")
+                to_client("error", f"网关连接失败：{str(e)[:140]}")
             finally:
                 # 先把 SENTINEL 排进 q（FIFO 保证它排在本轮所有 token 之后），再标记完成：
                 # 主循环读到它时，前面的 token 必然已全部消费过。
@@ -3956,7 +4106,7 @@ async def api_chat_stream(req: ChatRequest):
         lock = _session_lock(sk)
         xlock = _CrossProcLock(sk)
         if lock.locked():
-            to_client("activity", "⏳ 这个会话上一条还在跑，排队等它结束再开始…")
+            to_client("activity", "这个会话上一条还在跑，排队等它结束再开始…")
         locked = claimed = started = False
         startup_reason = "spawn_failed"
         startup_error = None
@@ -3986,6 +4136,7 @@ async def api_chat_stream(req: ChatRequest):
 
             # 拿到两层锁之后再清洗历史：sanitize 是读-改-写，若与上一轮仍往同一
             # transcript 追加的 openclaw 并发，会丢掉 heal 读到 replace 之间追加的行。
+            await asyncio.to_thread(_apply_openclaw_access, sk, config)
             _heal_openclaw_session(sk)       # 清洗历史里无签名 thinking 块，防回放失效
 
             # 原始事件流由常驻 gateway 写到共享文件（见 SHARED_RAW_STREAM / scripts/gateway.sh），
@@ -4011,8 +4162,11 @@ async def api_chat_stream(req: ChatRequest):
         except asyncio.CancelledError:
             startup_reason = "cancelled"
             raise
+        except HarnessError as error:
+            startup_error = str(error)
+            return
         except Exception:
-            startup_error = "❌ 启动失败，请重试"
+            startup_error = "启动失败，请重试"
             return
         finally:
             if not started:
@@ -4039,7 +4193,7 @@ async def api_chat_stream(req: ChatRequest):
         _RUNNING_CHAT[sk] = proc         # 注册运行中进程（HTTP 模式为伪进程），供 /api/chat/stop
         # 经 gateway 后客户端 stdout 没有 model-fetch 标记（那是独立跑 agent 才有），先立刻
         # 给一个「正在思考」活动指示，随后 token 从共享 raw stream 流进来接管显示。
-        to_client("activity", "🧠 正在思考…")
+        to_client("activity", "正在思考…")
 
         q = asyncio.Queue()
         SENTINEL = object()
@@ -4057,10 +4211,10 @@ async def api_chat_stream(req: ChatRequest):
                     if "model-fetch] start" in c:
                         run_info["fetch_count"] += 1
                         fc = run_info["fetch_count"]
-                        _emit("activity", "🧠 正在思考…" if fc == 1 else f"🔧 调用工具后继续推理（第 {fc} 步）…")
+                        _emit("activity", "正在思考…" if fc == 1 else f"调用工具后继续推理（第 {fc} 步）…")
                     elif "[agent]" in c and "delegat" in c.lower():
                         run_info["delegated"] = True
-                        _emit("activity", "🛠️ 制作中…")
+                        _emit("activity", "制作中…")
                     m = re.search(r"ended with stopReason=(\S+)", c)
                     if m:
                         run_info["stop_reason"] = m.group(1)
@@ -4176,7 +4330,7 @@ async def api_chat_stream(req: ChatRequest):
             # reasoning/thinking 一次都没出现，不回传任何思考增量。思考只存在于常驻 gateway
             # 写的那份共享 raw 流里（它按 gateway 自己的 env 写，与谁触发无关）。所以这条路径
             # 照样 tail 它——_handle 里 text_delta 在 is_http 下直接丢弃，只取 thinking_delta，
-            # 正文不会进两次。不 tail 的话「💭 思考过程」在 HTTP 模式下永远是空的。
+            # 正文不会进两次。不 tail 的话「思考过程」在 HTTP 模式下永远是空的。
             loop.run_in_executor(None, _tail)
         else:
             stdout_fut = loop.run_in_executor(None, _drain_stdout)
@@ -4196,7 +4350,7 @@ async def api_chat_stream(req: ChatRequest):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     timed_out = True
-                    to_client("error", "⏱️ 请求超时")
+                    to_client("error", "请求超时")
                     break
                 try:
                     item = await asyncio.wait_for(q.get(), timeout=min(10, remaining))
@@ -4239,7 +4393,7 @@ async def api_chat_stream(req: ChatRequest):
                     to_client("token", clean)
                 elif rc not in (0, None):
                     err = clean_agent_output("".join(stdout_lines))[:200]
-                    to_client("error", f"❌ 执行失败（退出码 {rc}）{' — ' + err if err else ''}")
+                    to_client("error", f"执行失败（退出码 {rc}）{' — ' + err if err else ''}")
             # 收尾检测：即使已吐了内容，只要不是「正常收尾」就显式告知——
             # 否则被截断（触顶）/被杀（负载）/流被中断，都会被当成「清晰地答完了」，
             # 用户看到的就是「答一半突然停、也不说做完」（本 bug 根因）。
@@ -4248,21 +4402,21 @@ async def api_chat_stream(req: ChatRequest):
             if (emitted or run_info["thinking_chars"]) and sk not in _STOPPED_CHAT:
                 note = None
                 if sr and sr in ("max_tokens", "length", "model_length"):
-                    note = (f"\n\n---\n⚠️ 上面这条**被截断**了（stopReason={sr}，单条回复触顶）。"
+                    note = (f"\n\n---\n上面这条**被截断**了（stopReason={sr}，单条回复触顶）。"
                             f"回我「继续」我接着写完，或让我把任务拆小一点。")
                 elif rc not in (0, None):
-                    note = (f"\n\n---\n⚠️ 生成**被中断**（退出码 {rc}，多半是超时或系统负载过高把进程杀了），"
+                    note = (f"\n\n---\n生成**被中断**（退出码 {rc}，多半是超时或系统负载过高把进程杀了），"
                             f"不是正常收尾。可以让我重试。")
                 elif sr == "tool_use":
-                    note = ("\n\n---\n⚠️ 我刚做完这一步、**正要执行下一步操作时中断了**"
+                    note = ("\n\n---\n我刚做完这一步、**正要执行下一步操作时中断了**"
                             "（本轮以工具调用结尾却没能继续，前端把它当成答完了）。回我「继续」我接着做。")
                 elif run_info.get("last_ev") not in (None, "assistant_message_end"):
-                    note = ("\n\n---\n⚠️ 这条**可能没写完**——模型的输出/思考流被中断、没有正常收尾"
+                    note = ("\n\n---\n这条**可能没写完**——模型的输出/思考流被中断、没有正常收尾"
                             "（多为网络或模型代理把长回复的流掐断了）。回我「继续」，或重试。")
                 elif run_info.get("text_tail", "").rstrip()[-1:] in ("：", ":"):
                     # 正常收尾但正文停在冒号 = 模型"我要做X："后没接着做（多为要接工具/下一步却断了）。
                     # 用户实测「所有莫名停止都停在冒号」——这一条兜住这个模式。
-                    note = ("\n\n---\n⚠️ 我似乎停在了冒号处、没接着把后面的内容/操作做出来。"
+                    note = ("\n\n---\n我似乎停在了冒号处、没接着把后面的内容/操作做出来。"
                             "回我「继续」我补上。")
                 if note:
                     full_text.append(note)
@@ -4380,7 +4534,7 @@ async def api_chat_stream(req: ChatRequest):
             except asyncio.TimeoutError:
                 # 长时间无输出（等模型长回复 / 制作类长任务）→ 发心跳，让用户知道没卡死。
                 # 用独立的 `heartbeat` 事件，不走 `activity`：否则会覆盖掉真实的
-                # 「🧠 正在思考…/🛠️ 制作中…」状态与思考流（防呆消息把思考设计顶掉的根因）。
+                # 「正在思考…/制作中…」状态与思考流（防呆消息把思考设计顶掉的根因）。
                 # 发出后重置 idle_since → 心跳按 30s 一次的节奏，不再每 10s 重复刷屏。
                 if time.monotonic() - idle_since >= 30:
                     idle_since = time.monotonic()
@@ -6256,4 +6410,6 @@ if __name__ == "__main__":
     print()
     # 监听 0.0.0.0（非仅回环）是为了兼容 Docker/远程容器端口转发访问 Easel 的场景；
     # local_write_guard/TrustedHostMiddleware 只挡浏览器发起的跨站请求，见其注释里的局限说明。
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    local = os.environ.get("EASEL_LOCAL_DESKTOP") == "1"
+    uvicorn.run(app, host="127.0.0.1" if local else "0.0.0.0", port=port,
+                proxy_headers=not local, log_level="warning")

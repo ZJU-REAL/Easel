@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from easel import access
 from .acp import ACPAdapter, OpenCodeAdapter
 from .hermes import HermesAdapter
 from .base import Descriptor, HarnessError, RunRequest
@@ -68,14 +69,20 @@ async def console_turn(prompt: str, root: Path, env: dict, native_id="", *,
         answers = {}
         for question in questions:
             print("\n" + question["question"])
+            if question.get("commandDetail"):
+                print(question["commandDetail"])
             for option in question.get("options") or []:
                 print("  " + option["label"])
             answer = await asyncio.to_thread(input, "回答（授权只允许选择列出的选项）：")
             answers[question["questionId"]] = [answer]
         return answers
 
+    scope, approval = access.policy(config, runtime)
     request = RunRequest(prompt, root, {**env, "EASEL_AGENT_RUNTIME": runtime}, native_id,
-                         config["models"].get(runtime, ""), config["sandbox"], timeout,
+                         config["models"].get(runtime, ""),
+                         "danger-full-access" if runtime == "codex" and config.get("codex_full_access") else config["sandbox"], timeout,
+                         permission_scope=scope, permission_approval=approval,
+                         codex_never_ask=config.get("codex_never_ask", False),
                          codex_auto_approve=config["codex_auto_approve"], codex_effort=config["codex_effort"])
 
     def bind(value):

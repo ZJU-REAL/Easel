@@ -6,6 +6,7 @@ import asyncio
 from easel import __version__
 from easel.timeouts import TIMEOUT_HARNESS_CANCEL
 
+from .permissions import inside_workspace
 from .base import Descriptor, HarnessError, RunRequest
 from .workspace import harness_instructions
 from .commands import acp_command, base_command
@@ -39,12 +40,37 @@ class ACPAdapter:
             allowed = [option for option in options if option.get("kind") in ("allow_once", "reject_once")]
             if not allowed:
                 return {"outcome": {"outcome": "cancelled"}}
+            tool = params.get("toolCall") or {}
+            kind = tool.get("kind")
+            locations = tool.get("locations")
+            local_files = isinstance(locations, list) and bool(locations) and all(
+                isinstance(loc, dict) and isinstance(loc.get("path"), str) and loc["path"].strip()
+                and inside_workspace(loc["path"], request.cwd) for loc in locations)
+            local_read = local_files and kind in ("read", "search")
+            in_scope = (request.permission_scope == "native" or local_read
+                        or (request.permission_scope == "workspace-write" and kind == "edit" and local_files))
+            if not in_scope or request.permission_approval == "allow" or (
+                    request.permission_approval == "auto" and local_read):
+                decision = "allow_once" if in_scope else "reject_once"
+                match = next((opt for opt in allowed if opt.get("kind") == decision), None)
+                if match is None:
+                    return {"outcome": {"outcome": "cancelled"}}
+                emit("activity", "工具审批：允许本次" if in_scope else "工具审批：超出所选范围，已拒绝")
+                return {"outcome": {"outcome": "selected", "optionId": match["optionId"]}}
             labels = {f"{index + 1}. {option['name']}": option["optionId"]
                       for index, option in enumerate(allowed)}
-            tool = params.get("toolCall") or {}
+            options = []
+            for label, opt in zip(labels, allowed):
+                option_kind = opt["kind"]
+                display = "允许本次" if option_kind == "allow_once" else "拒绝"
+                if sum(other["kind"] == option_kind for other in allowed) > 1:
+                    display = label
+                options.append({"label": label, "displayLabel": display})
             answers = await ask([{"questionId": "permission", "header": "执行授权",
-                                  "question": f"Agent 请求工具权限（仅本次）：{tool.get('title', '')}",
-                                  "options": [{"label": label} for label in labels]}])
+                                  "question": f"{self.descriptor.label} 请求使用工具",
+                                  "commandDetail": str(tool.get("title") or kind or "工具权限"),
+                                  "approvalCwd": str(request.cwd),
+                                  "options": options}])
             selected = answers.get("permission") or []
             if len(selected) != 1 or selected[0] not in labels:
                 return {"outcome": {"outcome": "cancelled"}}

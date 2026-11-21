@@ -67,10 +67,14 @@ test('existing undeclared models and direct API rows omit the reasoning declarat
 
 test('new custom rows default to reasoning disabled and the OpenAI dialect', () => {
   let added;
+  let expanded;
   const callback = runInNewContext(compile(`(${addProvider.initializer.getText(parsed)});`), {
+    chatRows: [],
+    setExpandedRows: update => { expanded = update({}); },
     setChatRows: update => { added = JSON.parse(JSON.stringify(update([]))); },
   });
   callback();
+  assert.equal(expanded['chat#0'], true);
   assert.equal(added[0].thinking, false);
   assert.equal(added[0].thinkingFormat, 'openai');
 });
