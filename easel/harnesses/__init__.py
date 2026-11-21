@@ -50,6 +50,8 @@ def describe(runtime: str) -> dict:
 
 async def console_turn(prompt: str, root: Path, env: dict, native_id="", *,
                        timeout=1800, interactive=True, on_bind=None) -> tuple[str, str]:
+    from easel.remotion_env import environment
+    env = environment(root, env)
     config = settings(root / "outputs", env)
     runtime = config["runtime"]
     full_text = []

@@ -1,4 +1,7 @@
-import type { ComponentType } from 'react';
+import '../styles/environment.css';
+import { statusText } from '../lib/statusText';
+import { useState, type ComponentType } from 'react';
+import RemotionProject from './RemotionProject';
 import type { EnvTool } from '../lib/api';
 import {
   IconHexagon, IconFilm, IconFileCode, IconAudioWaveform, IconDatabase,
@@ -29,10 +32,10 @@ const ICONS: Record<string, ComponentType<{ size?: number }>> = {
   pw: IconGlobe, cft: IconCompass, pylibs: IconLibrary,
 };
 
-const GROUPS: { id: string; title: string; en: string }[] = [
-  { id: 'rm', title: '视频产线套件', en: 'Remotion' },
-  { id: 'pub', title: '发布链', en: '发布与读回' },
-  { id: 'common', title: '常用库', en: '按需' },
+const GROUPS: { id: string; title: string }[] = [
+  { id: 'rm', title: '视频制作' },
+  { id: 'pub', title: '平台发布' },
+  { id: 'common', title: '基础工具' },
 ];
 
 /** 环境安装页：引擎（install_tool）的真实体检 + 后台安装 + 进度轮询。 */
@@ -40,7 +43,9 @@ export default function EnvBoard({ tools, python, loading, error, jobs, anyRunni
   const total = tools.length;
   const okCount = tools.filter((t) => t.state === 'ok').length;
   const allDone = total > 0 && okCount === total;
-  const pid = python ? python.split('\\').pop() : '';
+  const [showReady, setShowReady] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const refresh = () => { setRevision(v => v + 1); onRefresh(); };
 
   const groupTools = (gid: string) => tools.filter((t) => t.group === gid);
   const installable = (t: EnvTool) => t.state !== 'no_dir';
@@ -68,22 +73,14 @@ export default function EnvBoard({ tools, python, loading, error, jobs, anyRunni
 
   return (
     <section className="st-env">
-      <div className="panel-top">
-        <span className="pill sum" aria-live="polite">{allDone ? '全就绪' : `就绪 ${okCount} / ${total}`}</span>
-        <span className="desc">
-          装完自动校验{pid ? ` · 目标解释器 ${pid}` : ''} · 给其他机器＝整个目录拷过去
-        </span>
-        <span className="spacer" />
-        <button className="btn btn-sm" onClick={onRefresh} disabled={loading || anyRunning}>
-          {loading ? '检测中…' : '重新检测'}
-        </button>
-        <button className="btn btn-sm btn-primary" onClick={runAll} disabled={anyRunning || allDone || !total}>
-          全部安装
-        </button>
+      <div className="studio-intro env-intro"><div><h3>运行环境</h3>
+        <p>{loading ? '正在检测本机工具…' : total ? total + ' 项工具 · ' + okCount + ' 项就绪' : '工具检测'}</p></div>
+        <div className="env-actions"><button className="studio-button" onClick={refresh} disabled={loading || anyRunning}>重新检测</button>
+        <button className="studio-primary" onClick={runAll} disabled={anyRunning || allDone || !total}>安装缺失项</button></div>
       </div>
-      <div className="env-meter" role="progressbar" aria-label="环境就绪进度">
-        <i style={{ transform: `scaleX(${total ? okCount / total : 0})` }} />
-      </div>
+      <RemotionProject revision={revision} onChange={onRefresh} />
+      <div className="env-filters"><label><input type="checkbox" checked={showReady} onChange={e => setShowReady(e.target.checked)} />显示已就绪工具</label>
+        {python && <details><summary>检测解释器</summary><code>{python}</code></details>}</div>
       {error ? <div className="env-error">{error}</div> : null}
       {loading && !tools.length ? (
         <div className="board"><div className="empty"><span className="spin" /> 正在体检环境…<span className="hint">（后台繁忙时可能稍慢，会自动重试）</span></div></div>
@@ -94,77 +91,41 @@ export default function EnvBoard({ tools, python, loading, error, jobs, anyRunni
         if (!list.length) return null;
         const ok = list.filter((t) => t.state === 'ok').length;
         const pending = list.filter((t) => t.state !== 'ok' && installable(t)).length;
+        const visible = list.filter(t => showReady || view(t).state !== 'ok');
+        if (!visible.length) return null;
         return (
           <div className="grp" key={g.id}>
             <div className="grp-hd">
-              <h3>{g.title} <span className="en">{g.en}</span></h3>
+              <h3>{g.title}</h3>
               <span className="grp-stat">{ok} / {list.length} 就绪</span>
               <button className="btn btn-sm" onClick={() => runGroup(g.id)} disabled={anyRunning || pending === 0}>
-                整组安装
+                安装本组缺失项
               </button>
             </div>
-            <div className="grid">
-              {list.map((t) => {
+            <div className="env-list">
+              {visible.map((t) => {
                 const v = view(t);
                 const Icon = ICONS[t.id] || IconPackage;
                 const job = jobs[t.id];
-                return (
-                  <div className="card" key={t.id} data-tool={t.id} data-state={v.state}>
-                    <div className="card-top">
-                      <span className="tile"><Icon size={17} /></span>
-                      <span className={`badge pill ${v.cls}`}><span className="dot" />{v.badge}</span>
-                    </div>
-                    <div className="card-name">{t.name}</div>
-                    <div className="card-desc">{t.desc}</div>
-                    <div className="card-foot">
-                      {v.state === 'busy' ? (
-                        <>
-                          <span className="foot-status busy" title={job?.line || ''}>{job?.line || '启动中…'}</span>
-                          <div className="prog">
-                            <div className="bar"><i /></div>
-                            <span className="spin" />
-                          </div>
-                          <button className="btn btn-sm" disabled>安装中</button>
-                        </>
-                      ) : (
-                        <>
-                          <span
-                            className="foot-status"
-                            title={v.state === 'fail' ? (job?.detail || t.detail || '') : (t.version || '')}
-                          >
-                            {v.state === 'ok'
-                              ? (t.version || '已就绪')
-                              : v.state === 'fail'
-                                ? (job?.detail || t.detail || '查看原因')
-                                : v.state === 'nodir'
-                                  ? '需要指定工程目录'
-                                  : ''}
-                          </span>
-                          {v.state === 'nodir' ? (
-                            <button className="btn btn-sm" disabled title="需要 --dir 工程目录（随独立版内置）">需目录</button>
-                          ) : v.state === 'fail' ? (
-                            <button className="btn btn-sm btn-fill" onClick={() => void onInstall(t.id)} disabled={anyRunning}>重试</button>
-                          ) : (
-                            <button
-                              className={`btn btn-sm ${v.state === 'ok' ? '' : 'btn-fill'}`}
-                              onClick={() => void onInstall(t.id)}
-                              disabled={anyRunning}
-                            >
-                              {v.state === 'ok' ? '重装' : '安装'}
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
+                const detail = job?.detail || t.detail;
+                return <div className="env-row" key={t.id} data-tool={t.id}>
+                  <span className="env-icon"><Icon size={17}/></span>
+                  <div className="env-name"><strong>{t.name}</strong>
+                    <small>{v.state === 'busy' ? statusText(job?.line || '') || '正在校验…' : t.desc}</small>
+                    {(detail || t.location) && <details><summary>检测详情</summary>
+                      {t.location && <code>{t.location}</code>}{detail && <p>{statusText(detail)}</p>}</details>}
                   </div>
-                );
+                  <span className={'env-state ' + v.cls}>{v.state === 'ok' ? t.version || '就绪' : v.badge}</span>
+                  {v.state !== 'ok' && <button className="studio-button" disabled={anyRunning || !installable(t) || v.state === 'busy'}
+                    onClick={() => void onInstall(t.id)}>{v.state === 'fail' ? '修复' : '安装'}</button>}
+                </div>;
               })}
             </div>
           </div>
         );
       })}
 
-      <div className="foot-note">装到哪：本机用户环境（Python 用户级 · PATH 自动接好）；给其他机器＝把独立版整个目录拷过去，双击即开。</div>
+
     </section>
   );
 }

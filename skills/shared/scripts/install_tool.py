@@ -87,10 +87,11 @@ import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 with sync_playwright() as pw:
-    executable = sys.argv[1] if len(sys.argv) > 1 else pw.chromium.executable_path
-    if not Path(executable).is_file():
+    executable = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != '--full' else pw.chromium.executable_path
+    if len(sys.argv) > 1 and not Path(executable).is_file():
         raise RuntimeError('Playwright Chromium executable is missing')
-    browser = pw.chromium.launch(executable_path=executable, headless=True, timeout=15000)
+    options = {'executable_path': executable} if len(sys.argv) > 1 else {}
+    browser = pw.chromium.launch(headless=True, timeout=15000, **options)
     try:
         print(browser.version)
     finally:
@@ -106,8 +107,8 @@ names = set(package.get('dependencies', {})) | set(package.get('devDependencies'
 names.add('@remotion/renderer')
 missing = [name for name in names if not (root / 'node_modules' / name / 'package.json').is_file()]
 if missing:
-    raise RuntimeError('Missing project packages: ' + ', '.join(sorted(missing)))
-print('Remotion project dependencies present')
+    raise RuntimeError('模板缺少 ' + '、'.join(sorted(missing)))
+print(json.loads((root / 'node_modules/remotion/package.json').read_text(encoding='utf-8'))['version'])
 """
 
 
@@ -217,7 +218,7 @@ TOOLS: list[Tool] = [
          _pip_chain("huggingface_hub", timeout=600)
          + [("hf-mirror 下载 large-v3", ["{python}", "-c", WHISPER_MODEL_PY], 7200)],
          big=True),
-    Tool("rmdeps", "Remotion 工程依赖", "rm", "蓝本内置 · npm ci 还原（镜像加速）",
+    Tool("rmdeps", "画板模板依赖", "rm", "独立安装到画板内置的 Remotion 模板",
          ["{python}", "-c",
           RM_DEPS_CHECK_PY,
           "{dir}"],
@@ -390,7 +391,7 @@ def _err_tail(proc) -> str:
     bad = [l for l in lines
            if re.search(r"error|失败|failed|could not|no matching|not found|traceback", l, re.I)]
     pick = bad[-1] if bad else (lines[-1] if lines else "")
-    return pick[:140]
+    return pick[:1200] if "模板缺少" in pick else pick[:240]
 
 
 def _run(argv: list[str], *, cwd: str | None = None, timeout: int = 600):
@@ -422,9 +423,9 @@ def check_tool(tool: Tool, python: str, dir_: str | None = None) -> dict:
             if name == 'cft':
                 ok, detail = _pyfn_check_cft(python)
                 if not ok:
-                    result = _run([python, '-c', BROWSER_CHECK_PY], timeout=30)
-                    ok, detail = result.returncode == 0, (result.stdout or result.stderr).strip()
-                return {"id": tool.id, "state": "ok" if ok else "missing",
+                    result = _run([python, '-c', BROWSER_CHECK_PY, '--full'], timeout=30)
+                    ok, detail = result.returncode == 0, (result.stdout.strip() if result.returncode == 0 else _err_tail(result))
+                return {"id": tool.id, "state": "ok" if ok else ("fail" if "spawn" in detail else "missing"),
                         "version": detail if ok else None, "detail": None if ok else detail}
             ok, detail = _PYFN[name]()
             return {"id": tool.id, "state": "ok" if ok else "missing",
@@ -439,7 +440,9 @@ def check_tool(tool: Tool, python: str, dir_: str | None = None) -> dict:
             first = (proc.stdout or proc.stderr or "").strip().splitlines()
             return {"id": tool.id, "state": "ok",
                     "version": (first[0].strip()[:70] if first else "已装"), "detail": None}
-        return {"id": tool.id, "state": "missing", "version": None, "detail": _err_tail(proc) or None}
+        detail = _err_tail(proc)
+        state = "fail" if "BrowserType.launch" in detail or "spawn UNKNOWN" in detail else "missing"
+        return {"id": tool.id, "state": state, "version": None, "detail": detail or None}
     except FileNotFoundError:
         return {"id": tool.id, "state": "missing", "version": None, "detail": None}
     except Exception as e:  # noqa: BLE001
@@ -452,6 +455,12 @@ def check_all(python: str, dir_: str | None = None, only: list[str] | None = Non
     out = []
     for t in tools:
         r = check_tool(t, python, dir_)
+        if t.needs_dir:
+            r["location"] = dir_ or _default_remotion_dir()
+        elif t.check[0] == "{python}" or t.id == "pw":
+            r["location"] = python
+        elif not t.check[0].startswith("@"):
+            r["location"] = _find_cli(t.check[0], python) or shutil.which(t.check[0])
         r.update({"name": t.name, "group": t.group,
                   "group_name": GROUP_NAMES.get(t.group, t.group),
                   "desc": t.desc, "big": bool(t.big)})
