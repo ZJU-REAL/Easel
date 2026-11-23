@@ -33,7 +33,7 @@ layer: produce
 支持两类服务，脚本按 `base_url` 自动检测（也可 `--mode sync|async` 强制）：
 
 - **OpenAI 兼容（同步）**：`base_url` 不含 apimart。走 `/images/generations`、`/images/edits`、`/images/variations`。
-  示例：`IMG_BASE_URL=https://api.openai.com/v1`，`IMG_MODEL=gpt-image-1`。
+  示例：`IMG_BASE_URL=https://api.openai.com/v1`，`IMG_MODEL=gpt-image-2`。
 - **apimart（异步轮询）**：`base_url` 含 `apimart`。提交任务 → 轮询 `/tasks/<id>` → 下载。
   示例：`IMG_BASE_URL=https://api.apimart.ai/v1`。
 

@@ -166,7 +166,7 @@ export function getDefaultModel(provider: Provider): string {
   if (provider === "gemini-proxy") {
     return process.env.GEMINI_PROXY_IMAGE_MODEL || "gemini-2.5-flash";
   }
-  return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+  return process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
 }
 
 export async function buildPrompt(args: CliArgs): Promise<string> {

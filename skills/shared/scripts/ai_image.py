@@ -83,7 +83,7 @@ MISSING_KEY_HINT = (
     "未配置 IMG_API_KEY，请在 .env 填入你的图像生成 API key"
     "（支持 OpenAI 兼容 / apimart）。示例 .env：\n"
     "  IMG_BASE_URL=https://api.openai.com/v1\n"
-    "  IMG_MODEL=gpt-image-1\n"
+    "  IMG_MODEL=gpt-image-2\n"
     "  IMG_API_KEY=sk-你的key\n"
     "apimart 异步服务示例：\n"
     "  IMG_BASE_URL=https://api.apimart.ai/v1\n"

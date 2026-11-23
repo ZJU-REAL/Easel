@@ -37,7 +37,7 @@ image_generation:
   openai:
     api_key: "sk-..."
     base_url: "https://api.openai.com/v1"
-    image_model: "gpt-image-1"
+    image_model: "gpt-image-2"
 
   # baoyu-image-gen / provider=gemini-proxy
   gemini_proxy:

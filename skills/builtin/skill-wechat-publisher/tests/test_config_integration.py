@@ -330,3 +330,26 @@ def test_bun_load_env_does_not_mask_invalid_skill_root_yaml(tmp_path, yaml_text)
 
     assert result.returncode != 0
     assert "openai" not in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("bun") is None, reason="bun is not installed")
+def test_bun_openai_default_image_model_is_served(tmp_path):
+    """OpenAI retired gpt-image-1 on 2026-10-23; the fallback must be a served model."""
+    skill_dir = Path(__file__).resolve().parents[1]
+    code = textwrap.dedent(
+        """\
+        import { getDefaultModel } from "./scripts/baoyu_image_gen_core.ts";
+        console.log(getDefaultModel("openai"));
+        """
+    )
+
+    result = subprocess.run(
+        ["bun", "--eval", code],
+        cwd=skill_dir,
+        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "gpt-image-2"
