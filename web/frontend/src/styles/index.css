@@ -909,6 +909,22 @@ textarea.field { resize: vertical; min-height: 90px; }
   border-radius: 6px; color: var(--text); font-size: 13px; padding: 4px 8px; outline: none;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+
+/* ============ 旁路会话：血缘徽标 + 派生粒度菜单 ============ */
+.session-derived-badge { color: var(--text-tertiary); flex-shrink: 0; }
+.derive-menu-overlay { position: fixed; inset: 0; z-index: 999; }
+.session-derive-menu {
+  position: fixed; z-index: 1000;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 4px; display: flex; flex-direction: column; min-width: 110px;
+}
+.session-derive-opt {
+  background: none; border: none; text-align: left; cursor: pointer;
+  color: var(--text-secondary); font-size: 12px; padding: 6px 10px; border-radius: 5px;
+  transition: all var(--t-fast); white-space: nowrap;
+}
+.session-derive-opt:hover { background: var(--surface-hover); color: var(--text); }
 .archived-header {
   display: flex; align-items: center; gap: 6px; padding: 10px 12px 5px;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
