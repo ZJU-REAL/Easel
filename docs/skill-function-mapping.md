@@ -154,6 +154,7 @@
 | `skill-xhs-publisher` | 将图文/视频内容发布到小红书（XHS）。 |
 | `skill-zhihu-answer` | 知乎问答回答发布：在知乎问题下发布原创回答——搜热门问题、检查可答性、写内容、 Playwright 发布（绕 header 遮挡 + JS 遍历发布按钮）。 |
 | `skill-zhihu-publisher` | 知乎发布：把文章发布到知乎专栏（也可用于回答草稿）。 |
+| `skill-upload-post-publisher` | 海外平台发布（可选，第三方托管 API）：通过 Upload-Post 把视频 / 图文 / 纯文本一次发到 TikTok、Instagram、YouTube、LinkedIn、X、Facebook、Threads、Pinterest、Bluesky；默认 dry-run，遵循 `EASEL_PUBLISH_MODE`。 |
 | `skill-toutiao-publisher` | 今日头条图文发布：把成稿文章发布到头条号后台（mp.toutiao.com），支持标题/封面/话题标签/存草稿与直接发布，浏览器自动化 + 登录态持久化。 |
 
 ## 📊 归因层

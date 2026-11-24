@@ -79,6 +79,7 @@ Easel 的 SKILL 集合在自研基础上，参考、改编或借鉴了大量优�
 | [cwjcw/xhs_douyin_content](https://github.com/cwjcw/xhs_douyin_content) | competitor-analysis | 创作者中心数据边界界定 |
 | [54514382/xhs_search_comment_tool](https://github.com/54514382/xhs_search_comment_tool) | content-gap-analysis | 评论区采集字段 |
 | [laiaccc/XiaohongshuAnalysis](https://github.com/laiaccc) | cross-platform-diff | 小红书分析 |
+| [Upload-Post](https://upload-post.com)（[API 文档](https://docs.upload-post.com)，第三方托管服务）| skill-upload-post-publisher | 海外平台发布 API（TikTok / Instagram / YouTube / LinkedIn / X 等） |
 
 ## 资讯 / RSS 聚合
 

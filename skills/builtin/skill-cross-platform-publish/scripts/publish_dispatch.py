@@ -50,6 +50,36 @@ PLATFORMS: dict[str, dict] = {
     "toutiao": {"publisher": "skill-toutiao-publisher", "types": ["article"],
                 "title": 30, "body": 0, "tags": 5, "aspect": "-",
                 "note": "头条号图文；标题≤30字；资讯式长文 800-2500 字；话题≤5 个；可存草稿"},
+    # ── 海外平台（可选 provider：Upload-Post 托管 API，需 UPLOAD_POST_API_KEY）。title = 帖子文案 ──
+    # 推特有两个 provider：x-upload-post（本表，API）与 twitter-x（发布中心的浏览器路由），互不替代。
+    "tiktok": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+               "types": ["video", "image"], "title": 2200, "body": 0, "tags": 5, "aspect": "9:16",
+               "note": "文案≤2200 字符，话题#接文案后；竖版 9:16；AI 生成内容加 --ai-generated；免费版不可发"},
+    "instagram": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                  "types": ["video", "image"], "title": 2200, "body": 0, "tags": 30,
+                  "aspect": "9:16/4:5", "note": "Reels 竖版 9:16，图文 4:5 或 1:1；文案≤2200 字符"},
+    "youtube": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                "types": ["video"], "title": 100, "body": 5000, "tags": 15, "aspect": "16:9/9:16",
+                "note": "标题≤100 字符，简介≤5000；竖版≤3 分钟即 Shorts；默认 private"},
+    "linkedin": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                 "types": ["video", "image", "text"], "title": 3000, "body": 0, "tags": 5,
+                 "aspect": "16:9/1:1", "note": "职场语气；正文≤3000 字符；横版或方形"},
+    "x-upload-post": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                      "types": ["video", "image", "text"], "title": 280, "body": 0, "tags": 3,
+                      "aspect": "16:9/9:16",
+                      "note": "推特 X 的 API 路由（publisher 参数写 x）；帖子≤280 字符（含话题）；浏览器路由见 twitter-x"},
+    "facebook": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                 "types": ["video", "image", "text"], "title": 0, "body": 0, "tags": 5,
+                 "aspect": "9:16/16:9", "note": "主页帖子；竖版视频按 Reels 发布"},
+    "threads": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                "types": ["video", "image", "text"], "title": 500, "body": 0, "tags": 1,
+                "aspect": "9:16/4:5", "note": "帖子≤500 字符；仅 1 个话题标签"},
+    "pinterest": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                  "types": ["image", "video"], "title": 100, "body": 500, "tags": 0, "aspect": "2:3",
+                  "note": "需指定画板；竖版 2:3；标题≤100、描述≤500"},
+    "bluesky": {"publisher": "skill-upload-post-publisher", "provider": "upload-post",
+                "types": ["video", "image", "text"], "title": 300, "body": 0, "tags": 3,
+                "aspect": "16:9/1:1", "note": "帖子≤300 字符"},
 }
 
 
@@ -90,6 +120,7 @@ def _check_platform(name: str, content: dict) -> dict:
         warns.append(f"内容类型 {mtype} 与该平台支持 {c['types']} 不符（需换形式或转制）")
 
     return {"platform": name, "ok": True, "publisher": c["publisher"],
+            "provider": c.get("provider", "easel"),
             "recommend_aspect": c["aspect"], "constraints_note": c["note"],
             "warnings": warns,
             "action": f"按约束适配后调用 {c['publisher']} 发布"}
@@ -145,6 +176,13 @@ def cmd_selftest(_a) -> int:
     ok = _check_platform("douyin", {"title": "短标题", "tags": ["a", "b"],
                                     "media_type": "video"})
     assert ok["ok"] and not ok["warnings"], f"合规内容不应告警：{ok}"
+    # 海外平台路由到 Upload-Post publisher，并标明 provider
+    intl = _check_platform("tiktok", {"title": "hook #ai", "tags": ["ai"], "media_type": "video"})
+    assert intl["publisher"] == "skill-upload-post-publisher" and not intl["warnings"]
+    assert intl["provider"] == "upload-post"
+    assert _check_platform("douyin", {"title": "t"})["provider"] == "easel"
+    assert _check_platform("x-upload-post", {"title": "x" * 300})["warnings"], "X 超 280 字符应告警"
+    assert "x" not in PLATFORMS and "twitter-x" not in PLATFORMS, "推特 provider 不能含糊"
     # 未知平台
     bad = _check_platform("nope", {})
     assert not bad["ok"], "未知平台应 ok=False"
