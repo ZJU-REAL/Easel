@@ -26,6 +26,10 @@ layer: publish
 | weixin-channels（视频号）| skill-channels-upload ✅ |
 | zhihu | skill-zhihu-publisher ✅ |
 | toutiao（今日头条）| skill-toutiao-publisher ✅ |
+| tiktok / instagram / youtube / linkedin / x-upload-post / facebook / threads / pinterest / bluesky（海外，可选）| skill-upload-post-publisher（provider：Upload-Post API，需 `UPLOAD_POST_API_KEY`；一次调用发多个海外平台）|
+
+> 推特 X 有两个 provider：`x-upload-post`（Upload-Post API，本表）与 `twitter-x`（发布中心的浏览器路由）。
+> 用户只说「推特 / X」时先问用哪条，不要默认替换。
 
 `python <skill>/scripts/publish_dispatch.py platforms` 看全部平台及约束。
 
@@ -55,7 +59,9 @@ python skills/builtin/skill-cross-platform-publish/scripts/publish_dispatch.py p
    对适配后的各平台内容跑 skill-persona-check，评分喂
    `python skills/shared/scripts/persona_gate.py check --score 85`——
    低于 80 分时告知分数、偏离点和修改建议，但不阻断发布；用户已明确要发布就继续执行。
-4. **逐平台发布**：调用 `dispatch[i].publisher` 对应的发布 SKILL 执行。
+4. **逐平台发布**：调用 `dispatch[i].publisher` 对应的发布 SKILL 执行。海外平台都路由到
+   skill-upload-post-publisher，同一份适配结果可一次 `--platforms tiktok,instagram,youtube` 发出
+   （`x-upload-post` 在该 SKILL 里写作 `x`）。
 5. 发布后：**skill-publish-notify** 推送结果；**skill-short-link** 生成带 UTM 追踪短链；
    并把本次发布登记进 manifest 供归因层消费：
    ```
