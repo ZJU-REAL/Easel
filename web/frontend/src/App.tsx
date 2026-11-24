@@ -28,6 +28,7 @@ import {
   loadActiveId,
   saveActiveId,
 } from './lib/store';
+import { deriveSideSession } from './lib/side-session';
 import type { ChatSession, ChatMessage, StreamState } from './lib/store';
 
 const ONBOARDING_SEEN_KEY = 'easel_onboarding_seen';
@@ -651,6 +652,26 @@ export default function App() {
     setCurrentPage('chat');
   }, [selectedPersona]);
 
+  // 派生旁路会话：把主会话最近 N 轮上下文打包为首条交接消息开局；
+  // 只写新会话记录，主会话 history 零改动；旁路会话不允许再派生。
+  const handleSessionDerive = useCallback((id: string, turns: number | 'all') => {
+    const main = sessionsRef.current.find((s) => s.id === id);
+    if (!main || main.parentSessionId) return;
+    const side = deriveSideSession(
+      main,
+      turns,
+      Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      Date.now()
+    );
+    setSessions((prev) => {
+      const updated = [side, ...prev];
+      saveSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(side.id);
+    setCurrentPage('chat');
+  }, []);
+
   const handleSessionSelect = useCallback((id: string) => {
     setActiveSessionId(id);
     const target = sessions.find(s => s.id === id);
@@ -837,6 +858,7 @@ export default function App() {
         onSessionDelete={handleSessionDelete}
         onSessionRename={handleSessionRename}
         onSessionArchive={handleSessionArchive}
+        onSessionDerive={handleSessionDerive}
         onNewChat={handleNewChat}
         gatewayStatus={gatewayStatus}
         apiDirect={apiDirect}
