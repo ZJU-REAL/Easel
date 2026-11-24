@@ -68,3 +68,16 @@ export function deriveSideSession(
     seedTurns: turns === 'all' ? main.messages.length : turns,
   };
 }
+
+/**
+ * 旁路会话是否处于「仅含 seed、尚未真实开局」状态。
+ * - C1 修复用：首轮真实发送时需把 seed 前置拼进发往后端的消息，让服务端历史以快照开局；
+ *   首个回复落库后 messages.length > 1，自然停止拼接。
+ * - I1 修复用：此状态下没有悬空轮可恢复，resumePendingTurn 应跳过，
+ *   避免旁路会话每次激活都触发注定落空的「接回上一轮」兜底（spec 反目标：续接行为差异）。
+ */
+export function isSeedOnlySideSession(session: ChatSession): boolean {
+  return !!session.parentSessionId
+    && session.messages.length === 1
+    && session.messages[0].role === 'user';
+}

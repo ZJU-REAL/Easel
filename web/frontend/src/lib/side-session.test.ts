@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatSession, ChatMessage } from './store';
-import { buildSeedMessage, deriveSideSession } from './side-session';
+import { buildSeedMessage, deriveSideSession, isSeedOnlySideSession } from './side-session';
 
 function msg(role: 'user' | 'assistant', content: string): ChatMessage {
   return { role, content };
@@ -129,3 +129,24 @@ describe('deriveSideSession', () => {
     expect(side.seedTurns).toBe(3);
   });
 });
+
+describe('isSeedOnlySideSession', () => {
+  it('旁路会话且仅含 seed（首条真实轮次未发出）时为 true', () => {
+    const main = makeMain([msg('user', 'u1'), msg('assistant', 'a1')]);
+    const side = deriveSideSession(main, 1, 'side-1', 2000);
+    expect(isSeedOnlySideSession(side)).toBe(true);
+  });
+
+  it('旁路会话首轮已发出（有真实往返）后为 false', () => {
+    const main = makeMain([msg('user', 'u1'), msg('assistant', 'a1')]);
+    const side = deriveSideSession(main, 1, 'side-1', 2000);
+    side.messages.push(msg('assistant', '回复'));
+    expect(isSeedOnlySideSession(side)).toBe(false);
+  });
+
+  it('主会话（无血缘）永远为 false', () => {
+    const main = makeMain([msg('user', 'u1')]);
+    expect(isSeedOnlySideSession(main)).toBe(false);
+  });
+});
+

@@ -28,7 +28,7 @@ import {
   loadActiveId,
   saveActiveId,
 } from './lib/store';
-import { deriveSideSession } from './lib/side-session';
+import { deriveSideSession, isSeedOnlySideSession } from './lib/side-session';
 import type { ChatSession, ChatMessage, StreamState } from './lib/store';
 
 const ONBOARDING_SEEN_KEY = 'easel_onboarding_seen';
@@ -445,6 +445,7 @@ export default function App() {
   const resumePendingTurn = useCallback((sessionId: string) => {
     if (streamCtl.current[sessionId] || streamAcc.current[sessionId]) return;  // 本标签正在跑，不插手
     const s = sessionsRef.current.find((x) => x.id === sessionId);
+    if (s && isSeedOnlySideSession(s)) return;   // 旁路会话仅含 seed、未真实开局，无悬空轮可恢复
     const last = s?.messages[s.messages.length - 1];
     if (!last || last.role !== 'user') return;   // 没有悬空的用户消息 = 无需恢复
     let turnId = s.pendingTurnId;
@@ -555,7 +556,11 @@ export default function App() {
       saveSessions(next);
       return next;
     });
-    startStream(sessionId, agentMessage, persona, attachments);
+    // 旁路会话首轮真实发送：把 seed（交接上下文）前置拼进发往后端的消息，
+    // 让服务端会话历史以快照开局（spec 方案 A「发出」半句）；首个回复落库后
+    // isSeedOnlySideSession 变 false，自然停止拼接。气泡展示仍是用户原文。
+    const seedPrefix = cur && isSeedOnlySideSession(cur) ? cur.messages[0].content + '\n\n' : '';
+    startStream(sessionId, seedPrefix + agentMessage, persona, attachments);
   }, [selectedPersona, startStream, personas, personasLoaded]);
 
   const handleSendMessage = useCallback((sessionId: string, displayText: string, attachments?: UploadedFile[]) => {
