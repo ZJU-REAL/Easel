@@ -805,6 +805,10 @@ export default function App() {
               }
             }}
             onQuestionClosed={(id, status) => closeQuestion(activeSession.id, { id, status })}
+            // 旁路会话入口（对话页顶部）：主会话给弹窗数据，旁路会话给「返回主会话」
+            sideSessions={activeSession.parentSessionId ? [] : sessions.filter((s) => s.parentSessionId === activeSession.id)}
+            onSelectSession={handleSessionSelect}
+            onDerive={(turns) => handleSessionDerive(activeSession.id, turns)}
           />
         ) : null;
       case 'trends':
@@ -863,7 +867,6 @@ export default function App() {
         onSessionDelete={handleSessionDelete}
         onSessionRename={handleSessionRename}
         onSessionArchive={handleSessionArchive}
-        onSessionDerive={handleSessionDerive}
         onNewChat={handleNewChat}
         gatewayStatus={gatewayStatus}
         apiDirect={apiDirect}

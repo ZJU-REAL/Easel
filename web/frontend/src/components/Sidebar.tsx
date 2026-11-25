@@ -20,7 +20,6 @@ interface SidebarProps {
   onSessionDelete: (id: string) => void;
   onSessionRename: (id: string, title: string) => void;
   onSessionArchive: (id: string, archived: boolean) => void;
-  onSessionDerive: (id: string, turns: number | 'all') => void;
   onNewChat: () => void;
   gatewayStatus: string;
   apiDirect: boolean;
@@ -47,7 +46,6 @@ export default function Sidebar({
   onSessionDelete,
   onSessionRename,
   onSessionArchive,
-  onSessionDerive,
   onNewChat,
   gatewayStatus,
   apiDirect,
@@ -56,8 +54,6 @@ export default function Sidebar({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  // 派生粒度菜单：记录打开的会话 id 与菜单弹出坐标（fixed 定位，避开 session-item 的 overflow 裁剪）
-  const [deriveMenu, setDeriveMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const startRename = (s: ChatSession) => { setRenamingId(s.id); setRenameValue(s.title); };
   const commitRename = () => {
@@ -103,15 +99,6 @@ export default function Sidebar({
           {s.title}
         </span>
         <div className="session-actions">
-          {/* 派生入口：仅主会话（无血缘）且有上下文可带时出现；旁路会话不允许再派生 */}
-          {!s.parentSessionId && s.messages.length > 0 && (
-            <button className="session-act" title="派生旁路会话"
-              onClick={(e) => {
-                e.stopPropagation();
-                const r = e.currentTarget.getBoundingClientRect();
-                setDeriveMenu({ id: s.id, x: r.left, y: r.bottom + 4 });
-              }}><IconNewChat size={14} /></button>
-          )}
           <button className="session-act" title="重命名"
             onClick={(e) => { e.stopPropagation(); startRename(s); }}><IconEdit size={14} /></button>
           <button className="session-act" title={isArchived ? '取消归档' : '归档'}
@@ -168,25 +155,7 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* 派生粒度菜单：全屏透明遮罩兜底点击外部关闭，fixed 面板避免被 session-item 裁剪 */}
-      {deriveMenu && (
-        <>
-          <div className="derive-menu-overlay"
-            onClick={(e) => { e.stopPropagation(); setDeriveMenu(null); }} />
-          <div className="session-derive-menu" style={{ left: deriveMenu.x, top: deriveMenu.y }}>
-            {([5, 10, 20, 'all'] as const).map((n) => (
-              <button key={String(n)} className="session-derive-opt"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeriveMenu(null);
-                  onSessionDerive(deriveMenu.id, n);
-                }}>
-                {n === 'all' ? '全部轮次' : `最近 ${n} 轮`}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {/* 派生粒度菜单已移至对话页顶部按钮（ChatPage side popover) */}
 
       <div className="sidebar-status">
         <span className={`status-dot ${gatewayStatus === 'connected' ? '' : 'offline'}`} />

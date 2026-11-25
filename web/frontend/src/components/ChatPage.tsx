@@ -22,6 +22,9 @@ interface ChatPageProps {
   ) => void; // 重试：仅对最后一轮
   onQuestionAnswered?: (questionId: string) => void;   // 某道问答题提交成功（App 记录答过，重放不再出现）
   onQuestionClosed?: (id: string, status: string) => void;
+  sideSessions?: ChatSession[];                 // 当前主会话的旁路会话列表（顶部按钮弹窗用）
+  onSelectSession: (id: string) => void;        // 弹窗内切换到指定会话（旁路/主会话跳转共用）
+  onDerive: (turns: number | 'all') => void;    // 针对当前主会话新建旁路会话
 }
 
 // 空态推荐（贴合 Easel 社媒创作场景）
@@ -38,12 +41,16 @@ function greeting(): string {
   return `${g}，想创作点什么？`;
 }
 
-export default function ChatPage({ apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered, onQuestionClosed }: ChatPageProps) {
+export default function ChatPage({ apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered, onQuestionClosed, sideSessions, onSelectSession, onDerive }: ChatPageProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [maxMb, setMaxMb] = useState(50);
+  // 旁路会话弹窗：顶部按钮点开；gran 展开新建的粒度选择
+  const [sideOpen, setSideOpen] = useState(false);
+  const [sideGran, setSideGran] = useState(false);
+  const isSide = !!session.parentSessionId;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -213,6 +220,51 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
 
   return (
     <div className="chat-page">
+      {/* 旁路会话入口（对话页顶部）：主会话 → 弹窗（已有旁路列表 + 新建）；旁路会话 → 返回主会话 */}
+      {(isSide || session.messages.length > 0) && (
+        <div className="chat-side-anchor">
+          {isSide ? (
+            <button className="chat-side-btn" onClick={() => onSelectSession(session.parentSessionId!)}>
+              ⤷ 返回主会话
+            </button>
+          ) : (
+            <>
+              <button className="chat-side-btn"
+                onClick={() => { setSideOpen((v) => !v); setSideGran(false); }}>
+                ⤷ 旁路会话
+                {(sideSessions?.length ?? 0) > 0 && <span className="chat-side-count">{sideSessions!.length}</span>}
+              </button>
+              {sideOpen && (
+                <>
+                  <div className="derive-menu-overlay" onClick={(e) => { e.stopPropagation(); setSideOpen(false); }} />
+                  <div className="side-popover" onClick={(e) => e.stopPropagation()}>
+                    <div className="side-pop-title">旁路会话 · 与主对话互不污染</div>
+                    {(sideSessions ?? []).map((sd) => (
+                      <button key={sd.id} className="side-pop-item"
+                        onClick={() => { setSideOpen(false); onSelectSession(sd.id); }}>
+                        <span className="session-derived-badge">⤷ </span>{sd.title}
+                      </button>
+                    ))}
+                    {!sideGran ? (
+                      <button className="side-pop-new" onClick={() => setSideGran(true)}>＋ 新建旁路会话</button>
+                    ) : (
+                      <div className="side-pop-gran">
+                        <div className="side-pop-title">携带最近：</div>
+                        {([5, 10, 20, 'all'] as const).map((n) => (
+                          <button key={String(n)} className="side-pop-item"
+                            onClick={() => { setSideOpen(false); setSideGran(false); onDerive(n); }}>
+                            {n === 'all' ? '全部轮次' : `最近 ${n} 轮`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
       <div className="chat-messages">
         <div className="chat-thread">
           {displayMessages.map((msg, i) => {

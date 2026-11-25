@@ -942,18 +942,43 @@ textarea.field { resize: vertical; min-height: 90px; }
 }
 .seed-card-role.assistant { background: var(--accent-soft); color: var(--accent-start); }
 .seed-card-content { color: var(--text-secondary); white-space: pre-wrap; min-width: 0; }
-.session-derive-menu {
-  position: fixed; z-index: 1000;
-  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  padding: 4px; display: flex; flex-direction: column; min-width: 110px;
+
+/* 对话页顶部旁路会话按钮 + 弹窗（入口从侧边栏迁至对话页，参考 PulseStudio 面板设计） */
+.chat-page { position: relative; }
+.chat-side-anchor { position: absolute; top: 10px; right: 16px; z-index: 30; }
+.chat-side-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text-secondary); font-size: 12px; padding: 5px 12px; cursor: pointer;
+  font-family: inherit; transition: all var(--t-fast);
 }
-.session-derive-opt {
+.chat-side-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
+.chat-side-count {
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-start);
+  font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+}
+.side-popover {
+  position: absolute; top: 34px; right: 0; width: 240px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.side-pop-title { font-size: 11px; color: var(--text-tertiary); padding: 4px 10px 2px; }
+.side-pop-item {
   background: none; border: none; text-align: left; cursor: pointer;
   color: var(--text-secondary); font-size: 12px; padding: 6px 10px; border-radius: 5px;
-  transition: all var(--t-fast); white-space: nowrap;
+  transition: all var(--t-fast); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: inherit;
 }
-.session-derive-opt:hover { background: var(--surface-hover); color: var(--text); }
+.side-pop-item:hover { background: var(--surface-hover); color: var(--text); }
+.side-pop-new {
+  background: none; border: 1px dashed var(--border); text-align: left; cursor: pointer;
+  color: var(--accent-start); font-size: 12px; padding: 6px 10px; border-radius: 5px;
+  margin-top: 2px; transition: all var(--t-fast); font-family: inherit;
+}
+.side-pop-new:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.side-pop-gran { display: flex; flex-direction: column; gap: 2px; }
 .archived-header {
   display: flex; align-items: center; gap: 6px; padding: 10px 12px 5px;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
