@@ -910,10 +910,8 @@ textarea.field { resize: vertical; min-height: 90px; }
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* ============ 旁路会话：血缘徽标 + 派生粒度菜单 ============ */
+/* ============ 旁路会话：血缘徽标 ============ */
 .session-derived-badge { color: var(--text-tertiary); flex-shrink: 0; }
-.derive-menu-overlay { position: fixed; inset: 0; z-index: 999; }
-
 /* 交接上下文卡片：seed 不是用户的提问，用独立卡片呈现（左对齐、逐条可读） */
 .message-row.user:has(.seed-card) { justify-content: flex-start; }
 .seed-card {
@@ -958,27 +956,149 @@ textarea.field { resize: vertical; min-height: 90px; }
   background: var(--accent-soft); color: var(--accent-start);
   font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
 }
-.side-popover {
-  position: absolute; top: 34px; right: 0; width: 240px;
-  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); padding: 6px;
-  display: flex; flex-direction: column; gap: 2px;
+/* 旁路会话侧面板（PulseStudio 式）：右侧 drawer，无遮罩——主对话保持可见可交互 */
+.ssp {
+  position: fixed; top: 52px; right: 12px; bottom: 12px; width: 400px; z-index: 90;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: ssp-in var(--t-fast) ease-out;
 }
-.side-pop-title { font-size: 11px; color: var(--text-tertiary); padding: 4px 10px 2px; }
-.side-pop-item {
-  background: none; border: none; text-align: left; cursor: pointer;
-  color: var(--text-secondary); font-size: 12px; padding: 6px 10px; border-radius: 5px;
-  transition: all var(--t-fast); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-family: inherit;
+@keyframes ssp-in { from { transform: translateX(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.ssp-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
-.side-pop-item:hover { background: var(--surface-hover); color: var(--text); }
-.side-pop-new {
-  background: none; border: 1px dashed var(--border); text-align: left; cursor: pointer;
-  color: var(--accent-start); font-size: 12px; padding: 6px 10px; border-radius: 5px;
-  margin-top: 2px; transition: all var(--t-fast); font-family: inherit;
+.ssp-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.ssp-title-ellipsis { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ssp-back {
+  background: none; border: none; cursor: pointer; color: var(--text-secondary);
+  font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 5px; font-family: inherit;
+  transition: all var(--t-fast);
 }
-.side-pop-new:hover { background: var(--surface-hover); border-color: var(--border-strong); }
-.side-pop-gran { display: flex; flex-direction: column; gap: 2px; }
+.ssp-back:hover { background: var(--surface-hover); color: var(--text); }
+.ssp-bring-btn {
+  background: var(--accent-soft); color: var(--accent-start); border: none; border-radius: 999px;
+  font-size: 11px; padding: 4px 10px; cursor: pointer; font-family: inherit; white-space: nowrap;
+  transition: all var(--t-fast);
+}
+.ssp-bring-btn:hover { filter: brightness(1.05); }
+.ssp-bring-btn:disabled { opacity: 0.45; cursor: default; }
+.ssp-x {
+  background: none; border: none; cursor: pointer; color: var(--text-tertiary);
+  font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 5px; font-family: inherit;
+  transition: all var(--t-fast);
+}
+.ssp-x:hover { background: var(--surface-hover); color: var(--text); }
+.ssp-sub { font-size: 11px; color: var(--text-tertiary); padding: 8px 14px 0; flex-shrink: 0; }
+.ssp-list { flex: 1; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.ssp-item { display: flex; align-items: center; gap: 4px; }
+.ssp-item-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; cursor: pointer; font-family: inherit; text-align: left;
+  transition: all var(--t-fast);
+}
+.ssp-item-main:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.ssp-item-title {
+  font-size: 12px; color: var(--text); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ssp-item-meta { font-size: 10px; color: var(--text-tertiary); }
+.ssp-item-x {
+  background: none; border: none; cursor: pointer; color: var(--text-tertiary);
+  font-size: 13px; padding: 2px 5px; border-radius: 4px; font-family: inherit;
+  transition: all var(--t-fast);
+}
+.ssp-item-x:hover { color: var(--red); background: var(--red-soft); }
+.ssp-empty { font-size: 12px; color: var(--text-tertiary); padding: 18px 8px; text-align: center; line-height: 1.6; }
+.ssp-new {
+  margin: 0 10px 10px; padding: 8px 10px; font-size: 12px; font-family: inherit;
+  background: none; border: 1px dashed var(--border); border-radius: 8px; cursor: pointer;
+  color: var(--accent-start); transition: all var(--t-fast); flex-shrink: 0;
+}
+.ssp-new:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.ssp-gran { margin: 0 10px 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; flex-shrink: 0; }
+.ssp-gran-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssp-gran-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.ssp-gran-opt {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text-secondary); font-size: 11px; padding: 4px 10px; cursor: pointer; font-family: inherit;
+  transition: all var(--t-fast);
+}
+.ssp-gran-opt:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
+.ssp-gran-cancel {
+  margin-top: 8px; background: none; border: none; cursor: pointer;
+  color: var(--text-tertiary); font-size: 11px; padding: 2px 0; font-family: inherit;
+}
+.ssp-gran-cancel:hover { color: var(--text-secondary); }
+
+/* 面板 · chat 模式 */
+.ssp-bring { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ssp-bring-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+.ssp-bring-text {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 90px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: 12px; line-height: 1.6; padding: 8px 10px;
+  font-family: inherit; outline: none;
+}
+.ssp-bring-text:focus { border-color: var(--accent-start); }
+.ssp-bring-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.ssp-bring-cancel {
+  background: none; border: none; cursor: pointer; color: var(--text-tertiary);
+  font-size: 12px; padding: 4px 8px; font-family: inherit;
+}
+.ssp-bring-cancel:hover { color: var(--text-secondary); }
+.ssp-bring-ok {
+  background: var(--accent-start); color: #fff; border: none; border-radius: 999px;
+  font-size: 12px; padding: 5px 14px; cursor: pointer; font-family: inherit;
+  transition: all var(--t-fast);
+}
+.ssp-bring-ok:disabled { opacity: 0.45; cursor: default; }
+.ssp-bring-ok:hover:not(:disabled) { filter: brightness(1.1); }
+.ssp-brought-note { font-size: 11px; color: var(--accent-start); padding: 8px 14px; flex-shrink: 0; background: var(--accent-soft); }
+.ssp-msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ssp-seed {
+  font-size: 11px; color: var(--text-tertiary); background: var(--surface);
+  border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; line-height: 1.6;
+}
+.ssp-seed-tag {
+  display: inline-block; background: var(--accent-soft); color: var(--accent-start);
+  border-radius: 4px; font-size: 10px; padding: 1px 6px; margin-right: 6px; font-weight: 700;
+}
+.ssp-msg { display: flex; flex-direction: column; }
+.ssp-msg-user { align-items: flex-end; }
+.ssp-msg-assistant { align-items: flex-start; }
+.ssp-bubble {
+  max-width: 88%; font-size: 12.5px; line-height: 1.65; padding: 8px 12px;
+  border-radius: 12px; white-space: pre-wrap; word-break: break-word;
+}
+.ssp-bubble-user { background: var(--accent-soft); color: var(--text); border-bottom-right-radius: 4px; }
+.ssp-bubble-assistant { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.ssp-cursor { display: inline-block; width: 6px; height: 13px; background: var(--accent-start); margin-left: 2px; vertical-align: text-bottom; animation: ssp-blink 1s step-end infinite; }
+@keyframes ssp-blink { 50% { opacity: 0; } }
+.ssp-thinking {
+  max-width: 88%; margin-top: 4px; font-size: 11px; color: var(--text-tertiary);
+  white-space: pre-wrap; word-break: break-word; max-height: 80px; overflow: hidden;
+}
+.ssp-input { padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.ssp-text {
+  width: 100%; box-sizing: border-box; resize: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: 12.5px; line-height: 1.6; padding: 8px 10px;
+  font-family: inherit; outline: none; min-height: 56px;
+}
+.ssp-text:focus { border-color: var(--accent-start); }
+.ssp-input-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.ssp-hint { font-size: 10px; color: var(--text-tertiary); margin-right: auto; }
+.ssp-send {
+  background: var(--accent-start); color: #fff; border: none; border-radius: 999px;
+  width: 28px; height: 28px; cursor: pointer; font-size: 13px; line-height: 1; font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all var(--t-fast);
+}
+.ssp-send:disabled { opacity: 0.4; cursor: default; }
+.ssp-send:hover:not(:disabled) { filter: brightness(1.1); }
 .archived-header {
   display: flex; align-items: center; gap: 6px; padding: 10px 12px 5px;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
