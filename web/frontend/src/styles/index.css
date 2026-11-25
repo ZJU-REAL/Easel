@@ -913,6 +913,35 @@ textarea.field { resize: vertical; min-height: 90px; }
 /* ============ 旁路会话：血缘徽标 + 派生粒度菜单 ============ */
 .session-derived-badge { color: var(--text-tertiary); flex-shrink: 0; }
 .derive-menu-overlay { position: fixed; inset: 0; z-index: 999; }
+
+/* 交接上下文卡片：seed 不是用户的提问，用独立卡片呈现（左对齐、逐条可读） */
+.message-row.user:has(.seed-card) { justify-content: flex-start; }
+.seed-card {
+  width: min(680px, 92%); padding: 12px 14px;
+  background: var(--bg-elev); border: 1px dashed var(--border-strong);
+  border-radius: 10px; font-size: 13px; line-height: 1.6;
+  word-break: break-word;
+}
+.seed-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.seed-card-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+  background: var(--accent-soft); color: var(--accent-start); font-weight: 700;
+}
+.seed-card-title { font-weight: 700; color: var(--text); font-size: 13px; }
+.seed-card-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
+.seed-card-body {
+  border-top: 1px solid var(--border); padding-top: 8px;
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 8px;
+  max-height: 320px; overflow-y: auto;
+}
+.seed-card-turn { display: contents; }
+.seed-card-role {
+  align-self: start; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  background: var(--surface-hover); color: var(--text-secondary);
+}
+.seed-card-role.assistant { background: var(--accent-soft); color: var(--accent-start); }
+.seed-card-content { color: var(--text-secondary); white-space: pre-wrap; min-width: 0; }
 .session-derive-menu {
   position: fixed; z-index: 1000;
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;

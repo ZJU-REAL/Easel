@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatSession, ChatMessage } from './store';
-import { buildSeedMessage, deriveSideSession, isSeedOnlySideSession } from './side-session';
+import { buildSeedMessage, deriveSideSession, isSeedOnlySideSession, parseSeedMessage } from './side-session';
 
 function msg(role: 'user' | 'assistant', content: string): ChatMessage {
   return { role, content };
@@ -72,6 +72,16 @@ describe('buildSeedMessage', () => {
     const seed = buildSeedMessage('测试', main.messages, 'all');
     const line = seed.content.split('\n')[1];
     expect(line).toBe(`user: ${'x'.repeat(2000)}…`);
+  });
+
+  it('单条 content 的首尾空白被裁掉（流式失败回复常带前导换行）', () => {
+    const main = makeMain([
+      msg('user', 'u1'),
+      msg('assistant', '\n\nError: Stream error: 404'),
+      msg('user', '正常消息'),
+    ]);
+    const seed = buildSeedMessage('测试', main.messages, 'all');
+    expect(seed.content).toContain('user: u1\nassistant: Error: Stream error: 404\nuser: 正常消息');
   });
 
   it('主会话标题含「」时原样嵌入不转义', () => {
@@ -147,6 +157,41 @@ describe('isSeedOnlySideSession', () => {
   it('主会话（无血缘）永远为 false', () => {
     const main = makeMain([msg('user', 'u1')]);
     expect(isSeedOnlySideSession(main)).toBe(false);
+  });
+});
+
+describe('parseSeedMessage', () => {
+  it('能解析 seed：主标题、轮数标签与逐条轮次', () => {
+    const main = makeMain([
+      msg('user', '帮我写小红书标题'),
+      msg('assistant', '第一条回复'),
+      msg('user', '风格要活泼一点'),
+    ]);
+    const seed = buildSeedMessage('小红书标题', main.messages, 2);
+    const parsed = parseSeedMessage(seed.content);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.mainTitle).toBe('小红书标题');
+    expect(parsed!.turnsLabel).toBe('2');
+    expect(parsed!.items).toEqual([
+      { role: 'user', content: '帮我写小红书标题' },
+      { role: 'assistant', content: '第一条回复' },
+      { role: 'user', content: '风格要活泼一点' },
+    ]);
+  });
+
+  it('多行 content 归属到当前轮次，不被误拆为新轮次', () => {
+    const main = makeMain([msg('user', '第一行\n第二行'), msg('assistant', '好')]);
+    const seed = buildSeedMessage('测试', main.messages, 1);
+    const parsed = parseSeedMessage(seed.content);
+    expect(parsed!.items).toEqual([
+      { role: 'user', content: '第一行\n第二行' },
+      { role: 'assistant', content: '好' },
+    ]);
+  });
+
+  it('普通用户消息返回 null（不做卡片渲染）', () => {
+    expect(parseSeedMessage('帮我写小红书标题')).toBeNull();
+    expect(parseSeedMessage('【旁路会话 · 交接上下文】但格式不对')).toBeNull();
   });
 });
 

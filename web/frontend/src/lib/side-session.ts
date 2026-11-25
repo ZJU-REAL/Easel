@@ -2,8 +2,10 @@ import type { ChatMessage, ChatSession } from './store';
 
 /** 快照单条消息的最大字符数，超出截断并追加省略号。 */
 const SNIPPET_MAX_CHARS = 2000;
+/** seed 消息首行前缀（识别与前端卡片化渲染用） */
+const SEED_HEADER_PREFIX = '【旁路会话 · 交接上下文】';
 /** 快照模板首行文案（spec 逐字值），`<标题>` / `<N>` 为占位。 */
-const SEED_HEADER_TMPL = '【旁路会话 · 交接上下文】来自主会话「<标题>」最近 <N> 轮：';
+const SEED_HEADER_TMPL = SEED_HEADER_PREFIX + '来自主会话「<标题>」最近 <N> 轮：';
 
 /**
  * 把快照轮数解析成切片起点索引：倒序收集 user 消息索引，
@@ -37,10 +39,13 @@ export function buildSeedMessage(
   const lines = [
     SEED_HEADER_TMPL.replace('<标题>', mainTitle).replace('<N>', String(n)),
     ...slice.map((m) => {
+      // 裁掉首尾空白：流式失败回复常带前导换行（App.tsx 的 \n\nError: …），
+      // 不裁会让 seed 的行结构被空行污染（卡片渲染与后端 payload 都受影响）
+      const trimmed = m.content.trim();
       const content =
-        m.content.length > SNIPPET_MAX_CHARS
-          ? m.content.slice(0, SNIPPET_MAX_CHARS) + '…'
-          : m.content;
+        trimmed.length > SNIPPET_MAX_CHARS
+          ? trimmed.slice(0, SNIPPET_MAX_CHARS) + '…'
+          : trimmed;
       return `${m.role}: ${content}`;
     }),
   ];
@@ -80,4 +85,36 @@ export function isSeedOnlySideSession(session: ChatSession): boolean {
   return !!session.parentSessionId
     && session.messages.length === 1
     && session.messages[0].role === 'user';
+}
+
+/** 解析后的 seed 单条轮次 */
+export interface SeedTurnItem {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** 解析后的 seed 消息（前端卡片化渲染用） */
+export interface ParsedSeedMessage {
+  mainTitle: string;
+  turnsLabel: string;
+  items: SeedTurnItem[];
+}
+
+/**
+ * 把 seed 消息文本解析回结构化数据，供前端渲染「交接上下文卡片」。
+ * 非 seed 内容（普通用户消息、前缀不符或头部格式不符）返回 null。
+ * 多行 content 归属到当前轮次——只有 `user: `/`assistant: ` 开头的行才开新轮次。
+ */
+export function parseSeedMessage(content: string): ParsedSeedMessage | null {
+  if (!content.startsWith(SEED_HEADER_PREFIX)) return null;
+  const lines = content.split('\n');
+  const m = lines[0].match(/^【旁路会话 · 交接上下文】来自主会话「(.+)」最近 (.+) 轮：$/);
+  if (!m) return null;
+  const items: SeedTurnItem[] = [];
+  for (const line of lines.slice(1)) {
+    const tm = line.match(/^(user|assistant): /);
+    if (tm) items.push({ role: tm[1] as 'user' | 'assistant', content: line.slice(tm[0].length) });
+    else if (items.length > 0) items[items.length - 1].content += '\n' + line;
+  }
+  return { mainTitle: m[1], turnsLabel: m[2], items };
 }
