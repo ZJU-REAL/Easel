@@ -22,6 +22,9 @@ interface ChatPageProps {
   ) => void; // 重试：仅对最后一轮
   onQuestionAnswered?: (questionId: string) => void;   // 某道问答题提交成功（App 记录答过，重放不再出现）
   onQuestionClosed?: (id: string, status: string) => void;
+  sideCount?: number;                           // 当前主会话的旁路会话数量（角标）
+  onOpenSidePanel: (presetSideId?: string) => void; // 打开旁路会话面板（主会话→列表/指定旁路；旁路会话→其父会话的面板）
+  onSelectSession: (id: string) => void;        // 旁路会话页「返回主会话」跳转
 }
 
 // 空态推荐（贴合 Easel 社媒创作场景）
@@ -38,12 +41,13 @@ function greeting(): string {
   return `${g}，想创作点什么？`;
 }
 
-export default function ChatPage({ apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered, onQuestionClosed }: ChatPageProps) {
+export default function ChatPage({ apiDirect, session, stream, onSend, onStop, onResend, onQuestionAnswered, onQuestionClosed, sideCount, onOpenSidePanel, onSelectSession }: ChatPageProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [maxMb, setMaxMb] = useState(50);
+  const isSide = !!session.parentSessionId;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -213,6 +217,21 @@ export default function ChatPage({ apiDirect, session, stream, onSend, onStop, o
 
   return (
     <div className="chat-page">
+      {/* 旁路会话入口（对话页顶部）：主会话/旁路会话 → 打开侧会话面板（PulseStudio 式） */}
+      {(isSide || session.messages.length > 0) && (
+        <div className="chat-side-anchor">
+          {isSide && (
+            <button className="chat-side-btn" onClick={() => onSelectSession(session.parentSessionId!)}>
+              ← 主会话
+            </button>
+          )}
+          <button className="chat-side-btn"
+            onClick={() => onOpenSidePanel(isSide ? session.id : undefined)}>
+            ⤷ 旁路会话
+            {!!sideCount && <span className="chat-side-count">{sideCount}</span>}
+          </button>
+        </div>
+      )}
       <div className="chat-messages">
         <div className="chat-thread">
           {displayMessages.map((msg, i) => {
