@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import type { Page } from './components/Sidebar';
 import ChatPage from './components/ChatPage';
+import SideSessionPanel from './components/SideSessionPanel';
 import SkillPage from './components/SkillPage';
 import OutputsPage from './components/OutputsPage';
 import AccountsPage from './components/AccountsPage';
@@ -28,6 +29,7 @@ import {
   loadActiveId,
   saveActiveId,
 } from './lib/store';
+import { deriveSideSession, isSeedOnlySideSession } from './lib/side-session';
 import type { ChatSession, ChatMessage, StreamState } from './lib/store';
 
 const ONBOARDING_SEEN_KEY = 'easel_onboarding_seen';
@@ -68,6 +70,9 @@ export default function App() {
   const [showRecommend, setShowRecommend] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 旁路会话侧面板（PulseStudio 式）：panelOpen 开关；panelSideId 为面板内打开的旁路会话（null = 列表模式）
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelSideId, setPanelSideId] = useState<string | null>(null);
   // 装完还没配模型时，首开要把用户直接带到模型设置页（安装脚本不再在终端问 Key）
   const [needModelSetup, setNeedModelSetup] = useState(false);
   const [sessionSaveError, setSessionSaveError] = useState(false);
@@ -444,6 +449,7 @@ export default function App() {
   const resumePendingTurn = useCallback((sessionId: string) => {
     if (streamCtl.current[sessionId] || streamAcc.current[sessionId]) return;  // 本标签正在跑，不插手
     const s = sessionsRef.current.find((x) => x.id === sessionId);
+    if (s && isSeedOnlySideSession(s)) return;   // 旁路会话仅含 seed、未真实开局，无悬空轮可恢复
     const last = s?.messages[s.messages.length - 1];
     if (!last || last.role !== 'user') return;   // 没有悬空的用户消息 = 无需恢复
     let turnId = s.pendingTurnId;
@@ -554,7 +560,11 @@ export default function App() {
       saveSessions(next);
       return next;
     });
-    startStream(sessionId, agentMessage, persona, attachments);
+    // 旁路会话首轮真实发送：把 seed（交接上下文）前置拼进发往后端的消息，
+    // 让服务端会话历史以快照开局（spec 方案 A「发出」半句）；首个回复落库后
+    // isSeedOnlySideSession 变 false，自然停止拼接。气泡展示仍是用户原文。
+    const seedPrefix = cur && isSeedOnlySideSession(cur) ? cur.messages[0].content + '\n\n' : '';
+    startStream(sessionId, seedPrefix + agentMessage, persona, attachments);
   }, [selectedPersona, startStream, personas, personasLoaded]);
 
   const handleSendMessage = useCallback((sessionId: string, displayText: string, attachments?: UploadedFile[]) => {
@@ -610,6 +620,23 @@ export default function App() {
     try { sessionStorage.removeItem(`easel_pending_turn:${sessionId}`); } catch { /* ignore */ }
   }, [appendAssistant, clearStream]);
 
+  // ---- 旁路会话侧面板（PulseStudio 式）----
+  const handleOpenSidePanel = useCallback((presetSideId?: string) => {
+    setPanelOpen(true);
+    setPanelSideId(presetSideId ?? null);
+  }, []);
+  const handleCloseSidePanel = useCallback(() => {
+    setPanelOpen(false);
+    setPanelSideId(null);
+  }, []);
+  // 带回主会话：面板内编辑好的摘要以一条 assistant 消息写入主会话（用户可选动作，不自动回灌）
+  const handleSideBringBack = useCallback((sideId: string, summary: string) => {
+    const side = sessionsRef.current.find((s) => s.id === sideId);
+    if (!side?.parentSessionId) return;
+    const text = `【旁路会话 · 结论带回】来自旁路会话「${side.title}」：\n\n${summary.trim()}`;
+    appendAssistant(side.parentSessionId, { role: 'assistant', content: text });
+  }, [appendAssistant]);
+
   const handleSessionRename = useCallback((id: string, title: string) => {
     const t = title.trim();
     if (!t) return;
@@ -650,6 +677,28 @@ export default function App() {
     setActiveSessionId(newSession.id);
     setCurrentPage('chat');
   }, [selectedPersona]);
+
+  // 派生旁路会话：把主会话最近 N 轮上下文打包为首条交接消息开局；
+  // 只写新会话记录，主会话 history 零改动；旁路会话不允许再派生。
+  // 创建后不切换 activeSessionId——主对话保持可见，面板直接进入新旁路的 chat 模式（PulseStudio 行为）。
+  const handleSessionDerive = useCallback((id: string, turns: number | 'all') => {
+    const main = sessionsRef.current.find((s) => s.id === id);
+    if (!main || main.parentSessionId) return;
+    const side = deriveSideSession(
+      main,
+      turns,
+      Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      Date.now()
+    );
+    setSessions((prev) => {
+      const updated = [side, ...prev];
+      saveSessions(updated);
+      return updated;
+    });
+    setPanelOpen(true);
+    setPanelSideId(side.id);
+    setCurrentPage('chat');
+  }, []);
 
   const handleSessionSelect = useCallback((id: string) => {
     setActiveSessionId(id);
@@ -748,9 +797,16 @@ export default function App() {
             onUseTopic={handleUseTopic}
           />
         );
-      case 'chat':
-        return activeSession ? (
-          <ChatPage
+      case 'chat': {
+        if (!activeSession) return null;
+        // 面板锚定的主会话：当前会话本身是旁路时，锚定其父主会话
+        const panelMain = activeSession.parentSessionId
+          ? sessions.find((s) => s.id === activeSession.parentSessionId) || null
+          : activeSession;
+        const panelSides = panelMain ? sessions.filter((s) => s.parentSessionId === panelMain.id) : [];
+        return (
+          <>
+            <ChatPage
             apiDirect={apiDirect}
             key={activeSession.id}
             session={activeSession}
@@ -779,8 +835,33 @@ export default function App() {
               }
             }}
             onQuestionClosed={(id, status) => closeQuestion(activeSession.id, { id, status })}
-          />
-        ) : null;
+            // 旁路会话入口（对话页顶部）：按钮打开侧会话面板；旁路会话页额外给「← 主会话」跳转
+            sideCount={activeSession.parentSessionId ? 0 : sessions.filter((s) => s.parentSessionId === activeSession.id).length}
+            onOpenSidePanel={handleOpenSidePanel}
+            onSelectSession={handleSessionSelect}
+            />
+            {panelOpen && panelMain && (
+              <SideSessionPanel
+                mainSession={panelMain}
+                sideSessions={panelSides}
+                openSideId={panelSideId && panelSides.some((s) => s.id === panelSideId) ? panelSideId : null}
+                stream={panelSideId ? streams[panelSideId] : undefined}
+                onClose={handleCloseSidePanel}
+                onSelectSide={setPanelSideId}
+                onDerive={(turns) => handleSessionDerive(panelMain.id, turns)}
+                onSend={handleSendMessage}
+                onStop={handleStopStream}
+                onBringBack={handleSideBringBack}
+                onDeleteSide={(id) => {
+                  // 面板内删除旁路会话：若正在 chat 模式打开中，退回列表模式
+                  handleSessionDelete(id);
+                  setPanelSideId((cur) => (cur === id ? null : cur));
+                }}
+              />
+            )}
+          </>
+        );
+      }
       case 'trends':
         return <TrendsPage onUseTopic={handleUseTopic} />;
       case 'ideas':

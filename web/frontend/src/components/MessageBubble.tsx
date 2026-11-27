@@ -5,6 +5,7 @@ import { linkifyOutputs, externalizeMediaLinks } from '../lib/linkifyOutputs';
 import { IconCopy, IconCheck, IconRetry } from './icons';
 import { extractArtifacts } from '../lib/artifacts';
 import ArtifactGallery from './ArtifactGallery';
+import { parseSeedMessage } from '../lib/side-session';
 
 export interface BubbleActions {
   onCopy: () => void;
@@ -57,6 +58,34 @@ export default function MessageBubble({ message, isStreaming, thinking, activity
     // Attachment-only turns are intentionally invisible; the structured refs
     // remain in session state for retry but never leak paths into the chat UI.
     if (!message.content.trim()) return null;
+    // 旁路会话的交接上下文：不是用户的提问，渲染成独立卡片（可辨识、逐条可读），禁用重试
+    const seed = parseSeedMessage(message.content);
+    if (seed) {
+      return (
+        <div className="message-row user">
+          <div className="msg-col user">
+            <div className="seed-card">
+              <div className="seed-card-header">
+                <span className="seed-card-badge">⤷</span>
+                <div>
+                  <div className="seed-card-title">旁路会话 · 交接上下文</div>
+                  <div className="seed-card-sub">来自主会话「{seed.mainTitle}」最近 {seed.turnsLabel} 轮</div>
+                </div>
+              </div>
+              <div className="seed-card-body">
+                {seed.items.map((t, idx) => (
+                  <div key={idx} className="seed-card-turn">
+                    <span className={`seed-card-role ${t.role}`}>{t.role === 'user' ? '用户' : '助手'}</span>
+                    <span className="seed-card-content">{t.content}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {actions && <ActionBar actions={{ onCopy: actions.onCopy, canModify: false }} />}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="message-row user">
         <div className="msg-col user">
