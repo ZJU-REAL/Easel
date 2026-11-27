@@ -83,13 +83,21 @@ export default function Sidebar({
         </div>
       );
     }
+    // 血缘徽标：旁路会话标题前加 ⤷，tooltip 指向父会话标题（父已删除则降级提示，不崩溃）
+    const parent = s.parentSessionId ? sessions.find((p) => p.id === s.parentSessionId) : undefined;
+    const derivedTip = s.parentSessionId
+      ? (parent ? `派生自 ${parent.title}` : '派生自（已删除）')
+      : undefined;
     return (
       <div
         key={s.id}
         className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
         onClick={() => onSessionSelect(s.id)}
       >
-        <span className="session-item-title">{s.title}</span>
+        <span className="session-item-title" title={derivedTip}>
+          {s.parentSessionId && <span className="session-derived-badge">⤷ </span>}
+          {s.title}
+        </span>
         <div className="session-actions">
           <button className="session-act" title="重命名"
             onClick={(e) => { e.stopPropagation(); startRename(s); }}><IconEdit size={14} /></button>
@@ -146,6 +154,8 @@ export default function Sidebar({
           </>
         )}
       </div>
+
+      {/* 派生粒度菜单已移至对话页顶部按钮（ChatPage side popover) */}
 
       <div className="sidebar-status">
         <span className={`status-dot ${gatewayStatus === 'connected' ? '' : 'offline'}`} />
